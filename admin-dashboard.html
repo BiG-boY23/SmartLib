@@ -1,0 +1,2101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administrator Portal - EVSU-OC SmartLib</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <style>
+    :root {
+      --evsu-maroon: #800000;
+      --evsu-maroon-dark: #5c0000;
+      --evsu-gold: #d4af37;
+      --evsu-gold-light: #f3e5ab;
+      --bg-body: #0b0d12;
+      --bg-sidebar: #11151e;
+      --bg-card: #161b26;
+      --bg-card-header: #1c2230;
+      --bg-input: #0a0c10;
+      --text-main: #f8f9fa;
+      --text-muted: #8c96a6;
+      --border: #232a3b;
+      --border-gold: rgba(212, 175, 55, 0.3);
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --radius: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg-body); color: var(--text-main); min-height: 100vh; display: flex; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-body); }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+
+    /* SIDEBAR */
+    .app-sidebar {
+      width: 250px; background: var(--bg-sidebar); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; position: fixed; top: 0; bottom: 0; left: 0; z-index: 100;
+    }
+    .sidebar-brand { padding: 18px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+    .brand-emblem {
+      width: 44px; height: 44px; background: #1a0508; border: 1.5px solid var(--evsu-gold);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      overflow: hidden; box-shadow: 0 0 10px rgba(212, 175, 55, 0.25);
+    }
+    .brand-emblem img { width: 100%; height: 100%; object-fit: cover; }
+    .brand-title h2 { font-size: 14.5px; font-weight: 700; line-height: 1.2; color: #fff; }
+    .brand-title span { font-size: 11px; color: var(--evsu-gold); display: block; font-weight: 600; }
+
+    .sidebar-menu { flex: 1; padding: 16px 12px; overflow-y: auto; }
+    .menu-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 0 10px; margin: 12px 0 6px; }
+    .nav-item-btn {
+      width: 100%; padding: 10px 12px; border-radius: 8px; background: transparent; border: none;
+      color: var(--text-muted); font-family: inherit; font-size: 13px; font-weight: 500; text-align: left;
+      cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 10px; margin-bottom: 3px;
+    }
+    .nav-item-btn i { width: 18px; text-align: center; font-size: 14px; }
+    .nav-item-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.05); }
+    .nav-item-btn.active { background: var(--evsu-maroon); color: #fff; font-weight: 600; border-left: 3px solid var(--evsu-gold); }
+
+    .sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
+
+    /* MAIN WRAPPER */
+    .main-wrapper { flex: 1; margin-left: 250px; display: flex; flex-direction: column; min-width: 0; }
+    .app-topbar {
+      height: 64px; padding: 0 32px; background: var(--bg-card); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 90;
+    }
+    .page-title h1 { font-size: 18px; font-weight: 700; }
+    .page-title p { font-size: 12px; color: var(--text-muted); }
+
+    .btn {
+      padding: 9px 16px; border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 600;
+      cursor: pointer; border: none; transition: all 0.2s; display: inline-flex; align-items: center; gap: 7px; text-decoration: none;
+    }
+    .btn-maroon { background: var(--evsu-maroon); color: #fff; }
+    .btn-maroon:hover { background: #990000; }
+    .btn-gold { background: var(--evsu-gold); color: #000; }
+    .btn-gold:hover { background: #e5bd47; }
+    .btn-secondary { background: #1e2536; color: var(--text-main); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #283247; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .btn-outline:hover { border-color: var(--evsu-gold); color: var(--evsu-gold); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+
+    .content-container { padding: 28px 32px; flex: 1; }
+    .screen-panel { display: none; }
+    .screen-panel.active { display: block; animation: fadeIn 0.25s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+    .card-head { padding: 14px 20px; background: var(--bg-card-header); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .card-head h3 { font-size: 14px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+    .card-body { padding: 20px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+
+    .stat-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; display: flex; align-items: center; gap: 14px; }
+    .stat-icon { width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .stat-icon.maroon { background: rgba(128, 0, 0, 0.25); color: var(--evsu-gold); border: 1px solid var(--evsu-maroon); }
+    .stat-icon.gold { background: rgba(212, 175, 55, 0.15); color: var(--evsu-gold); }
+    .stat-icon.emerald { background: rgba(16,185,129,0.15); color: var(--success); }
+    .stat-icon.amber { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .stat-info h4 { font-size: 22px; font-weight: 700; color: var(--text-main); }
+    .stat-info span { font-size: 12px; color: var(--text-muted); }
+
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 5px; }
+    .form-control, .form-select {
+      width: 100%; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-main); font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.2s;
+    }
+    .form-control:focus, .form-select:focus { border-color: var(--evsu-gold); }
+    .form-select option { background: var(--bg-card); color: var(--text-main); }
+
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-maroon { background: rgba(128,0,0,0.3); color: var(--evsu-gold-light); border: 1px solid var(--evsu-maroon); }
+    .badge-gold { background: rgba(212,175,55,0.15); color: var(--evsu-gold); border: 1px solid var(--border-gold); }
+    .badge-success { background: rgba(16,185,129,0.15); color: var(--success); }
+    .badge-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .badge-warning { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .badge-secondary { background: #232a3b; color: var(--text-muted); }
+
+    .table-responsive { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { padding: 11px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+    td { padding: 12px 14px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--evsu-gold);
+      border-radius: 6px; padding: 12px 16px; font-size: 12.5px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      display: flex; align-items: center; gap: 10px; min-width: 260px; animation: slideIn 0.25s ease;
+    }
+    .toast.success { border-left-color: var(--success); }
+    .toast.danger { border-left-color: var(--danger); }
+    .toast.warning { border-left-color: var(--warning); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ACCOUNT DROPDOWN & MODAL */
+    .account-btn-wrap { position: relative; }
+    .account-avatar-btn {
+      width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--evsu-maroon), #b30000);
+      border: 2px solid var(--evsu-gold); display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff; cursor: pointer; transition: all 0.2s; font-family: inherit;
+    }
+    .account-avatar-btn:hover { transform: scale(1.06); box-shadow: 0 0 0 3px rgba(212,175,55,0.3); }
+
+    .account-dropdown {
+      position: absolute; top: calc(100% + 12px); right: 0; width: 280px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); z-index: 999;
+      display: none; overflow: hidden; animation: dropIn 0.2s ease;
+    }
+    .account-dropdown.open { display: block; }
+    @keyframes dropIn { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
+
+    .acc-drop-head { padding: 20px; border-bottom: 1px solid var(--border); text-align: center; }
+    .acc-drop-avatar {
+      width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--evsu-maroon), #b30000);
+      border: 3px solid var(--evsu-gold); display: flex; align-items: center; justify-content: center;
+      font-size: 24px; font-weight: 700; color: #fff; margin: 0 auto 10px; font-family: inherit;
+    }
+    .acc-drop-name { font-size: 15px; font-weight: 700; }
+    .acc-drop-email { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .acc-drop-role-badge { display: inline-block; margin-top: 8px; padding: 3px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; background: rgba(128,0,0,0.3); color: var(--evsu-gold); border: 1px solid var(--evsu-maroon); }
+
+    .acc-drop-body { padding: 8px; }
+    .acc-drop-item {
+      width: 100%; padding: 10px 14px; border-radius: 8px; background: transparent; border: none;
+      color: var(--text-main); font-family: inherit; font-size: 13px; font-weight: 500; text-align: left;
+      cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 12px;
+    }
+    .acc-drop-item:hover { background: rgba(255,255,255,0.06); }
+    .acc-drop-item i { width: 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
+    .acc-drop-divider { height: 1px; background: var(--border); margin: 6px 8px; }
+    .acc-drop-item.logout { color: var(--danger); }
+    .acc-drop-item.logout i { color: var(--danger); }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 990; display: none; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .settings-modal { width: 520px; max-width: 95vw; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.7); overflow: hidden; }
+    .modal-header { padding: 18px 24px; background: var(--bg-card-header); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-header h2 { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .modal-close { width: 30px; height: 30px; border-radius: 6px; background: transparent; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .modal-close:hover { background: rgba(239,68,68,0.15); color: var(--danger); border-color: var(--danger); }
+
+    /* BATCH 2D QR STICKER SHEET */
+    .qr-batch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 16px;
+    }
+    .qr-copy-card {
+      background: #ffffff;
+      color: #0b0d12;
+      border: 1.5px solid var(--evsu-gold);
+      border-radius: 10px;
+      padding: 14px 12px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+      position: relative;
+    }
+    .qr-copy-header {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--evsu-maroon);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+      border-bottom: 1.5px solid #f1f5f9;
+      width: 100%;
+      padding-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .qr-copy-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.3;
+      margin-bottom: 2px;
+      height: 28px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .qr-copy-meta {
+      font-size: 10px;
+      color: #64748b;
+      margin-bottom: 8px;
+      font-family: monospace;
+    }
+    .qr-canvas-holder {
+      width: 105px;
+      height: 105px;
+      margin: 0 auto 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+    }
+    .qr-copy-code {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--evsu-maroon);
+      font-family: monospace;
+      letter-spacing: 0.5px;
+    }
+    .qr-copy-badge {
+      display: inline-block;
+      font-size: 9.5px;
+      font-weight: 700;
+      background: #f8fafc;
+      color: #334155;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-top: 4px;
+      border: 1px solid #cbd5e1;
+    }
+
+    @media print {
+      body * {
+        visibility: hidden !important;
+      }
+      #printQrArea, #printQrArea * {
+        visibility: visible !important;
+      }
+      #printQrArea {
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        background: #ffffff !important;
+        padding: 8mm !important;
+        margin: 0 !important;
+        overflow: visible !important;
+        z-index: 99999 !important;
+      }
+      .qr-batch-grid {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 6mm !important;
+        page-break-inside: auto;
+      }
+      .qr-copy-card {
+        border: 1.5px solid #000000 !important;
+        box-shadow: none !important;
+        page-break-inside: avoid !important;
+        padding: 4mm !important;
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+      .modal-overlay {
+        background: transparent !important;
+        position: static !important;
+      }
+      .settings-modal {
+        box-shadow: none !important;
+        border: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        background: transparent !important;
+      }
+      .modal-header, .no-print, .app-sidebar, .app-topbar, .toast-container {
+        display: none !important;
+      }
+    }
+
+    .d-none { display: none !important; }
+
+    .pulse-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #2ecc71;
+      box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7);
+      animation: pulse-green 1.6s infinite;
+    }
+    @keyframes pulse-green {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+    }
+  .password-input-wrap{position:relative}.password-input-wrap .form-control{padding-right:84px}.password-toggle{position:absolute;right:8px;top:0;bottom:0;border:0;background:none;color:var(--evsu-gold);display:flex;align-items:center;gap:5px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer}.password-toggle b{font-size:12px}</style>
+</head>
+<body>
+
+  <div class="toast-container" id="toastBox"></div>
+
+  <!-- ACCOUNT SETTINGS MODAL -->
+  <div class="modal-overlay" id="accountSettingsModal">
+    <div class="settings-modal">
+      <div class="modal-header">
+        <h2><i class="fa-solid fa-user-gear" style="color:var(--evsu-gold);"></i> Administrator Account Settings</h2>
+        <button class="modal-close" onclick="closeAccountSettings()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="card-body">
+        <form onsubmit="handleSaveProfile(event)">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="profFullName" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>Institutional Email</label>
+            <input type="email" id="profEmail" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label>Department / Office</label>
+            <input type="text" id="profDept" class="form-control">
+          </div>
+          <button type="submit" class="btn btn-maroon w-100" style="padding:11px; margin-bottom:14px;">
+            <i class="fa-solid fa-floppy-disk"></i> Save Profile Details
+          </button>
+        </form>
+
+        <hr style="border-color:var(--border); margin:16px 0;">
+        <h4 style="font-size:13px; font-weight:700; margin-bottom:10px;"><i class="fa-solid fa-key" style="color:var(--evsu-gold);"></i> Change Password</h4>
+        <form onsubmit="handleChangePassword(event)">
+          <div class="form-group">
+            <label>Current Password</label>
+            <div class="password-input-wrap"><input type="password" id="pwdCurrent" class="form-control password-field" required><button class="password-toggle" type="button" onclick="togglePasswordField('pwdCurrent', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
+          </div>
+          <div class="form-group">
+            <label>New Password</label>
+            <div class="password-input-wrap"><input type="password" id="pwdNew" class="form-control password-field" required><button class="password-toggle" type="button" onclick="togglePasswordField('pwdNew', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
+          </div>
+          <button type="submit" class="btn btn-gold btn-sm w-100" style="padding:10px;">
+            Update Password
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDIT BOOK MODAL -->
+  <div class="modal-overlay" id="editBookModal">
+    <div class="settings-modal" style="width:820px; max-width:95vw; max-height:90vh; overflow-y:auto;">
+      <div class="modal-header">
+        <h2><i class="fa-solid fa-pen-to-square" style="color:var(--evsu-gold);"></i> Edit Book Record</h2>
+        <button class="modal-close" onclick="closeEditBookModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="card-body">
+        <form onsubmit="handleUpdateBook(event)" id="editBookForm">
+          <input type="hidden" id="editBookId">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+            <div class="form-group">
+              <label><i class="fa-solid fa-hashtag" style="color:var(--evsu-gold);"></i> Accession No. <span style="color:var(--text-muted); font-size:11px;">(read-only)</span></label>
+              <input type="text" id="editBookAcc" class="form-control" readonly style="opacity:.65; cursor:not-allowed;">
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-barcode" style="color:var(--evsu-gold);"></i> Call Number</label>
+              <input type="text" id="editBookCallNum" class="form-control" placeholder="e.g. 005.1 GAR">
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label><i class="fa-solid fa-book" style="color:var(--evsu-gold);"></i> Title of Book <span style="color:#e55;">*</span></label>
+              <input type="text" id="editBookTitle" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-user-pen" style="color:var(--evsu-gold);"></i> Author <span style="color:#e55;">*</span></label>
+              <input type="text" id="editBookAuthor" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-building-columns" style="color:var(--evsu-gold);"></i> Publisher</label>
+              <input type="text" id="editBookPublisher" class="form-control">
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-calendar" style="color:var(--evsu-gold);"></i> Year Published</label>
+              <input type="text" id="editBookYear" class="form-control" placeholder="e.g. 2023">
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-fingerprint" style="color:var(--evsu-gold);"></i> ISBN</label>
+              <input type="text" id="editBookIsbn" class="form-control" placeholder="e.g. 978-3-16-148410-0">
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-tags" style="color:var(--evsu-gold);"></i> Subject / Category <span style="color:#e55;">*</span></label>
+              <input type="text" id="editBookCat" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-layer-group" style="color:var(--evsu-gold);"></i> No. of Copies <span style="color:#e55;">*</span></label>
+              <input type="number" id="editBookCopies" class="form-control" min="1" required>
+            </div>
+            <div class="form-group">
+              <label><i class="fa-solid fa-star-half-stroke" style="color:var(--evsu-gold);"></i> Condition</label>
+              <select id="editBookCondition" class="form-control">
+                <option value="New">New</option>
+                <option value="Good">Good</option>
+                <option value="Fair">Fair</option>
+                <option value="Poor">Poor</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; margin-top:18px;">
+            <button type="submit" class="btn btn-maroon" style="flex:1; padding:11px;">
+              <i class="fa-solid fa-floppy-disk"></i> Save Changes
+            </button>
+            <button type="button" class="btn" style="flex:0 0 auto; padding:11px 18px; background:var(--bg-card); border:1px solid var(--border);" onclick="closeEditBookModal()">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELETE CONFIRMATION MODAL -->
+  <div class="modal-overlay" id="deleteBookModal">
+    <div class="settings-modal" style="width:420px; max-width:95vw; text-align:center;">
+      <div class="modal-header" style="justify-content:center;">
+        <h2><i class="fa-solid fa-triangle-exclamation" style="color:#e55;"></i> Confirm Action</h2>
+      </div>
+      <div class="card-body" style="padding:24px 30px;">
+        <p id="deleteBookMsg" style="font-size:14px; color:var(--text-muted); margin-bottom:20px;"></p>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button id="deleteBookConfirmBtn" class="btn" style="background:#c0392b; color:#fff; padding:10px 24px; border-radius:8px; font-weight:700;">
+            <i class="fa-solid fa-trash"></i> Confirm
+          </button>
+          <button class="btn" style="background:var(--bg-card); border:1px solid var(--border); padding:10px 24px; border-radius:8px;" onclick="closeDeleteModal()">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BATCH MULTI-COPY QR CODE MODAL -->
+  <div class="modal-overlay" id="qrBatchModal">
+    <div class="settings-modal" style="width: 860px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h2><i class="fa-solid fa-qrcode" style="color:var(--evsu-gold);"></i> <span id="qrModalTitle">Printable 2D QR Code Labels</span></h2>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button class="btn btn-gold btn-sm" onclick="printQrBatchLabels()">
+            <i class="fa-solid fa-print"></i> Print <span id="lblAdminPrintCount">1</span> Label(s)
+          </button>
+          <button class="modal-close" onclick="closeQrBatchModal()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+      </div>
+      <!-- Book info bar -->
+      <div style="padding: 12px 24px; background: var(--bg-card); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+        <div style="font-size: 13px;">
+          <span style="color:var(--text-muted);">Accession:</span> <strong id="qrModalAcc" style="color:var(--evsu-gold);">—</strong> &nbsp;|&nbsp; 
+          <span style="color:var(--text-muted);">Call No:</span> <strong id="qrModalCallNum">—</strong> &nbsp;|&nbsp;
+          <span style="color:var(--text-muted);">Total Copies:</span> <span class="badge badge-success" id="qrModalCopiesCount">0 Copies</span>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted);">
+          <i class="fa-solid fa-circle-info text-gold"></i> Each copy has a unique QR barcode suffix (-C01, -C02...)
+        </div>
+      </div>
+      <!-- Quantity configuration toolbar (no-print) -->
+      <div class="no-print" style="padding: 12px 24px; background: rgba(212,175,55,0.05); border-bottom: 1px solid var(--border); display: flex; align-items: center; flex-wrap: wrap; gap: 14px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;"><i class="fa-solid fa-hashtag" style="color:var(--evsu-gold);"></i> Number of Labels:</label>
+          <button class="btn btn-sm" style="padding:2px 8px; font-size:15px; background:var(--bg-card); border:1px solid var(--border);" onclick="adjustAdminQrQty(-1)">−</button>
+          <input type="number" id="adminQrQtyInput" min="1" max="999" value="1"
+            style="width:60px; text-align:center; background:var(--bg-card); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:3px 6px; font-size:13px;"
+            oninput="onAdminQrQtyChange()">
+          <button class="btn btn-sm" style="padding:2px 8px; font-size:15px; background:var(--bg-card); border:1px solid var(--border);" onclick="adjustAdminQrQty(1)">+</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <span style="font-size:11px; color:var(--text-muted);">Presets:</span>
+          <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border);" onclick="setAdminQrQtyPreset('all')">All Copies (<span id="adminPresetAllLabel">1</span>)</button>
+          <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border);" onclick="setAdminQrQtyPreset(1)">Just 1</button>
+          <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border);" onclick="setAdminQrQtyPreset(3)">3 Labels</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">Start from Copy #:</label>
+          <input type="number" id="adminQrStartCopy" min="1" max="999" value="1"
+            style="width:55px; text-align:center; background:var(--bg-card); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:3px 6px; font-size:13px;"
+            oninput="onAdminQrQtyChange()">
+        </div>
+      </div>
+      <div class="card-body" style="overflow-y: auto; flex: 1; padding: 20px;" id="printQrArea">
+        <div class="qr-batch-grid" id="qrBatchContainer">
+          <!-- Dynamically generated copy QR sticker cards -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR NAVIGATION -->
+  <aside class="app-sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-emblem"><img src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"></div>
+      <div class="brand-title">
+        <h2>EVSU-OC SmartLib</h2>
+        <span>Admin Portal</span>
+      </div>
+    </div>
+
+    <div class="sidebar-menu">
+      <div class="menu-label">System Control</div>
+      <button class="nav-item-btn active" id="navDash" onclick="switchNav('dash')">
+        <i class="fa-solid fa-chart-pie"></i> Executive Analytics
+      </button>
+      <button class="nav-item-btn" id="navUsers" onclick="switchNav('users')">
+        <i class="fa-solid fa-users-gear"></i> User Management
+      </button>
+      <button class="nav-item-btn" id="navBooks" onclick="switchNav('books')">
+        <i class="fa-solid fa-book"></i> Book Inventory &amp; Catalog
+      </button>
+      <button class="nav-item-btn" id="navCirc" onclick="switchNav('circ')">
+        <i class="fa-solid fa-arrow-right-arrow-left"></i> Circulation Desk
+      </button>
+
+      <div class="menu-label">Audit &amp; Public</div>
+      <button class="nav-item-btn" id="navLogs" onclick="switchNav('logs')">
+        <i class="fa-solid fa-clock-rotate-left"></i> Security Audit Logs
+      </button>
+      <button class="nav-item-btn" id="navFeedback" onclick="switchNav('feedback')">
+        <i class="fa-solid fa-comments"></i> Visitor Suggestions
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div onclick="openAccountSettings()" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--evsu-maroon);border:1px solid var(--evsu-gold);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;" id="sbAvatar">SA</div>
+        <div style="min-width:0;">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="sbName">Super Admin</div>
+          <div style="font-size:10px;color:var(--text-muted);" id="sbRole">Administrator</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT AREA -->
+  <div class="main-wrapper">
+    <header class="app-topbar">
+      <div class="page-title">
+        <h1 id="pageTitle">Executive Analytics Dashboard</h1>
+        <p id="pageSubTitle">Eastern Visayas State University Library Administrator Control Center</p>
+      </div>
+
+      <div class="account-btn-wrap">
+        <button class="account-avatar-btn" id="accBtn" onclick="toggleAccountDropdown()">
+          <span id="topAvatar">SA</span>
+        </button>
+
+        <div class="account-dropdown" id="accDropdown">
+          <div class="acc-drop-head">
+            <div class="acc-drop-avatar" id="dropAvatar">SA</div>
+            <div class="acc-drop-name" id="dropName">Super Admin</div>
+            <div class="acc-drop-email" id="dropEmail">admin@evsu.edu.ph</div>
+            <div class="acc-drop-role-badge">SUPERADMIN</div>
+          </div>
+          <div class="acc-drop-body">
+            <button class="acc-drop-item" onclick="openAccountSettings()"><i class="fa-solid fa-user-gear"></i> Account Settings</button>
+            <div class="acc-drop-divider"></div>
+            <button class="acc-drop-item logout" onclick="handleLogout()"><i class="fa-solid fa-right-from-bracket"></i> Sign Out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content-container">
+
+      <!-- PANEL 1: DASHBOARD -->
+      <div class="screen-panel active" id="panelDash">
+        <div class="grid-4">
+          <div class="stat-box">
+            <div class="stat-icon maroon"><i class="fa-solid fa-book"></i></div>
+            <div class="stat-info"><h4 id="statBooks">1,420</h4><span>Catalog Holdings</span></div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-icon gold"><i class="fa-solid fa-hand-holding-book"></i></div>
+            <div class="stat-info"><h4 id="statBorrows">42</h4><span>Active Loans</span></div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-icon amber"><i class="fa-solid fa-receipt"></i></div>
+            <div class="stat-info"><h4 id="statFines">₱1,450</h4><span>Uncollected Fines</span></div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-icon emerald"><i class="fa-solid fa-users"></i></div>
+            <div class="stat-info"><h4 id="statUsers">3,200</h4><span>Registered Patrons</span></div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-chart-line text-gold"></i> Circulation &amp; Usage Trends</h3></div>
+            <div class="card-body"><canvas id="adminChart" height="190"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-shield-halved text-gold"></i> Recent Security Audit Trail</h3></div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-responsive">
+                <table id="dashAuditTable">
+                  <thead><tr><th>Time</th><th>User</th><th>Event</th><th>Status</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 2: USER MANAGEMENT -->
+      <div class="screen-panel" id="panelUsers">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-users text-gold"></i> Patron &amp; Staff Directory</h3></div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-responsive">
+                <table id="userTable">
+                  <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-user-plus text-gold"></i> Provision Librarian Account</h3></div>
+            <div class="card-body">
+              <form onsubmit="handleProvisionStaff(event)">
+                <div class="form-group">
+                  <label>Staff ID Number</label>
+                  <input type="text" id="staffId" class="form-control" placeholder="e.g. EVSU-LIB-2027" required>
+                </div>
+                <div class="form-group">
+                  <label>Full Name</label>
+                  <input type="text" id="staffName" class="form-control" placeholder="e.g. Elena Reyes" required>
+                </div>
+                <div class="form-group">
+                  <label>Institutional Email</label>
+                  <input type="email" id="staffEmail" class="form-control" placeholder="staff@evsu.edu.ph" required>
+                </div>
+                <div class="form-group">
+                  <label>Assigned Section</label>
+                  <input type="text" id="staffDept" class="form-control" value="Circulation Desk">
+                </div>
+                <div class="form-group">
+                  <label>Initial Password</label>
+                  <div class="password-input-wrap"><input type="password" id="staffPwd" class="form-control password-field" value="LibStaff2026!" required><button class="password-toggle" type="button" onclick="togglePasswordField('staffPwd', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
+                </div>
+                <button type="submit" class="btn btn-maroon w-100" style="padding:11px;">
+                  <i class="fa-solid fa-user-check"></i> Create Librarian Credentials
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 3: BOOKS -->
+      <div class="screen-panel" id="panelBooks">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-plus-circle text-gold"></i> Catalog New Book</h3></div>
+            <div class="card-body">
+              <form onsubmit="handleCreateBook(event)">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>Accession No.</label>
+                    <input type="text" id="bookAcc" class="form-control" value="LIB-QR-1005" required>
+                  </div>
+                  <div class="form-group">
+                    <label>Call Number</label>
+                    <input type="text" id="bookCallNum" class="form-control" placeholder="e.g. QA 76.76 .C64 2024">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Title of Book</label>
+                  <input type="text" id="bookTitle" class="form-control" placeholder="e.g. Modern Operating Systems" required>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>Author</label>
+                    <input type="text" id="bookAuthor" class="form-control" placeholder="e.g. Andrew S. Tanenbaum" required>
+                  </div>
+                  <div class="form-group">
+                    <label>Subject / Category</label>
+                    <input type="text" id="bookCat" class="form-control" placeholder="e.g. Computer Science" required>
+                  </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1.4fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>Publisher</label>
+                    <input type="text" id="bookPublisher" class="form-control" placeholder="e.g. Pearson Education">
+                  </div>
+                  <div class="form-group">
+                    <label>Year Published</label>
+                    <input type="text" id="bookYear" class="form-control" placeholder="e.g. 2024">
+                  </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1.3fr 1fr 1.1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>ISBN</label>
+                    <input type="text" id="bookIsbn" class="form-control" placeholder="e.g. 978-0133943030">
+                  </div>
+                  <div class="form-group">
+                    <label>No. of Copies</label>
+                    <input type="number" id="bookCopies" class="form-control" value="1" min="1" required>
+                  </div>
+                  <div class="form-group">
+                    <label>Condition</label>
+                    <select id="bookCondition" class="form-select">
+                      <option value="New">New</option>
+                      <option value="Good" selected>Good</option>
+                      <option value="Fair">Fair</option>
+                      <option value="Damaged">Damaged</option>
+                      <option value="For Replacement">For Replacement</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-maroon w-100" style="padding:11px; margin-top:6px;">
+                  <i class="fa-solid fa-qrcode"></i> Catalog &amp; Generate Label
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-list-check text-gold"></i> Book Inventory Holdings</h3></div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-responsive">
+                <table id="bookTable">
+                  <thead>
+                    <tr>
+                      <th>Accession</th>
+                      <th>Call No.</th>
+                      <th>Title &amp; Author</th>
+                      <th>Subject</th>
+                      <th>Publisher &amp; Year</th>
+                      <th>Copies</th>
+                      <th>Condition</th>
+                      <th style="text-align:center;">QR Labels</th>
+                      <th style="text-align:center;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- ARCHIVED BOOKS SHELF -->
+          <div class="card" style="margin-top:8px;">
+            <div class="card-head" style="cursor:pointer; user-select:none;" onclick="toggleArchivedShelf()">
+              <h3><i class="fa-solid fa-box-archive" style="color:#8888aa;"></i> Archived Books
+                <span id="archivedShelfToggle" style="font-size:11px; color:var(--text-muted); margin-left:8px;">(click to expand)</span>
+              </h3>
+            </div>
+            <div id="archivedShelfBody" style="display:none;">
+              <div class="card-body" style="padding:0;">
+                <div class="table-responsive">
+                  <table id="archivedBookTable">
+                    <thead>
+                      <tr>
+                        <th>Accession</th>
+                        <th>Title &amp; Author</th>
+                        <th>Category</th>
+                        <th>Copies</th>
+                        <th style="text-align:center;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody><tr><td colspan="5" style="text-align:center; padding:18px; color:var(--text-muted);">Click the header above to load archived books.</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- PANEL 4: CIRCULATION DESK (BORROW & RETURN) -->
+      <div class="screen-panel" id="panelCirc">
+        <!-- MODE SELECTOR & SCANNER STATUS BAR -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; background:var(--bg-card); padding:14px 20px; border-radius:12px; border:1px solid var(--border);">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <button class="btn btn-gold btn-sm" id="btnCircModeBorrow" onclick="setCircMode('borrow')" style="padding:8px 18px; font-weight:700;">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Issue / Borrow Book
+            </button>
+            <button class="btn btn-outline btn-sm" id="btnCircModeReturn" onclick="setCircMode('return')" style="padding:8px 18px; font-weight:700;">
+              <i class="fa-solid fa-arrow-down-left-and-up-right-to-center"></i> Return Book
+            </button>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="badge" style="background:rgba(46,204,113,0.12); color:#2ecc71; border:1px solid rgba(46,204,113,0.3); padding:7px 14px; font-size:12px; display:inline-flex; align-items:center; gap:8px;">
+              <span class="pulse-dot"></span> <i class="fa-solid fa-barcode"></i> USB Auto-Sensing Scanner Active
+            </span>
+            <button class="btn btn-outline btn-sm" onclick="resetCircDesk()" title="Clear and reset scanner fields">
+              <i class="fa-solid fa-arrows-rotate"></i> Reset Fields
+            </button>
+          </div>
+        </div>
+
+        <div class="grid-2" style="align-items:start;">
+          <!-- LEFT COLUMN: SCANNER INPUT PANEL -->
+          <div class="card">
+            <!-- BORROW MODE VIEW -->
+            <div id="circBorrowView">
+              <div class="card-head">
+                <h3><i class="fa-solid fa-book-bookmark text-gold"></i> Step 1: Scan Student / Patron ID</h3>
+                <span style="font-size:11px; color:var(--text-muted);"><i class="fa-solid fa-wand-magic-sparkles text-gold"></i> Auto-advance on beep</span>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label><i class="fa-solid fa-id-card text-gold"></i> Student Number / Patron Username</label>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" id="circBorrowPatron" class="form-control" placeholder="Scan Student ID QR or type ID..." autocomplete="off">
+                    <button class="btn btn-outline btn-sm" type="button" onclick="handlePatronScanSubmit()" title="Verify Patron"><i class="fa-solid fa-magnifying-glass"></i></button>
+                  </div>
+                </div>
+
+                <!-- PATRON PREVIEW BADGE -->
+                <div id="circPatronBadge" style="display:none; margin-bottom:18px; padding:12px 14px; border-radius:8px; background:rgba(212,175,55,0.06); border:1px solid var(--border);">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                      <strong id="patronBadgeName" style="color:var(--text-main); font-size:14px;">—</strong>
+                      <div id="patronBadgeDetails" style="font-size:11px; color:var(--text-muted);">—</div>
+                    </div>
+                    <span id="patronBadgeStatus" class="badge badge-success">Eligible</span>
+                  </div>
+                </div>
+
+                <div class="card-head" style="padding:12px 0 8px 0; margin-top:10px; border-top:1px dashed var(--border);">
+                  <h3 style="font-size:14px;"><i class="fa-solid fa-qrcode text-gold"></i> Step 2: Scan Book 2D QR Code</h3>
+                </div>
+
+                <div class="form-group" style="margin-top:10px;">
+                  <label><i class="fa-solid fa-book text-gold"></i> Book Accession / QR Tag</label>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" id="circBorrowBook" class="form-control" placeholder="Scan Book QR tag (e.g. LIB-QR-1001-C01)..." autocomplete="off">
+                    <button class="btn btn-outline btn-sm" type="button" onclick="handleBookScanSubmit()" title="Verify Book"><i class="fa-solid fa-magnifying-glass"></i></button>
+                  </div>
+                </div>
+
+                <!-- BOOK PREVIEW BADGE -->
+                <div id="circBookBadge" style="display:none; margin-bottom:18px; padding:12px 14px; border-radius:8px; background:rgba(128,0,0,0.06); border:1px solid var(--border);">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                      <strong id="bookBadgeTitle" style="color:var(--text-main); font-size:14px;">—</strong>
+                      <div id="bookBadgeMeta" style="font-size:11px; color:var(--text-muted);">—</div>
+                    </div>
+                    <span id="bookBadgeCopies" class="badge badge-success">Available</span>
+                  </div>
+                </div>
+
+                <button class="btn btn-maroon w-100" style="padding:12px; font-weight:700; margin-top:6px;" id="btnConfirmBorrow" onclick="executeBorrowDesk()">
+                  <i class="fa-solid fa-check"></i> Complete Checkout (7-Day Loan)
+                </button>
+              </div>
+            </div>
+
+            <!-- RETURN MODE VIEW -->
+            <div id="circReturnView" style="display:none;">
+              <div class="card-head">
+                <h3><i class="fa-solid fa-arrow-down-left-and-up-right-to-center text-gold"></i> Fast Book Return Scanner</h3>
+                <span class="badge badge-gold" style="font-size:11px;"><i class="fa-solid fa-bolt"></i> 1-Scan Return</span>
+              </div>
+              <div class="card-body">
+                <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:16px;">
+                  Slide the returned book under the stand-mounted scanner. The system immediately checks in the book, verifies the borrower, and calculates any overdue fines automatically.
+                </p>
+                <div class="form-group">
+                  <label><i class="fa-solid fa-qrcode text-gold"></i> Scan Book 2D QR Code Label</label>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" id="circReturnBook" class="form-control" placeholder="Scan Book QR (e.g. LIB-QR-1001-C01)..." style="font-size:15px; padding:12px;" autocomplete="off">
+                    <button class="btn btn-maroon" type="button" onclick="executeReturnDesk()" style="padding:0 22px; font-weight:700;"><i class="fa-solid fa-arrow-right"></i> Return</button>
+                  </div>
+                </div>
+                <div style="font-size:11.5px; color:var(--text-muted); margin-top:12px;">
+                  <i class="fa-solid fa-circle-info text-gold"></i> Scanner sends Enter key on beep to execute automatically.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: RECEIPT & LIVE SCANNER FEED -->
+          <div class="card">
+            <div class="card-head">
+              <h3><i class="fa-solid fa-receipt text-gold"></i> Circulation Receipt &amp; Live Feed</h3>
+            </div>
+            <div class="card-body" style="padding:20px;">
+              <div id="circReceiptCard" class="scanner-terminal" style="min-height:220px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+                <i class="fa-solid fa-qrcode" style="font-size:46px; color:var(--text-muted); margin-bottom:12px;"></i>
+                <h4 style="font-size:15px; font-weight:700;">Circulation Desk Ready</h4>
+                <p style="font-size:12px; color:var(--text-muted); max-width:320px; margin-top:4px;">
+                  Place student ID or book 2D QR sticker under the scanner stand. Beep audio feedback is enabled.
+                </p>
+              </div>
+
+              <!-- RECENT SCANS LOG IN THIS SESSION -->
+              <div style="margin-top:20px; border-top:1px solid var(--border); padding-top:14px;">
+                <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); margin-bottom:10px; display:flex; justify-content:space-between;">
+                  <span><i class="fa-solid fa-clock-rotate-left"></i> Session Scan Activity</span>
+                  <span id="circSessionCount" style="color:var(--evsu-gold);">0 Completed</span>
+                </h4>
+                <div id="circSessionList" style="max-height:160px; overflow-y:auto; font-size:12px; display:flex; flex-direction:column; gap:6px;">
+                  <div style="color:var(--text-muted); text-align:center; padding:12px 0;">No transactions yet this session.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 5: LOGS -->
+      <div class="screen-panel" id="panelLogs">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-shield-halved text-gold"></i> Security Audit Trail</h3></div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-responsive">
+                <table id="fullAuditTable">
+                  <thead><tr><th>Time</th><th>User</th><th>Event</th><th>Status</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3><i class="fa-solid fa-paper-plane text-gold"></i> Automated SMTP Dispatch Logs</h3></div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-responsive">
+                <table id="smtpTable">
+                  <thead><tr><th>Recipient</th><th>Event</th><th>Subject</th><th>Status</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 6: VISITOR SUGGESTIONS -->
+      <div class="screen-panel" id="panelFeedback">
+        <div class="card">
+          <div class="card-head"><h3><i class="fa-solid fa-comments text-gold"></i> Public Landing Page Feedback &amp; Inquiries</h3></div>
+          <div class="card-body" style="padding:0;">
+            <div class="table-responsive">
+              <table id="feedbackTable">
+                <thead><tr><th>Date</th><th>Name</th><th>Email</th><th>Category</th><th>Message</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // AUTH GUARD FOR ADMIN PORTAL
+    function getActiveToken() {
+      return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+    }
+    const token = getActiveToken();
+    let idleLogoutTimer;
+    function togglePasswordField(inputId, button) {
+      const input = document.getElementById(inputId);
+      input.type = input.type === 'password' ? 'text' : 'password';
+      const visible = input.type === 'text';
+      button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+      button.querySelector('span').textContent = visible ? 'Hide' : 'Show';
+    }
+
+    const API_BASE = '';
+    let chartInstance = null;
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function getAuthHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getActiveToken()}`
+      };
+    }
+
+    function handleLogout() {
+      fetch('/auth/logout', { method: 'POST', headers: getAuthHeaders() }).catch(() => {});
+      ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+      window.location.href = '/login.html';
+    }
+
+    function resetIdleLogout() {
+      clearTimeout(idleLogoutTimer);
+      idleLogoutTimer = setTimeout(handleLogout, 15 * 60 * 1000);
+    }
+    ['pointerdown','keydown','touchstart','scroll'].forEach(eventName => document.addEventListener(eventName, resetIdleLogout, { passive: true }));
+
+    function toggleAccountDropdown() {
+      document.getElementById('accDropdown').classList.toggle('open');
+    }
+    document.addEventListener('click', e => {
+      const wrap = document.getElementById('accBtn');
+      const dd = document.getElementById('accDropdown');
+      if (wrap && dd && !wrap.contains(e.target) && !dd.contains(e.target)) {
+        dd.classList.remove('open');
+      }
+    });
+
+    function openAccountSettings() {
+      document.getElementById('accDropdown').classList.remove('open');
+      document.getElementById('accountSettingsModal').classList.add('open');
+    }
+    function closeAccountSettings() {
+      document.getElementById('accountSettingsModal').classList.remove('open');
+    }
+
+    async function loadAdminProfile() {
+      try {
+        const res = await fetch(`${API_BASE}/auth/me`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const user = await res.json();
+
+        const initials = user.username.substring(0, 2).toUpperCase();
+        document.getElementById('topAvatar').innerText = initials;
+        document.getElementById('dropAvatar').innerText = initials;
+        document.getElementById('sbAvatar').innerText = initials;
+
+        document.getElementById('dropName').innerText = user.full_name || user.username;
+        document.getElementById('dropEmail').innerText = user.email;
+        document.getElementById('sbName').innerText = user.full_name || user.username;
+        document.getElementById('sbRole').innerText = user.role.toUpperCase();
+
+        document.getElementById('profFullName').value = user.full_name || '';
+        document.getElementById('profEmail').value = user.email || '';
+        document.getElementById('profDept').value = user.department || '';
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function handleSaveProfile(e) {
+      e.preventDefault();
+      const name = document.getElementById('profFullName').value;
+      const email = document.getElementById('profEmail').value;
+      const dept = document.getElementById('profDept').value;
+      try {
+        const res = await fetch(`${API_BASE}/auth/profile`, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ full_name: name, email: email, department: dept })
+        });
+        if (res.ok) {
+          toast('Profile saved successfully!', 'success');
+          await loadAdminProfile();
+          closeAccountSettings();
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function handleChangePassword(e) {
+      e.preventDefault();
+      const cur = document.getElementById('pwdCurrent').value;
+      const newP = document.getElementById('pwdNew').value;
+      try {
+        const res = await fetch(`${API_BASE}/auth/change-password`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ current_password: cur, new_password: newP })
+        });
+        if (res.ok) {
+          toast('Password changed successfully!', 'success');
+          document.getElementById('pwdCurrent').value = '';
+          document.getElementById('pwdNew').value = '';
+        } else {
+          toast('Current password incorrect', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function switchNav(key) {
+      document.querySelectorAll('.nav-item-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.screen-panel').forEach(p => p.classList.remove('active'));
+
+      const map = {
+        'dash': ['Executive Analytics Dashboard', 'Eastern Visayas State University Administrator Control Center'],
+        'users': ['User Management & Provisioning', 'Manage EVSU patrons and provision official staff credentials'],
+        'books': ['Book Inventory & Cataloging', 'Add catalog holdings and view location rack numbers'],
+        'circ': ['Circulation Desk (Borrow & Return Counter)', 'Scan student ID barcode/QR and book 2D QR tags for instant checkout and return'],
+        'logs': ['Security Audit & Email Logs', 'Full security events trail and automated SMTP dispatch logs'],
+        'feedback': ['Visitor Feedback & Inquiries', 'Submissions received from the public landing page suggestion box']
+      };
+
+      if (map[key]) {
+        document.getElementById('pageTitle').innerText = map[key][0];
+        document.getElementById('pageSubTitle').innerText = map[key][1];
+      }
+
+      if (key === 'dash') {
+        document.getElementById('navDash').classList.add('active');
+        document.getElementById('panelDash').classList.add('active');
+        await loadDashStats();
+        initChart();
+      } else if (key === 'users') {
+        document.getElementById('navUsers').classList.add('active');
+        document.getElementById('panelUsers').classList.add('active');
+        await loadUsers();
+      } else if (key === 'books') {
+        document.getElementById('navBooks').classList.add('active');
+        document.getElementById('panelBooks').classList.add('active');
+        await loadBooks();
+      } else if (key === 'circ') {
+        document.getElementById('navCirc').classList.add('active');
+        document.getElementById('panelCirc').classList.add('active');
+        initCirculationDesk();
+      } else if (key === 'logs') {
+        document.getElementById('navLogs').classList.add('active');
+        document.getElementById('panelLogs').classList.add('active');
+        await loadLogs();
+      } else if (key === 'feedback') {
+        document.getElementById('navFeedback').classList.add('active');
+        document.getElementById('panelFeedback').classList.add('active');
+        await loadFeedbacks();
+      }
+    }
+
+    async function loadDashStats() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/dashboard/stats`, { headers: getAuthHeaders() });
+        if (res.ok) {
+          const stats = await res.json();
+          document.getElementById('statBooks').innerText = stats.total_books.toLocaleString();
+          document.getElementById('statBorrows').innerText = stats.active_borrows;
+          document.getElementById('statFines').innerText = `₱${stats.uncollected_fines.toLocaleString()}`;
+        }
+        const auditRes = await fetch(`${API_BASE}/admin/logs/audit`, { headers: getAuthHeaders() });
+        if (auditRes.ok) {
+          const logs = await auditRes.json();
+          const tbody = document.getElementById('dashAuditTable').getElementsByTagName('tbody')[0];
+          tbody.innerHTML = '';
+          logs.slice(0, 5).forEach(l => {
+            const row = tbody.insertRow();
+            row.innerHTML = `<td>${escapeHtml(l.timestamp?.substring(11, 19))}</td><td>${escapeHtml(l.user_name)}</td><td>${escapeHtml(l.event)}</td><td><span class="badge badge-success">${escapeHtml(l.status)}</span></td>`;
+          });
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function loadUsers() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/users`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const users = await res.json();
+        const tbody = document.getElementById('userTable').getElementsByTagName('tbody')[0];
+        tbody.innerHTML = '';
+        document.getElementById('statUsers').innerText = users.length;
+
+        users.forEach(u => {
+          const row = tbody.insertRow();
+          const isSuper = u.role === 'superadmin';
+          row.innerHTML = `
+            <td><strong>${escapeHtml(u.username)}</strong></td>
+            <td>${escapeHtml(u.full_name)}</td>
+            <td><span class="badge ${isSuper ? 'badge-gold' : u.role === 'librarian' ? 'badge-maroon' : 'badge-secondary'}">${escapeHtml(u.role.toUpperCase())}</span></td>
+            <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Active' : 'Suspended'}</span></td>
+            <td>
+              ${isSuper ? `<span class="badge badge-secondary">Protected</span>` : `
+                <button class="btn btn-outline btn-sm" onclick="toggleUserStatus(${u.id})">
+                  <i class="fa-solid ${u.is_active ? 'fa-ban text-danger' : 'fa-check text-success'}"></i> ${u.is_active ? 'Suspend' : 'Reactivate'}
+                </button>
+              `}
+            </td>
+          `;
+        });
+      } catch (err) { console.error(err); }
+    }
+
+    async function handleProvisionStaff(e) {
+      e.preventDefault();
+      const id = document.getElementById('staffId').value;
+      const name = document.getElementById('staffName').value;
+      const email = document.getElementById('staffEmail').value;
+      const dept = document.getElementById('staffDept').value;
+      const pwd = document.getElementById('staffPwd').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/users/staff`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ staff_id: id, full_name: name, email: email, department: dept, password: pwd })
+        });
+        if (res.ok) {
+          toast(`Librarian Account (${id}) provisioned!`, 'success');
+          await loadUsers();
+          document.getElementById('staffId').value = '';
+          document.getElementById('staffName').value = '';
+          document.getElementById('staffEmail').value = '';
+        } else {
+          toast('Failed to provision staff', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function toggleUserStatus(id) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/users/${id}/status`, { method: 'PUT', headers: getAuthHeaders() });
+        if (res.ok) { toast('User status updated!', 'info'); await loadUsers(); }
+      } catch (err) { console.error(err); }
+    }
+
+    let cachedAdminBooks = [];
+
+    async function loadBooks() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/books`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const books = await res.json();
+        cachedAdminBooks = books;
+        renderAdminBookTable(books);
+      } catch (err) { console.error(err); }
+    }
+
+    function renderAdminBookTable(books) {
+      const tbody = document.getElementById('bookTable').getElementsByTagName('tbody')[0];
+      tbody.innerHTML = '';
+      if (!books.length) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">No active book records found.</td></tr>`;
+        return;
+      }
+      books.forEach(b => {
+        const row = tbody.insertRow();
+        const condBadge = b.condition === 'New' ? 'badge-gold' : b.condition === 'Good' ? 'badge-success' : b.condition === 'Fair' ? 'badge-warning' : 'badge-danger';
+        row.innerHTML = `
+          <td><strong>${escapeHtml(b.accession_no)}</strong></td>
+          <td><code style="color:var(--evsu-gold); font-size:11px;">${escapeHtml(b.call_number || '—')}</code></td>
+          <td><strong>${escapeHtml(b.title)}</strong><div style="font-size:11px; color:var(--text-muted);">${escapeHtml(b.author)}</div></td>
+          <td><span class="badge badge-secondary">${escapeHtml(b.category)}</span></td>
+          <td>${escapeHtml(b.publisher || '—')}<div style="font-size:11px; color:var(--text-muted);">${escapeHtml(b.year_published || '')}</div></td>
+          <td><span class="badge badge-success">${b.available_copies}/${b.total_copies}</span></td>
+          <td><span class="badge ${condBadge}">${b.condition || 'Good'}</span></td>
+          <td style="text-align:center;">
+            <button class="btn btn-gold btn-sm" data-accession="${escapeHtml(b.accession_no)}" onclick="openBookQrSheet(this.dataset.accession)" title="Print Multi-Copy 2D QR Labels">
+              <i class="fa-solid fa-qrcode"></i> QR Labels
+            </button>
+          </td>
+          <td style="text-align:center; white-space:nowrap;">
+            <button class="btn btn-sm" style="background:var(--evsu-maroon); color:#fff; margin-bottom:3px;" onclick="openEditBookModal(${Number(b.id)})" title="Edit book details">
+              <i class="fa-solid fa-pen-to-square"></i> Edit
+            </button>
+            <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#5a6a7a; color:#fff; margin-bottom:3px;" onclick="confirmArchiveBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)" title="Archive (hide from active catalog)">
+              <i class="fa-solid fa-box-archive"></i> Archive
+            </button>
+            <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#c0392b; color:#fff;" onclick="confirmDeleteBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)" title="Permanently delete this record">
+              <i class="fa-solid fa-trash"></i> Delete
+            </button>
+          </td>
+        `;
+      });
+    }
+
+    async function handleCreateBook(e) {
+      e.preventDefault();
+      const acc = document.getElementById('bookAcc').value.trim();
+      const title = document.getElementById('bookTitle').value.trim();
+      const author = document.getElementById('bookAuthor').value.trim();
+      const publisher = document.getElementById('bookPublisher').value.trim();
+      const year = document.getElementById('bookYear').value.trim();
+      const isbn = document.getElementById('bookIsbn').value.trim();
+      const cat = document.getElementById('bookCat').value.trim();
+      const callNum = document.getElementById('bookCallNum').value.trim();
+      const copies = parseInt(document.getElementById('bookCopies').value) || 1;
+      const condition = document.getElementById('bookCondition').value;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/books`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            accession_no: acc,
+            title: title,
+            author: author,
+            publisher: publisher || null,
+            year_published: year || null,
+            isbn: isbn || null,
+            category: cat,
+            call_number: callNum || null,
+            total_copies: copies,
+            available_copies: copies,
+            condition: condition
+          })
+        });
+        if (res.ok) {
+          const savedBook = await res.json();
+          cachedAdminBooks.unshift(savedBook);
+          toast(`Book ${acc} cataloged successfully with ${copies} copies!`, 'success');
+          
+          // Open batch QR sheet immediately
+          openBookQrSheet(acc);
+
+          let next = parseInt(acc.replace('LIB-QR-', '')) + 1;
+          document.getElementById('bookAcc').value = isNaN(next) ? '' : `LIB-QR-${next}`;
+          document.getElementById('bookTitle').value = '';
+          document.getElementById('bookAuthor').value = '';
+          document.getElementById('bookPublisher').value = '';
+          document.getElementById('bookYear').value = '';
+          document.getElementById('bookIsbn').value = '';
+          document.getElementById('bookCallNum').value = '';
+          document.getElementById('bookCopies').value = '1';
+          document.getElementById('bookCondition').value = 'Good';
+          await loadBooks();
+        } else {
+          const err = await res.json();
+          toast(err.detail || 'Failed to catalog book', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    function openBookQrSheet(accessionNo) {
+      let book = cachedAdminBooks.find(b => b.accession_no === accessionNo);
+      if (!book) {
+        toast('Loading book details...', 'info');
+        fetch(`${API_BASE}/admin/books?search=${encodeURIComponent(accessionNo)}`, { headers: getAuthHeaders() })
+          .then(r => r.json())
+          .then(list => {
+            if (list.length) {
+              generateAndShowQrBatch(list[0]);
+            } else {
+              toast('Book record not found', 'danger');
+            }
+          });
+      } else {
+        generateAndShowQrBatch(book);
+      }
+    }
+
+    // ── EDIT BOOK ──────────────────────────────────────────────────
+    function openEditBookModal(bookId) {
+      const book = cachedAdminBooks.find(b => b.id === bookId);
+      if (!book) return toast('Book not found in cache', 'danger');
+      document.getElementById('editBookId').value = book.id;
+      document.getElementById('editBookAcc').value = book.accession_no;
+      document.getElementById('editBookCallNum').value = book.call_number || '';
+      document.getElementById('editBookTitle').value = book.title;
+      document.getElementById('editBookAuthor').value = book.author;
+      document.getElementById('editBookPublisher').value = book.publisher || '';
+      document.getElementById('editBookYear').value = book.year_published || '';
+      document.getElementById('editBookIsbn').value = book.isbn || '';
+      document.getElementById('editBookCat').value = book.category;
+      document.getElementById('editBookCopies').value = book.total_copies;
+      document.getElementById('editBookCondition').value = book.condition || 'Good';
+      document.getElementById('editBookModal').classList.add('open');
+    }
+
+    function closeEditBookModal() {
+      document.getElementById('editBookModal').classList.remove('open');
+    }
+
+    async function handleUpdateBook(e) {
+      e.preventDefault();
+      const bookId = document.getElementById('editBookId').value;
+      const copies = parseInt(document.getElementById('editBookCopies').value) || 1;
+      const payload = {
+        title: document.getElementById('editBookTitle').value.trim(),
+        author: document.getElementById('editBookAuthor').value.trim(),
+        publisher: document.getElementById('editBookPublisher').value.trim() || null,
+        year_published: document.getElementById('editBookYear').value.trim() || null,
+        isbn: document.getElementById('editBookIsbn').value.trim() || null,
+        category: document.getElementById('editBookCat').value.trim(),
+        call_number: document.getElementById('editBookCallNum').value.trim() || null,
+        total_copies: copies,
+        condition: document.getElementById('editBookCondition').value
+      };
+      try {
+        const res = await fetch(`${API_BASE}/admin/books/${bookId}`, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          toast('Book record updated successfully!', 'success');
+          closeEditBookModal();
+          await loadBooks();
+        } else {
+          const err = await res.json();
+          toast(err.detail || 'Update failed', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    // ── ARCHIVE BOOK (soft-delete) ─────────────────────────────────
+    function confirmArchiveBook(bookId, accNo, title) {
+      document.getElementById('deleteBookMsg').innerHTML =
+        `Archive <strong>${escapeHtml(title)}</strong> (${escapeHtml(accNo)})?<br>
+        <span style="font-size:12px;">This hides the book from the active catalog. You can restore it later from the Archived shelf.</span>`;
+      document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-box-archive"></i> Archive';
+      document.getElementById('deleteBookConfirmBtn').style.background = '#5a6a7a';
+      document.getElementById('deleteBookConfirmBtn').onclick = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/books/${bookId}/archive`, { method: 'PATCH', headers: getAuthHeaders() });
+          if (res.ok) {
+            toast(`"${title}" archived successfully.`, 'info');
+            closeDeleteModal();
+            await loadBooks();
+            loadArchivedBooks();
+          } else { toast('Archive failed', 'danger'); }
+        } catch (err) { console.error(err); }
+      };
+      document.getElementById('deleteBookModal').classList.add('open');
+    }
+
+    // ── PERMANENT DELETE ───────────────────────────────────────────
+    function confirmDeleteBook(bookId, accNo, title) {
+      document.getElementById('deleteBookMsg').innerHTML =
+        `<span style="color:#e55; font-weight:700;">⚠ Permanently delete</span> <strong>${escapeHtml(title)}</strong> (${escapeHtml(accNo)})?<br>
+        <span style="font-size:12px;">This action cannot be undone. All borrow records linked to this book will also be removed.</span>`;
+      document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-trash"></i> Delete Permanently';
+      document.getElementById('deleteBookConfirmBtn').style.background = '#c0392b';
+      document.getElementById('deleteBookConfirmBtn').onclick = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/books/${bookId}`, { method: 'DELETE', headers: getAuthHeaders() });
+          if (res.ok) {
+            toast(`"${title}" permanently deleted.`, 'danger');
+            closeDeleteModal();
+            await loadBooks();
+          } else { toast('Delete failed', 'danger'); }
+        } catch (err) { console.error(err); }
+      };
+      document.getElementById('deleteBookModal').classList.add('open');
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteBookModal').classList.remove('open');
+    }
+
+    // ── ARCHIVED BOOKS SHELF ───────────────────────────────────────
+    async function loadArchivedBooks() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/books/archived`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const books = await res.json();
+        const tbody = document.getElementById('archivedBookTable')?.getElementsByTagName('tbody')[0];
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (!books.length) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:18px; color:var(--text-muted);">No archived books.</td></tr>`;
+          return;
+        }
+        books.forEach(b => {
+          const row = tbody.insertRow();
+          row.innerHTML = `
+            <td><strong>${escapeHtml(b.accession_no)}</strong></td>
+            <td>${escapeHtml(b.title)}<div style="font-size:11px; color:var(--text-muted);">${escapeHtml(b.author)}</div></td>
+            <td><span class="badge badge-secondary">${escapeHtml(b.category)}</span></td>
+            <td>${b.total_copies}</td>
+            <td style="text-align:center;">
+              <button class="btn btn-sm" data-title="${escapeHtml(b.title)}" style="background:#2a7a4b; color:#fff;" onclick="restoreBook(${Number(b.id)}, this.dataset.title)">
+                <i class="fa-solid fa-rotate-left"></i> Restore
+              </button>
+              <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#c0392b; color:#fff; margin-left:4px;" onclick="confirmDeleteBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)">
+                <i class="fa-solid fa-trash"></i> Delete
+              </button>
+            </td>
+          `;
+        });
+      } catch (err) { console.error(err); }
+    }
+
+    async function restoreBook(bookId, title) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/books/${bookId}/restore`, { method: 'PATCH', headers: getAuthHeaders() });
+        if (res.ok) {
+          toast(`"${title}" restored to active catalog.`, 'success');
+          await loadBooks();
+          loadArchivedBooks();
+        } else { toast('Restore failed', 'danger'); }
+      } catch (err) { console.error(err); }
+    }
+
+    let archivedShelfOpen = false;
+    function toggleArchivedShelf() {
+      archivedShelfOpen = !archivedShelfOpen;
+      const body = document.getElementById('archivedShelfBody');
+      const lbl = document.getElementById('archivedShelfToggle');
+      if (archivedShelfOpen) {
+        body.style.display = 'block';
+        lbl.textContent = '(click to collapse)';
+        loadArchivedBooks();
+      } else {
+        body.style.display = 'none';
+        lbl.textContent = '(click to expand)';
+      }
+    }
+
+    let currentQrBook = null;
+
+    function generateAndShowQrBatch(book) {
+      currentQrBook = book;
+      const total = book.total_copies || 1;
+
+      document.getElementById('qrModalTitle').innerText = book.title;
+      document.getElementById('qrModalAcc').innerText = book.accession_no;
+      document.getElementById('qrModalCallNum').innerText = book.call_number || 'General Collection';
+      document.getElementById('qrModalCopiesCount').innerText = `${total} ${total === 1 ? 'Copy' : 'Copies'}`;
+
+      // Reset quantity controls
+      document.getElementById('adminQrQtyInput').value = total;
+      document.getElementById('adminQrStartCopy').value = 1;
+      document.getElementById('adminPresetAllLabel').innerText = total;
+
+      renderAdminConfiguredQrLabels();
+      document.getElementById('qrBatchModal').classList.add('open');
+    }
+
+    function adjustAdminQrQty(delta) {
+      const inp = document.getElementById('adminQrQtyInput');
+      let val = parseInt(inp.value) || 1;
+      val = Math.max(1, Math.min(999, val + delta));
+      inp.value = val;
+      onAdminQrQtyChange();
+    }
+
+    function setAdminQrQtyPreset(val) {
+      const total = currentQrBook ? (currentQrBook.total_copies || 1) : 1;
+      document.getElementById('adminQrQtyInput').value = (val === 'all') ? total : Math.min(val, total);
+      document.getElementById('adminQrStartCopy').value = 1;
+      onAdminQrQtyChange();
+    }
+
+    function onAdminQrQtyChange() {
+      renderAdminConfiguredQrLabels();
+    }
+
+    function renderAdminConfiguredQrLabels() {
+      if (!currentQrBook) return;
+      const book = currentQrBook;
+      const total = book.total_copies || 1;
+
+      let qty = Math.max(1, parseInt(document.getElementById('adminQrQtyInput').value) || 1);
+      let startCopy = Math.max(1, parseInt(document.getElementById('adminQrStartCopy').value) || 1);
+      // Clamp so we don't go past total_copies
+      if (startCopy > total) startCopy = total;
+      if (startCopy + qty - 1 > total) qty = total - startCopy + 1;
+
+      // Update print button counter
+      document.getElementById('lblAdminPrintCount').innerText = qty;
+
+      const container = document.getElementById('qrBatchContainer');
+      container.innerHTML = '';
+
+      for (let i = 0; i < qty; i++) {
+        const copyIdx = startCopy + i;
+        const copySuffix = total === 1 ? book.accession_no : `${book.accession_no}-C${String(copyIdx).padStart(2, '0')}`;
+        const copyNumLabel = `Copy ${String(copyIdx).padStart(2, '0')} of ${String(total).padStart(2, '0')}`;
+        const cardId = `qrAdminCanvas_${book.id}_${copyIdx}`;
+
+        const card = document.createElement('div');
+        card.className = 'qr-copy-card';
+        card.innerHTML = `
+          <div class="qr-copy-header">
+            <i class="fa-solid fa-university"></i> EVSU-OC SMARTLIB
+          </div>
+          <div class="qr-copy-title" title="${escapeHtml(book.title)}">${escapeHtml(book.title)}</div>
+          <div class="qr-copy-meta">${escapeHtml(book.call_number || book.category)}</div>
+          <div class="qr-canvas-holder" id="${cardId}"></div>
+          <div class="qr-copy-code">${escapeHtml(copySuffix)}</div>
+          <div class="qr-copy-badge">${copyNumLabel}</div>
+        `;
+        container.appendChild(card);
+
+        setTimeout(() => {
+          const holder = document.getElementById(cardId);
+          if (holder) {
+            holder.innerHTML = '';
+            if (window.QRCode) {
+              new QRCode(holder, {
+                text: copySuffix,
+                width: 95,
+                height: 95,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.M
+              });
+            } else {
+              holder.innerHTML = `<i class="fa-solid fa-qrcode" style="font-size:50px; color:#800000;"></i>`;
+            }
+          }
+        }, 40 * (i + 1));
+      }
+    }
+
+    function closeQrBatchModal() {
+      document.getElementById('qrBatchModal').classList.remove('open');
+    }
+
+    function printQrBatchLabels() {
+      window.print();
+    }
+
+    // ── CIRCULATION DESK (HANDS-FREE SCANNER WORKFLOW) ─────────────
+    let currentCircMode = 'borrow';
+    let verifiedPatron = null;
+    let verifiedBook = null;
+    let circSessionCount = 0;
+
+    function playScannerBeep(type = 'success') {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (type === 'success') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.18, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.22);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.22);
+        } else if (type === 'warning') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(320, ctx.currentTime);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.35);
+        } else {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(240, ctx.currentTime);
+          gain.gain.setValueAtTime(0.22, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.32);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.32);
+        }
+      } catch (e) { console.warn('Audio feedback unavailable', e); }
+    }
+
+    function initCirculationDesk() {
+      const pInp = document.getElementById('circBorrowPatron');
+      const bInp = document.getElementById('circBorrowBook');
+      const rInp = document.getElementById('circReturnBook');
+
+      if (pInp && !pInp.dataset.bound) {
+        pInp.dataset.bound = 'true';
+        pInp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handlePatronScanSubmit();
+          }
+        });
+      }
+
+      if (bInp && !bInp.dataset.bound) {
+        bInp.dataset.bound = 'true';
+        bInp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleBookScanSubmit();
+          }
+        });
+      }
+
+      if (rInp && !rInp.dataset.bound) {
+        rInp.dataset.bound = 'true';
+        rInp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            executeReturnDesk();
+          }
+        });
+      }
+
+      focusActiveCircInput();
+    }
+
+    function focusActiveCircInput() {
+      setTimeout(() => {
+        if (currentCircMode === 'borrow') {
+          const p = document.getElementById('circBorrowPatron');
+          if (p) p.focus();
+        } else {
+          const r = document.getElementById('circReturnBook');
+          if (r) r.focus();
+        }
+      }, 80);
+    }
+
+    function setCircMode(mode) {
+      currentCircMode = mode;
+      const btnB = document.getElementById('btnCircModeBorrow');
+      const btnR = document.getElementById('btnCircModeReturn');
+      const viewB = document.getElementById('circBorrowView');
+      const viewR = document.getElementById('circReturnView');
+
+      if (mode === 'borrow') {
+        btnB.className = 'btn btn-gold btn-sm';
+        btnR.className = 'btn btn-outline btn-sm';
+        viewB.style.display = 'block';
+        viewR.style.display = 'none';
+      } else {
+        btnB.className = 'btn btn-outline btn-sm';
+        btnR.className = 'btn btn-gold btn-sm';
+        viewB.style.display = 'none';
+        viewR.style.display = 'block';
+      }
+      focusActiveCircInput();
+    }
+
+    async function handlePatronScanSubmit() {
+      const input = document.getElementById('circBorrowPatron');
+      const val = (input.value || '').trim();
+      if (!val) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/circulation/patron/${encodeURIComponent(val)}`, { headers: getAuthHeaders() });
+        const data = await res.json();
+
+        const badge = document.getElementById('circPatronBadge');
+        if (data.found) {
+          verifiedPatron = data;
+          document.getElementById('patronBadgeName').innerText = `${data.full_name} (${data.username})`;
+          document.getElementById('patronBadgeDetails').innerText = `${data.role} • ${data.department} • Active Loans: ${data.active_loans_count}/${data.max_allowed || (data.role === 'faculty' ? 5 : 3)}`;
+          
+          const statusElem = document.getElementById('patronBadgeStatus');
+          statusElem.innerText = data.status_tag;
+          statusElem.className = data.can_borrow ? 'badge badge-success' : 'badge badge-danger';
+          badge.style.display = 'block';
+
+          if (data.can_borrow) {
+            playScannerBeep('success');
+            toast(`Patron ${data.full_name || data.username} verified!`, 'success');
+            const bookInput = document.getElementById('circBorrowBook');
+            if (bookInput) {
+              bookInput.focus();
+              bookInput.select();
+            }
+          } else {
+            playScannerBeep('warning');
+            toast(data.status_tag, 'warning');
+          }
+        } else {
+          verifiedPatron = null;
+          badge.style.display = 'none';
+          playScannerBeep('error');
+          toast(data.message || 'Patron not registered', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function handleBookScanSubmit() {
+      const input = document.getElementById('circBorrowBook');
+      const val = (input.value || '').trim();
+      if (!val) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/circulation/book/${encodeURIComponent(val)}`, { headers: getAuthHeaders() });
+        const data = await res.json();
+
+        const badge = document.getElementById('circBookBadge');
+        if (data.found) {
+          verifiedBook = data;
+          document.getElementById('bookBadgeTitle').innerText = `${data.title}`;
+          document.getElementById('bookBadgeMeta').innerText = `Acc: ${data.accession_no} • Call: ${data.call_number} • ${data.category}`;
+          
+          const statusElem = document.getElementById('bookBadgeCopies');
+          statusElem.innerText = `${data.available_copies}/${data.total_copies} Avail`;
+          statusElem.className = data.is_available ? 'badge badge-success' : 'badge badge-danger';
+          badge.style.display = 'block';
+
+          if (data.is_available) {
+            if (verifiedPatron && verifiedPatron.can_borrow) {
+              await executeBorrowDesk();
+            } else {
+              playScannerBeep('success');
+              toast('Book verified! Please scan student ID.', 'info');
+              document.getElementById('circBorrowPatron').focus();
+            }
+          } else {
+            playScannerBeep('warning');
+            toast('All copies of this book are currently on loan', 'warning');
+          }
+        } else {
+          verifiedBook = null;
+          badge.style.display = 'none';
+          playScannerBeep('error');
+          toast(data.message || 'Book tag not found in catalog', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function executeBorrowDesk() {
+      const patronId = verifiedPatron ? verifiedPatron.username : (document.getElementById('circBorrowPatron').value || '').trim();
+      const bookAcc = verifiedBook ? verifiedBook.accession_no : (document.getElementById('circBorrowBook').value || '').trim();
+
+      if (!patronId) {
+        toast('Please scan or enter student ID', 'warning');
+        document.getElementById('circBorrowPatron').focus();
+        return;
+      }
+      if (!bookAcc) {
+        toast('Please scan book 2D QR code', 'warning');
+        document.getElementById('circBorrowBook').focus();
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/circulation/execute`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ mode: 'borrow', patron_id: patronId, accession_no: bookAcc })
+        });
+        const data = await res.json();
+
+        const receipt = document.getElementById('circReceiptCard');
+        if (data.status === 'success') {
+          playScannerBeep('success');
+          receipt.className = 'scanner-terminal success';
+          receipt.innerHTML = `
+            <i class="fa-solid fa-circle-check text-success" style="font-size:46px; margin-bottom:10px;"></i>
+            <h3 style="color:var(--success); font-size:17px; margin-bottom:4px;">Checkout Complete!</h3>
+            <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${escapeHtml(data.book_title || bookAcc)}</div>
+            <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:10px;">
+              Issued to: <strong style="color:var(--evsu-gold);">${escapeHtml(data.patron_name || patronId)}</strong><br>
+              Due Date: <span class="badge badge-gold" style="font-size:12px;">${escapeHtml(data.due_date || 'In 7 Days')}</span>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="resetCircDesk()"><i class="fa-solid fa-plus"></i> Next Checkout</button>
+          `;
+          toast(`Issued to ${data.patron_name || patronId}!`, 'success');
+          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'in 7d'}`);
+          
+          document.getElementById('circBorrowPatron').value = '';
+          document.getElementById('circBorrowBook').value = '';
+          document.getElementById('circPatronBadge').style.display = 'none';
+          document.getElementById('circBookBadge').style.display = 'none';
+          verifiedPatron = null;
+          verifiedBook = null;
+          document.getElementById('circBorrowPatron').focus();
+        } else {
+          playScannerBeep('error');
+          receipt.className = 'scanner-terminal error';
+          receipt.innerHTML = `
+            <i class="fa-solid fa-circle-xmark text-danger" style="font-size:46px; margin-bottom:10px;"></i>
+            <h3 style="color:var(--danger); font-size:17px; margin-bottom:4px;">Checkout Blocked</h3>
+            <p style="font-size:12.5px; color:var(--text-muted); max-width:300px;">${escapeHtml(data.message)}</p>
+          `;
+          toast(data.message || 'Checkout failed', 'danger');
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function executeReturnDesk() {
+      const bookAcc = (document.getElementById('circReturnBook').value || '').trim();
+      if (!bookAcc) {
+        toast('Please scan book 2D QR code label', 'warning');
+        document.getElementById('circReturnBook').focus();
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/circulation/execute`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ mode: 'return', accession_no: bookAcc })
+        });
+        const data = await res.json();
+
+        const receipt = document.getElementById('circReceiptCard');
+        if (data.status === 'success') {
+          playScannerBeep('success');
+          receipt.className = 'scanner-terminal success';
+          receipt.innerHTML = `
+            <i class="fa-solid fa-circle-check text-success" style="font-size:46px; margin-bottom:10px;"></i>
+            <h3 style="color:var(--success); font-size:17px; margin-bottom:4px;">Book Returned to Shelf</h3>
+            <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${escapeHtml(data.book_title || bookAcc)}</div>
+            <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:10px;">
+              ${data.patron_name ? 'Returned by: <strong style="color:var(--evsu-gold);">' + escapeHtml(data.patron_name) + '</strong> (On Time)' : 'Copy restored to active holdings.'}
+            </div>
+            <span class="badge badge-success" style="font-size:11.5px;"><i class="fa-solid fa-check"></i> Available on Shelf</span>
+          `;
+          toast(`"${data.book_title || bookAcc}" returned!`, 'success');
+          addCircSessionEntry('Return', data.book_title || bookAcc, data.patron_name || 'Shelf', 'On Time');
+        } else if (data.status === 'warning') {
+          playScannerBeep('warning');
+          receipt.className = 'scanner-terminal warning';
+          receipt.innerHTML = `
+            <i class="fa-solid fa-triangle-exclamation text-warning" style="font-size:46px; margin-bottom:10px;"></i>
+            <h3 style="color:var(--warning); font-size:17px; margin-bottom:4px;">Overdue Return</h3>
+            <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${escapeHtml(data.book_title || bookAcc)}</div>
+            <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:10px;">
+              Returned late by <strong style="color:var(--evsu-gold);">${escapeHtml(data.patron_name || 'Patron')}</strong>.<br>
+              <span class="badge badge-warning" style="font-size:12px; margin-top:6px;">₱${(data.fine || 50).toFixed(2)} Fine Applied</span>
+            </div>
+          `;
+          toast(`Overdue return fine applied: ₱${(data.fine || 50).toFixed(2)}`, 'warning');
+          addCircSessionEntry('Late Return', data.book_title || bookAcc, data.patron_name || 'Patron', `Fine ₱${(data.fine || 50).toFixed(2)}`);
+        } else {
+          playScannerBeep('error');
+          receipt.className = 'scanner-terminal error';
+          receipt.innerHTML = `
+            <i class="fa-solid fa-circle-xmark text-danger" style="font-size:46px; margin-bottom:10px;"></i>
+            <h3 style="color:var(--danger); font-size:17px; margin-bottom:4px;">Return Error</h3>
+            <p style="font-size:12.5px; color:var(--text-muted); max-width:300px;">${escapeHtml(data.message)}</p>
+          `;
+          toast(data.message || 'Return failed', 'danger');
+        }
+
+        const rInp = document.getElementById('circReturnBook');
+        rInp.value = '';
+        rInp.focus();
+      } catch (err) { console.error(err); }
+    }
+
+    function addCircSessionEntry(type, title, patron, extra) {
+      circSessionCount++;
+      document.getElementById('circSessionCount').innerText = `${circSessionCount} Completed`;
+      const list = document.getElementById('circSessionList');
+      if (circSessionCount === 1) list.innerHTML = '';
+
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const badgeClass = type === 'Borrow' ? 'badge-gold' : type === 'Return' ? 'badge-success' : 'badge-warning';
+      const item = document.createElement('div');
+      item.style.cssText = 'padding:6px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; display:flex; justify-content:space-between; align-items:center;';
+      item.innerHTML = `
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:65%;">
+          <span class="badge ${badgeClass}" style="font-size:10px; padding:2px 6px;">${escapeHtml(type)}</span>
+          <strong style="color:var(--text-main); font-size:11.5px; margin-left:4px;">${escapeHtml(title)}</strong>
+          <span style="color:var(--text-muted); font-size:11px;">(${escapeHtml(patron)})</span>
+        </div>
+        <div style="font-size:11px; color:var(--text-muted); text-align:right;">
+          <span>${escapeHtml(extra)}</span> • <span>${escapeHtml(time)}</span>
+        </div>
+      `;
+      list.prepend(item);
+    }
+
+    function resetCircDesk() {
+      document.getElementById('circBorrowPatron').value = '';
+      document.getElementById('circBorrowBook').value = '';
+      document.getElementById('circReturnBook').value = '';
+      document.getElementById('circPatronBadge').style.display = 'none';
+      document.getElementById('circBookBadge').style.display = 'none';
+      verifiedPatron = null;
+      verifiedBook = null;
+
+      const receipt = document.getElementById('circReceiptCard');
+      receipt.className = 'scanner-terminal';
+      receipt.innerHTML = `
+        <i class="fa-solid fa-qrcode" style="font-size:46px; color:var(--text-muted); margin-bottom:12px;"></i>
+        <h4 style="font-size:15px; font-weight:700;">Circulation Desk Ready</h4>
+        <p style="font-size:12px; color:var(--text-muted); max-width:320px; margin-top:4px;">
+          Place student ID or book 2D QR sticker under the scanner stand. Beep audio feedback is enabled.
+        </p>
+      `;
+      focusActiveCircInput();
+    }
+
+    async function loadLogs() {
+      try {
+        const [auditRes, smtpRes] = await Promise.all([
+          fetch(`${API_BASE}/admin/logs/audit`, { headers: getAuthHeaders() }),
+          fetch(`${API_BASE}/admin/logs/smtp`, { headers: getAuthHeaders() })
+        ]);
+        if (auditRes.ok) {
+          const logs = await auditRes.json();
+          const tbody = document.getElementById('fullAuditTable').getElementsByTagName('tbody')[0];
+          tbody.innerHTML = '';
+          logs.forEach(l => {
+            const row = tbody.insertRow();
+            row.innerHTML = `<td>${escapeHtml(l.timestamp.substring(0, 19).replace('T', ' '))}</td><td>${escapeHtml(l.user_name)}</td><td>${escapeHtml(l.event)}</td><td><span class="badge badge-success">${escapeHtml(l.status)}</span></td>`;
+          });
+        }
+        if (smtpRes.ok) {
+          const logs = await smtpRes.json();
+          const tbody = document.getElementById('smtpTable').getElementsByTagName('tbody')[0];
+          tbody.innerHTML = '';
+          logs.forEach(l => {
+            const row = tbody.insertRow();
+            row.innerHTML = `<td>${escapeHtml(l.recipient)}</td><td>${escapeHtml(l.event_type)}</td><td>${escapeHtml(l.subject)}</td><td><span class="badge badge-success">${escapeHtml(l.status)}</span></td>`;
+          });
+        }
+      } catch (err) { console.error(err); }
+    }
+
+    async function loadFeedbacks() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/feedbacks`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const items = await res.json();
+        const tbody = document.getElementById('feedbackTable').getElementsByTagName('tbody')[0];
+        tbody.innerHTML = '';
+        items.forEach(f => {
+          const row = tbody.insertRow();
+          row.innerHTML = `<td>${escapeHtml(f.created_at.substring(0, 10))}</td><td><strong>${escapeHtml(f.name)}</strong></td><td>${escapeHtml(f.email)}</td><td><span class="badge badge-gold">${escapeHtml(f.category)}</span></td><td>${escapeHtml(f.message)}</td>`;
+        });
+      } catch (err) { console.error(err); }
+    }
+
+    function initChart() {
+      const ctx = document.getElementById('adminChart');
+      if (!ctx || typeof Chart === 'undefined') return;
+      try {
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: ['Term 1', 'Term 2', 'Term 3', 'Term 4', 'Term 5', 'Term 6'],
+            datasets: [{ label: 'Circulation Volume', data: [180, 320, 450, 390, 580, 640], borderColor: '#d4af37', backgroundColor: 'rgba(212, 175, 55, 0.1)', fill: true, tension: 0.4 }]
+          },
+          options: { responsive: true, plugins: { legend: { labels: { color: '#d4af37' } } }, scales: { x: { grid: { color: '#232a3b' }, ticks: { color: '#8c96a6' } }, y: { grid: { color: '#232a3b' }, ticks: { color: '#8c96a6' } } } }
+        });
+      } catch (err) { console.warn('Chart rendering error:', err); }
+    }
+
+    function toast(msg, type = 'info') {
+      const box = document.getElementById('toastBox');
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      const icon = type === 'success' ? 'fa-circle-check' : type === 'danger' ? 'fa-circle-exclamation' : 'fa-circle-info';
+      el.innerHTML = `<i class="fa-solid fa-${icon}"></i> <span></span>`;
+      el.querySelector('span').textContent = msg;
+      box.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; setTimeout(() => el.remove(), 250); }, 3000);
+    }
+
+    // INITIALIZATION
+    (async () => {
+      const activeTok = getActiveToken();
+      if (!activeTok) { window.location.href = '/login.html'; return; }
+      
+      let currentUser;
+      try {
+        const response = await fetch('/auth/me', { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error('Unauthorized');
+        currentUser = await response.json();
+        const role = (currentUser.role || '').toLowerCase();
+        if (!['superadmin', 'admin'].includes(role)) throw new Error('Forbidden');
+      } catch (authErr) {
+        console.error('Admin authentication guard failed:', authErr);
+        handleLogout();
+        return;
+      }
+
+      // Authenticated successfully
+      resetIdleLogout();
+      try { await loadAdminProfile(); } catch (e) { console.error('Admin profile error:', e); }
+      try { await loadDashStats(); } catch (e) { console.error('Dashboard stats error:', e); }
+      try { initChart(); } catch (e) { console.error('Chart init error:', e); }
+    })();
+  </script>
+</body>
+</html>

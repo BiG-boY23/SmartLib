@@ -1,0 +1,2532 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="/mobile-assets/evsu-smartlib-icon.png" type="image/png">
+  <title>EVSU SmartLib — Integrated Library Management System</title>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --maroon: #800000;
+      --maroon-dark: #5c0000;
+      --maroon-light: #a50000;
+      --gold: #d4af37;
+      --gold-light: #f3e5ab;
+      --bg: #0b0d12;
+      --bg-card: #161b26;
+      --bg-card-2: #1c2230;
+      --bg-input: #0a0c10;
+      --text: #f8f9fa;
+      --text-muted: #8c96a6;
+      --text-light: #556070;
+      --border: #232a3b;
+      --border-gold: rgba(212, 175, 55, 0.25);
+      --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.5);
+      --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.6);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-xl: 20px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2d3748;
+      border-radius: 3px;
+    }
+
+    /* ==============================
+       HEADER / NAV
+       ============================== */
+    header.nav-header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: rgba(11, 13, 18, 0.88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      height: 68px;
+      display: flex;
+      align-items: center;
+      padding: 0 48px;
+      justify-content: space-between;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--maroon);
+      border: 1.5px solid var(--gold);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: var(--gold);
+      box-shadow: 0 3px 12px rgba(128, 0, 0, 0.35);
+      overflow: hidden;
+    }
+    .brand-icon img { width:100%; height:100%; object-fit:cover; border-radius:inherit; }
+
+    .brand-text h1 {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: var(--text);
+    }
+
+    .brand-text span {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      display: block;
+    }
+
+    nav.nav-links {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+    }
+
+    nav.nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    nav.nav-links a:hover {
+      color: var(--gold);
+    }
+
+    .btn-staff-login {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      background: var(--maroon);
+      color: #fff;
+      border: 1px solid var(--gold);
+      border-radius: 9px;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 3px 12px rgba(128, 0, 0, 0.3);
+    }
+
+    .btn-staff-login:hover {
+      background: var(--maroon-light);
+      box-shadow: 0 5px 18px rgba(128, 0, 0, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .nav-toggle {
+      display: none;
+      background: none;
+      border: none;
+      font-size: 20px;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    /* ==============================
+       HERO SECTION
+       ============================== */
+    .hero-section {
+      padding: 90px 48px 0;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(180deg, #0d1018 0%, var(--bg) 100%);
+    }
+
+    .hero-blob-1 {
+      position: absolute;
+      top: -80px;
+      right: -80px;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(128, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0) 70%);
+      pointer-events: none;
+    }
+
+    .hero-blob-2 {
+      position: absolute;
+      bottom: 0;
+      left: -100px;
+      width: 420px;
+      height: 420px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(212, 175, 55, 0.08) 0%, rgba(0, 0, 0, 0) 70%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      background: rgba(128, 0, 0, 0.2);
+      border: 1px solid rgba(128, 0, 0, 0.35);
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--gold-light);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 22px;
+    }
+
+    .hero-badge span {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      background: var(--gold);
+      border-radius: 50%;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0.3
+      }
+    }
+
+    .hero-title {
+      font-size: 48px;
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      margin-bottom: 18px;
+      color: var(--text);
+    }
+
+    .hero-title .highlight {
+      color: var(--gold);
+    }
+
+    .hero-desc {
+      font-size: 15.5px;
+      color: var(--text-muted);
+      max-width: 520px;
+      line-height: 1.7;
+      margin-bottom: 36px;
+    }
+
+    .hero-cta-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 26px;
+      background: var(--maroon);
+      color: #fff;
+      border: 1px solid var(--gold);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 16px rgba(128, 0, 0, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: var(--maroon-light);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(128, 0, 0, 0.45);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 24px;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border-gold);
+      color: var(--gold);
+    }
+
+    .hero-stats-row {
+      display: flex;
+      gap: 32px;
+      margin-top: 40px;
+      flex-wrap: wrap;
+    }
+
+    .hero-stat .num {
+      font-size: 26px;
+      font-weight: 900;
+      color: var(--gold);
+      letter-spacing: -1px;
+    }
+
+    .hero-stat .label {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Hero Visual Card */
+    .hero-visual {
+      position: relative;
+      padding-bottom: 40px;
+    }
+
+    .hero-visual-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+
+    .hero-img-block {
+      background: linear-gradient(135deg, #800000 0%, #a50000 50%, #5c0000 100%);
+      height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-img-overlay {
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .hero-img-icons {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .hero-img-icons i {
+      font-size: 52px;
+      color: rgba(255, 255, 255, 0.85);
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .hero-img-icons p {
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0.75;
+      letter-spacing: 0.5px;
+    }
+
+    .hero-card-body {
+      padding: 22px 24px;
+    }
+
+    .hero-card-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .hero-card-chip {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chip-green {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .chip-blue {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+
+    .chip-amber {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    .hero-mini-stat-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .hero-mini-stat {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      text-align: center;
+    }
+
+    .hero-mini-stat .val {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--gold);
+    }
+
+    .hero-mini-stat .lbl {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .float-badge {
+      position: absolute;
+      bottom: 0;
+      right: -14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 16px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .float-badge-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      background: rgba(16, 185, 129, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #34d399;
+      font-size: 15px;
+    }
+
+    /* ==============================
+       SECTION LAYOUT
+       ============================== */
+    .section-wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 80px 48px;
+    }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0 48px;
+    }
+
+    .section-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin-bottom: 14px;
+    }
+
+    .tag-gold {
+      background: rgba(212, 175, 55, 0.12);
+      color: var(--gold);
+      border: 1px solid var(--border-gold);
+    }
+
+    .section-title {
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: -0.8px;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .section-sub {
+      font-size: 15px;
+      color: var(--text-muted);
+      max-width: 600px;
+    }
+
+    .section-head-row {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 48px;
+    }
+
+    /* ==============================
+       FEATURES STRIP
+       ============================== */
+    .features-strip {
+      background: var(--maroon);
+      padding: 50px 48px;
+    }
+
+    .features-strip-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    .feature-item {
+      text-align: center;
+      padding: 24px 20px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: background 0.2s;
+    }
+
+    .feature-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .feature-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      background: rgba(212, 175, 55, 0.18);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: var(--gold);
+      margin: 0 auto 14px;
+    }
+
+    .feature-item h4 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+
+    .feature-item p {
+      font-size: 12.5px;
+      color: rgba(255, 255, 255, 0.55);
+      line-height: 1.5;
+    }
+
+    /* ==============================
+       POLICIES
+       ============================== */
+    .policies-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
+    }
+
+    .policy-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.25s ease;
+    }
+
+    .policy-card:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--border-gold);
+    }
+
+    .policy-icon-wrap {
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      background: rgba(128, 0, 0, 0.25);
+      border: 1px solid rgba(128, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: var(--gold);
+      margin-bottom: 18px;
+    }
+
+    .policy-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+
+    .policy-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .policy-list li {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      line-height: 1.5;
+    }
+
+    .policy-list li::before {
+      content: '';
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      background: var(--gold);
+      border-radius: 50%;
+      margin-top: 7px;
+      flex-shrink: 0;
+    }
+
+    .policy-tag {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: rgba(212, 175, 55, 0.1);
+      color: var(--gold);
+      border: 1px solid var(--border-gold);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+
+    /* ==============================
+       FAQ ACCORDION
+       ============================== */
+    .faq-section-bg {
+      background: var(--bg-card);
+    }
+
+    .faq-wrapper {
+      max-width: 820px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .faq-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .faq-item:hover {
+      border-color: var(--border-gold);
+    }
+
+    .faq-item.open {
+      border-color: var(--border-gold);
+      box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
+    }
+
+    .faq-q {
+      padding: 18px 22px;
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      color: var(--text);
+    }
+
+    .faq-q .icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: var(--bg-card-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gold);
+      font-size: 13px;
+      transition: all 0.25s;
+      flex-shrink: 0;
+    }
+
+    .faq-item.open .faq-q .icon {
+      background: rgba(128, 0, 0, 0.3);
+      transform: rotate(180deg);
+    }
+
+    .faq-a {
+      padding: 0 22px 18px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.65;
+      display: none;
+    }
+
+    .faq-item.open .faq-a {
+      display: block;
+    }
+
+    /* ==============================
+       FEEDBACK FORM
+       ============================== */
+    .feedback-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+
+    .feedback-info h3 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .feedback-info p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.65;
+      margin-bottom: 20px;
+    }
+
+    .feedback-contact-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+
+    .fc-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: rgba(128, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gold);
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .feedback-form-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 30px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 7px;
+    }
+
+    .form-control,
+    .form-select {
+      width: 100%;
+      padding: 11px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 13.5px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
+    }
+
+    .form-control.textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    .form-select option {
+      background: var(--bg-card);
+      color: var(--text);
+    }
+
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .btn-submit-form {
+      width: 100%;
+      padding: 12px;
+      background: var(--maroon);
+      color: #fff;
+      border: 1px solid var(--gold);
+      border-radius: 9px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 4px;
+      box-shadow: 0 3px 12px rgba(128, 0, 0, 0.3);
+    }
+
+    .btn-submit-form:hover {
+      background: var(--maroon-light);
+      box-shadow: 0 5px 18px rgba(128, 0, 0, 0.4);
+    }
+
+    .form-success {
+      display: none;
+      padding: 14px 16px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 9px;
+      color: #34d399;
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 12px;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .form-success.show {
+      display: flex;
+    }
+
+    /* ==============================
+       CTA BAND
+       ============================== */
+    .cta-band {
+      background: linear-gradient(135deg, var(--maroon) 0%, #5c0000 100%);
+      margin: 0 48px;
+      border-radius: var(--radius-xl);
+      padding: 56px 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      box-shadow: 0 16px 48px rgba(128, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(212, 175, 55, 0.2);
+    }
+
+    .cta-band::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M20 20c0-11.046 8.954-20 20-20v20H20zM0 20C0 8.954 8.954 0 20 0v20H0z'/%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+    }
+
+    .cta-band-text {
+      position: relative;
+      z-index: 1;
+    }
+
+    .cta-band-text h2 {
+      font-size: 28px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    .cta-band-text p {
+      font-size: 14.5px;
+      color: rgba(255, 255, 255, 0.7);
+      max-width: 560px;
+    }
+
+    .btn-cta-gold {
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 28px;
+      background: var(--gold);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 16px rgba(212, 175, 55, 0.35);
+    }
+
+    .btn-cta-gold:hover {
+      background: var(--gold-light);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 22px rgba(212, 175, 55, 0.45);
+    }
+
+    /* ==============================
+       FOOTER
+       ============================== */
+    footer {
+      background: #080a0e;
+      color: var(--text-muted);
+      padding: 50px 48px 30px;
+      margin-top: 80px;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .footer-top {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 40px;
+      margin-bottom: 36px;
+    }
+
+    .footer-brand h4 {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .footer-brand p {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .footer-col h5 {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--text-light);
+      margin-bottom: 14px;
+    }
+
+    .footer-col a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      margin-bottom: 8px;
+      transition: color 0.2s;
+    }
+
+    .footer-col a:hover {
+      color: var(--gold);
+    }
+
+    .footer-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+
+    .footer-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .footer-bottom .logo-sm {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .footer-bottom .logo-sm span {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    /* ==============================
+       CHATBOT WIDGET
+       ============================== */
+    .chatbot-fab {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--maroon), #a50000);
+      border: 2px solid var(--gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 5000;
+      box-shadow: 0 6px 24px rgba(128, 0, 0, 0.5);
+      transition: all 0.25s ease;
+    }
+
+    .chatbot-fab:hover {
+      transform: scale(1.1);
+      box-shadow: 0 8px 32px rgba(128, 0, 0, 0.6);
+    }
+
+    .chatbot-fab i {
+      font-size: 22px;
+      color: #fff;
+      transition: transform 0.3s;
+    }
+
+    .chatbot-fab.open i {
+      transform: rotate(180deg);
+    }
+
+    .chatbot-panel {
+      position: fixed;
+      bottom: 96px;
+      right: 28px;
+      width: 340px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow-lg);
+      z-index: 4999;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      font-size: 14px;
+      animation: slideUp 0.25s ease;
+    }
+
+    .chatbot-panel.open {
+      display: flex;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .chatbot-header {
+      background: var(--maroon);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chatbot-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(212, 175, 55, 0.2);
+      border: 1.5px solid var(--gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: var(--gold);
+    }
+
+    .chatbot-header-info h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .chatbot-header-info p {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .chatbot-online {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .chatbot-body {
+      height: 280px;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chatbot-body::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .chatbot-body::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .chat-msg {
+      max-width: 85%;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .chat-msg.bot {
+      align-self: flex-start;
+    }
+
+    .chat-msg.user {
+      align-self: flex-end;
+    }
+
+    .chat-bubble {
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .chat-msg.bot .chat-bubble {
+      background: var(--bg-card-2);
+      color: var(--text);
+      border-radius: 4px 14px 14px 14px;
+    }
+
+    .chat-msg.user .chat-bubble {
+      background: var(--maroon);
+      color: #fff;
+      border-radius: 14px 4px 14px 14px;
+    }
+
+    .chat-time {
+      font-size: 10px;
+      color: var(--text-light);
+    }
+
+    .chatbot-suggestions {
+      padding: 0 16px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .chat-chip {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 500;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chat-chip:hover {
+      background: rgba(128, 0, 0, 0.2);
+      border-color: var(--border-gold);
+      color: var(--gold);
+    }
+
+    .chatbot-footer {
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chatbot-input {
+      flex: 1;
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      background: var(--bg-input);
+      color: var(--text);
+      transition: border-color 0.2s;
+    }
+
+    .chatbot-input:focus {
+      border-color: var(--border-gold);
+    }
+
+    .chatbot-send {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--maroon);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .chatbot-send:hover {
+      background: var(--maroon-light);
+    }
+
+    /* ==============================
+       HERO EMBLEM & LOGO STYLING
+       ============================== */
+    .hero-emblem-wrap {
+      position: relative;
+      z-index: 1;
+      width: 160px;
+      height: 160px;
+      margin: 0 auto;
+      border-radius: 50%;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 25px rgba(212, 175, 55, 0.4);
+      border: 3px solid var(--gold);
+      overflow: hidden;
+      background: var(--bg-card);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .hero-emblem-wrap:hover {
+      transform: scale(1.05);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.8), 0 0 35px rgba(212, 175, 55, 0.6);
+    }
+
+    .hero-emblem-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .hero-emblem-motto {
+      position: relative;
+      z-index: 1;
+      margin-top: 14px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--gold);
+      text-align: center;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    }
+
+    /* ==============================
+       DYNAMIC BOOK CATALOG
+       ============================== */
+    .catalog-controls-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .catalog-search-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .catalog-search-wrap .search-icon {
+      position: absolute;
+      left: 18px;
+      font-size: 16px;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .catalog-search-input {
+      width: 100%;
+      height: 52px;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0 48px 0 50px;
+      color: var(--text);
+      font-size: 14.5px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .catalog-search-input:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.18);
+      background: #11141c;
+    }
+
+    .catalog-clear-btn {
+      position: absolute;
+      right: 14px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 15px;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 6px;
+    }
+
+    .catalog-clear-btn:hover {
+      color: var(--text);
+    }
+
+    .catalog-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: thin;
+    }
+
+    .cat-pill {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: inherit;
+    }
+
+    .cat-pill:hover {
+      background: rgba(212, 175, 55, 0.1);
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .cat-pill.active {
+      background: var(--maroon);
+      border-color: var(--gold);
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(128, 0, 0, 0.4);
+    }
+
+    .books-catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .catalog-book-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: all 0.25s ease;
+      overflow: hidden;
+    }
+
+    .catalog-book-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(212, 175, 55, 0.4);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(212, 175, 55, 0.1);
+    }
+
+    .catalog-book-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--maroon), var(--gold));
+      opacity: 0.8;
+    }
+
+    .book-meta-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 8px;
+    }
+
+    .book-category-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--gold);
+      background: rgba(212, 175, 55, 0.12);
+      border: 1px solid rgba(212, 175, 55, 0.25);
+      padding: 3px 10px;
+      border-radius: 12px;
+    }
+
+    .book-acc-badge {
+      font-size: 11.5px;
+      font-family: monospace;
+      color: var(--text-muted);
+      background: var(--bg-card-2);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .book-card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+
+    .book-card-author {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 16px;
+    }
+
+    .book-details-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 12px 14px;
+      background: var(--bg-card-2);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      margin-bottom: 18px;
+      font-size: 12px;
+    }
+
+    .book-detail-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+    }
+
+    .book-detail-row strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .book-card-footer {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 20px;
+    }
+
+    .status-pill.available {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-pill.loaned {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    /* ==============================
+       RESPONSIVE
+       ============================== */
+    @media (max-width: 1024px) {
+      .hero-inner {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+
+      .hero-visual {
+        display: none;
+      }
+
+      .policies-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .features-strip-inner {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .footer-top {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      header.nav-header {
+        padding: 0 24px;
+      }
+
+      nav.nav-links {
+        display: none;
+      }
+
+      .nav-toggle {
+        display: block;
+      }
+
+      .hero-section {
+        padding: 60px 24px 0;
+      }
+
+      .hero-title {
+        font-size: 34px;
+      }
+
+      .section-wrapper {
+        padding: 60px 24px;
+      }
+
+      .section-divider {
+        margin: 0 24px;
+      }
+
+      .policies-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .feedback-container {
+        grid-template-columns: 1fr;
+      }
+
+      .features-strip {
+        padding: 40px 24px;
+      }
+
+      .features-strip-inner {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .cta-band {
+        flex-direction: column;
+        margin: 0 24px;
+        padding: 40px 32px;
+      }
+
+      .footer-top {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      footer {
+        padding: 40px 24px 24px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .features-strip-inner {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-stats-row {
+        gap: 20px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ======================== HEADER ======================== -->
+  <header class="nav-header">
+    <a href="#" class="brand-logo">
+      <div class="brand-icon"><img src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"></div>
+      <div class="brand-text">
+        <h1>EVSU-OC SmartLib</h1>
+        <span>Igniting Minds, Inspiring Innovation</span>
+      </div>
+    </a>
+
+    <nav class="nav-links">
+      <a href="#catalog">Book Catalog</a>
+      <a href="#policies">Rules & Policies</a>
+      <a href="#staff">Library Staff</a>
+      <a href="#faq">FAQ</a>
+      <a href="#contact">Contact</a>
+    </nav>
+
+    <a href="login.html" class="btn-staff-login">
+      <i class="fas fa-shield-alt"></i> Staff Login
+    </a>
+
+    <button class="nav-toggle" onclick="toggleMobileNav()"><i class="fas fa-bars"></i></button>
+  </header>
+
+  <!-- ======================== HERO SECTION ======================== -->
+  <section class="hero-section">
+    <div class="hero-blob-1"></div>
+    <div class="hero-blob-2"></div>
+    <div class="hero-inner">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span></span> EVSU-OC Integrated Library System
+        </div>
+        <h1 class="hero-title">
+          Your Gateway to<br>
+          Knowledge &amp; <span class="highlight">Learning</span>
+        </h1>
+        <p class="hero-desc">
+          Discover academic resources, research materials, and library collections at EVSU-OC's modern library
+          management system — connecting readers with knowledge.
+        </p>
+        <div class="hero-cta-row">
+          <a href="#catalog" class="btn-primary">
+            <i class="fas fa-magnifying-glass"></i> Explore Book Catalog
+          </a>
+          <a href="#policies" class="btn-secondary">
+            <i class="fas fa-book-open"></i> Library Policies
+          </a>
+        </div>
+        <div class="hero-stats-row">
+          <div class="hero-stat"><span class="num" id="heroTitlesCount">...</span><span class="label">Cataloged Titles</span></div>
+          <div class="hero-stat"><span class="num">6</span><span class="label">Library Sections</span></div>
+          <div class="hero-stat"><span class="num">7AM–6PM</span><span class="label">Mon–Fri (No Noon Break)</span></div>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="hero-visual-card">
+          <div class="hero-img-block" style="height:auto; min-height:230px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px 20px; background:radial-gradient(circle at center, rgba(128,0,0,0.6) 0%, rgba(11,13,18,0.95) 80%);">
+            <div class="hero-img-overlay"></div>
+            <div class="hero-emblem-wrap">
+              <img src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib Emblem" class="hero-emblem-img">
+            </div>
+            <div class="hero-emblem-motto">
+              <span>Igniting Minds &bull; Inspiring Innovation</span>
+            </div>
+          </div>
+          <div class="hero-card-body">
+            <div class="hero-card-row">
+              <div class="hero-card-chip chip-green"><i class="fas fa-circle-check"></i> Live OPAC Sync</div>
+              <div class="hero-card-chip chip-blue"><i class="fas fa-bolt"></i> Real-time Stock</div>
+            </div>
+            <div class="hero-mini-stat-row">
+              <div class="hero-mini-stat">
+                <div class="val" id="miniStatTitles">--</div>
+                <div class="lbl">Book Titles</div>
+              </div>
+              <div class="hero-mini-stat">
+                <div class="val" id="miniStatAvailable">--</div>
+                <div class="lbl">Available</div>
+              </div>
+              <div class="hero-mini-stat">
+                <div class="val" id="miniStatTotal">--</div>
+                <div class="lbl">Total Copies</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== EVSU QUALITY MISSION BANNER ======================== -->
+  <section style="background: linear-gradient(135deg, rgba(128,0,0,0.25) 0%, rgba(212,175,55,0.1) 100%); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 34px 48px;">
+    <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+      <div style="width: 58px; height: 58px; border-radius: 14px; background: var(--maroon); border: 2px solid var(--gold); display: flex; align-items: center; justify-content: center; font-size: 26px; color: var(--gold); flex-shrink: 0; box-shadow: 0 4px 16px rgba(128,0,0,0.4);">
+        <i class="fas fa-award"></i>
+      </div>
+      <div style="flex: 1; min-width: 280px;">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold); font-weight: 800; margin-bottom: 4px;">
+          <i class="fas fa-certificate"></i> Eastern Visayas State University &bull; Library Quality Mission
+        </div>
+        <p style="font-size: 14.5px; color: #fff; font-weight: 500; line-height: 1.6; font-style: italic;">
+          &ldquo;Complementing the teaching-learning process by providing effective and efficient library resources services to the students, faculty and staff of the University in support of its philosophy, goals and objectives.&rdquo;
+        </p>
+      </div>
+      <div style="display: flex; gap: 10px; flex-shrink: 0;">
+        <span style="background: rgba(212,175,55,0.15); border: 1px solid var(--gold); color: var(--gold); padding: 7px 14px; border-radius: 8px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;">
+          <i class="fas fa-clock"></i> 7:00 AM &ndash; 6:00 PM (No Noon Break)
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== FEATURES STRIP ======================== -->
+  <section class="features-strip">
+    <div class="features-strip-inner">
+      <div class="feature-item">
+        <div class="feature-icon"><i class="fas fa-book-reader"></i></div>
+        <h4>Comprehensive Collection</h4>
+        <p>Textbooks, theses, periodicals, journals, magazines, newspapers, and e-books across 6 specialized library sections.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon"><i class="fas fa-clock"></i></div>
+        <h4>Overnight & 7-Day Loans</h4>
+        <p>Students enjoy 3-book overnight loans, while faculty members have 5-book 7-day borrowing privileges.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon"><i class="fas fa-qrcode"></i></div>
+        <h4>2D QR Barcode System</h4>
+        <p>Fast book check-out and check-in powered by automated CMOS scanner hardware at the Circulation Desk.</p>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon"><i class="fas fa-headset"></i></div>
+        <h4>Smart Assistant</h4>
+        <p>Ask our virtual assistant for operating hours, book limits, fines, catalog lookups, and library policies 24/7.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== DYNAMIC BOOK CATALOG ======================== -->
+  <div class="section-divider"></div>
+  <section class="section-wrapper" id="catalog">
+    <div class="section-head-row">
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:20px;">
+        <div>
+          <div class="section-tag tag-gold"><i class="fas fa-book-bookmark"></i> Online Public Access Catalog (OPAC)</div>
+          <h2 class="section-title">Explore Library Books &amp; Titles</h2>
+          <p class="section-sub">Browse real-time academic collections, textbooks, and research references. Live shelf availability synced with our catalog database.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--success); font-weight:700; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.25); padding:7px 16px; border-radius:20px;">
+            <span style="width:8px; height:8px; border-radius:50%; background:var(--success); box-shadow:0 0 8px var(--success); display:inline-block;"></span>
+            Live Catalog Database
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search & Filter Controls -->
+    <div class="catalog-controls-card">
+      <div class="catalog-search-wrap">
+        <i class="fas fa-search search-icon"></i>
+        <input type="text" id="catalogSearchInput" class="catalog-search-input" placeholder="Search by title, author, category, accession no. (e.g. LIB-QR-1001), call number, or ISBN..." oninput="handleCatalogSearch(this.value)">
+        <button id="catalogClearBtn" class="catalog-clear-btn" style="display:none;" onclick="clearCatalogSearch()"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="catalog-filter-bar" id="categoryFilterBar">
+        <button class="cat-pill active" onclick="filterCatalogCategory('all', this)"><i class="fas fa-border-all"></i> All Collections</button>
+      </div>
+    </div>
+
+    <!-- Live Books Dynamic Grid -->
+    <div id="catalogLoading" style="text-align:center; padding:50px 20px; color:var(--text-muted);">
+      <i class="fas fa-circle-notch fa-spin" style="font-size:32px; color:var(--gold); margin-bottom:12px;"></i>
+      <p style="font-size:14px;">Loading dynamic books from catalog...</p>
+    </div>
+
+    <div class="books-catalog-grid" id="booksGrid" style="display:none;">
+      <!-- Dynamically populated from /public/books -->
+    </div>
+
+    <!-- Empty State -->
+    <div id="catalogEmpty" style="display:none; text-align:center; padding:60px 20px; background:var(--bg-card); border:1px dashed var(--border); border-radius:16px; margin-top:10px;">
+      <div style="font-size:46px; color:var(--gold); opacity:0.6; margin-bottom:14px;"><i class="fas fa-book-open-reader"></i></div>
+      <h3 style="font-size:18px; color:var(--text); margin-bottom:6px;">No Books Found</h3>
+      <p style="font-size:13.5px; color:var(--text-muted); max-width:440px; margin:0 auto 16px;">We couldn't find any books matching your search query. Try adjusting your keywords or clearing category filters.</p>
+      <button class="btn-secondary" onclick="clearCatalogSearch()"><i class="fas fa-rotate-left"></i> Reset Search</button>
+    </div>
+  </section>
+
+  <!-- ======================== POLICIES ======================== -->
+  <div class="section-divider"></div>
+  <section class="section-wrapper" id="policies">
+    <div class="section-head-row">
+      <div class="section-tag tag-gold"><i class="fas fa-gavel"></i> Student's Library Guide</div>
+      <h2 class="section-title">Official EVSU Library Policies &amp; Regulations</h2>
+      <p class="section-sub">Official policies, loan privileges, borrowing deadlines, overdue fine structures, and conduct rules from the EVSU Student's Library Guide.</p>
+    </div>
+    <div class="policies-grid">
+      <!-- 1. Book Loan Privileges -->
+      <div class="policy-card">
+        <div class="policy-icon-wrap"><i class="fas fa-layer-group"></i></div>
+        <h3>Book Loan Privileges</h3>
+        <ul class="policy-list">
+          <li><strong>Students:</strong> 3 books of different titles for overnight use</li>
+          <li><strong>Faculty Members:</strong> 5 books of different titles for 7 days</li>
+          <li>Textbooks &amp; books stamped <em>&quot;NOT FOR HOME USE&quot;</em> are room use only</li>
+          <li>Borrowing IDs are strictly non-transferable (no proxy borrowing)</li>
+        </ul>
+        <span class="policy-tag">Loan Privileges</span>
+      </div>
+
+      <!-- 2. Borrowing & Returning Hours -->
+      <div class="policy-card">
+        <div class="policy-icon-wrap"><i class="fas fa-calendar-check"></i></div>
+        <h3>Borrowing &amp; Returning Hours</h3>
+        <ul class="policy-list">
+          <li><strong>Borrowing Window:</strong> Monday&ndash;Friday, 2:00 PM &ndash; 5:00 PM</li>
+          <li><strong>Returning Deadline:</strong> On or before due date at <strong>9:00 AM</strong></li>
+          <li>Open 7:00 AM &ndash; 6:00 PM continuously (No Noon Break)</li>
+          <li>All clients must sign the log-book at the depository area upon entry</li>
+        </ul>
+        <span class="policy-tag">Schedule &amp; Deadlines</span>
+      </div>
+
+      <!-- 3. Overdue Fines & Lost Book -->
+      <div class="policy-card">
+        <div class="policy-icon-wrap"><i class="fas fa-peso-sign"></i></div>
+        <h3>Library Fines &amp; Lost Books</h3>
+        <ul class="policy-list">
+          <li><strong>Overnight late returns:</strong> &#8369;1.50 per hour</li>
+          <li><strong>Daily overdue fine:</strong> &#8369;10.00 per day</li>
+          <li><strong>Lost book:</strong> Fine discontinued upon immediate report</li>
+          <li>Book replacement must be completed within two (2) weeks or fine reinstates</li>
+        </ul>
+        <span class="policy-tag">Fines &amp; Penalties</span>
+      </div>
+
+      <!-- 4. Suspension of Privileges -->
+      <div class="policy-card">
+        <div class="policy-icon-wrap"><i class="fas fa-ban"></i></div>
+        <h3>Suspension of Privileges</h3>
+        <ul class="policy-list">
+          <li><strong>1st Offense:</strong> One (1) week suspension of privileges</li>
+          <li><strong>2nd Offense:</strong> One (1) month suspension of privileges</li>
+          <li><strong>3rd Offense:</strong> One (1) trimester / semester suspension</li>
+          <li>Grounds: Lending ID, unauthorized removal, vandalism, defacing pages, misconduct</li>
+        </ul>
+        <span class="policy-tag">3-Strike Disciplinary System</span>
+      </div>
+
+      <!-- 5. Use of the Library & Conduct -->
+      <div class="policy-card">
+        <div class="policy-icon-wrap"><i class="fas fa-shield-halved"></i></div>
+        <h3>Use of the Library &amp; Rules</h3>
+        <ul class="policy-list">
+          <li>Deposit bags at the baggage counter before entering reading areas</li>
+          <li>Handle all books and reading materials with care; do not deface</li>
+          <li><strong>Do not reshelve books:</strong> Leave books on tables after using</li>
+          <li>Public Displays of Affection (PDA) are strictly prohibited</li>
+          <li>Always present validated School ID or COR (for freshmen)</li>
+        </ul>
+        <span class="policy-tag">House Rules</span>
+      </div>
+
+      <!-- 6. Library Sections & Access -->
+      <div class="policy-card">
+        <div class="policy-icon-wrap"><i class="fas fa-building-columns"></i></div>
+        <h3>Sections &amp; Community Access</h3>
+        <ul class="policy-list">
+          <li><strong>6 Sections:</strong> Reference, Periodical, Reserved, Circulation, New Books, E-Section</li>
+          <li><strong>Access:</strong> Bonafide members of the EVSU academic community</li>
+          <li>External researchers: by formal request and Campus Director approval</li>
+          <li>Services: Circulation, Reference, Orientation, Referral, Current Awareness, Internet</li>
+        </ul>
+        <span class="policy-tag">Library Sections</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== OFFICIAL STAFF DIRECTORY ======================== -->
+  <div class="section-divider"></div>
+  <section class="section-wrapper" id="staff">
+    <div class="section-head-row" style="text-align:center; align-items:center;">
+      <div class="section-tag tag-gold" style="margin:0 auto 14px;"><i class="fas fa-users"></i> Staff Directory</div>
+      <h2 class="section-title">Library Personnel &amp; Staff</h2>
+      <p class="section-sub" style="margin:0 auto;">Dedicated library professionals committed to serving the Eastern Visayas State University academic community.</p>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:20px; max-width:1200px; margin:0 auto;">
+      <div class="policy-card" style="text-align:center; padding:24px 18px;">
+        <div class="policy-icon-wrap" style="margin:0 auto 14px; width:56px; height:56px; font-size:24px;"><i class="fas fa-user-tie"></i></div>
+        <h3 style="font-size:15px; margin-bottom:4px; color:#fff;">Romulo Joseph M. Jereza, IV, RL, MLIS</h3>
+        <p style="font-size:12px; color:var(--gold); font-weight:700; margin-bottom:6px;">Supervising Librarian</p>
+        <span style="font-size:11px; color:var(--text-muted);">Main Library Administration</span>
+      </div>
+
+      <div class="policy-card" style="text-align:center; padding:24px 18px;">
+        <div class="policy-icon-wrap" style="margin:0 auto 14px; width:56px; height:56px; font-size:24px;"><i class="fas fa-user-graduate"></i></div>
+        <h3 style="font-size:15px; margin-bottom:4px; color:#fff;">Ne&ntilde;a Divina D. Fevidal, RL, MLIS</h3>
+        <p style="font-size:12px; color:var(--gold); font-weight:700; margin-bottom:6px;">Librarian Designate</p>
+        <span style="font-size:11px; color:var(--text-muted);">Technical Services &amp; Circulation</span>
+      </div>
+
+      <div class="policy-card" style="text-align:center; padding:24px 18px;">
+        <div class="policy-icon-wrap" style="margin:0 auto 14px; width:56px; height:56px; font-size:24px;"><i class="fas fa-user-clock"></i></div>
+        <h3 style="font-size:15px; margin-bottom:4px; color:#fff;">Ivan Jarvis C. Becamon</h3>
+        <p style="font-size:12px; color:var(--gold); font-weight:700; margin-bottom:6px;">Library Assistant</p>
+        <span style="font-size:11px; color:var(--text-muted);">Circulation Counter &amp; Depository</span>
+      </div>
+
+      <div class="policy-card" style="text-align:center; padding:24px 18px;">
+        <div class="policy-icon-wrap" style="margin:0 auto 14px; width:56px; height:56px; font-size:24px;"><i class="fas fa-user-check"></i></div>
+        <h3 style="font-size:15px; margin-bottom:4px; color:#fff;">Jacqueline P. Duero</h3>
+        <p style="font-size:12px; color:var(--gold); font-weight:700; margin-bottom:6px;">Library Assistant</p>
+        <span style="font-size:11px; color:var(--text-muted);">Reference &amp; Periodicals</span>
+      </div>
+
+      <div class="policy-card" style="text-align:center; padding:24px 18px;">
+        <div class="policy-icon-wrap" style="margin:0 auto 14px; width:56px; height:56px; font-size:24px;"><i class="fas fa-user-shield"></i></div>
+        <h3 style="font-size:15px; margin-bottom:4px; color:#fff;">Ronel P. Mas</h3>
+        <p style="font-size:12px; color:var(--gold); font-weight:700; margin-bottom:6px;">Library Assistant</p>
+        <span style="font-size:11px; color:var(--text-muted);">Stack Room &amp; Holdings</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== FAQ ======================== -->
+  <div class="section-divider"></div>
+  <section class="faq-section-bg" id="faq">
+    <div class="section-wrapper" style="padding-top:80px;padding-bottom:80px;">
+      <div class="section-head-row" style="text-align:center;align-items:center;">
+        <div class="section-tag tag-gold" style="margin:0 auto 14px;"><i class="fas fa-circle-question"></i> FAQ</div>
+        <h2 class="section-title">Frequently Asked Questions</h2>
+        <p class="section-sub" style="margin:0 auto;">Quick answers to common library service questions.</p>
+      </div>
+      <div class="faq-wrapper">
+        <div class="faq-item open">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            How do I borrow a book from the library?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">Present your valid EVSU School ID / Library ID at the Circulation counter. Borrowing of books for overnight use is scheduled from 2:00 PM to 5:00 PM, Monday through Friday. Ensure you have no outstanding fines or overdue books before requesting a loan.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            How many books can I borrow, and what is the loan duration?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">Students (undergraduate and graduate) may borrow up to three (3) books of different titles strictly for overnight use. Faculty and academic staff may borrow up to five (5) books of different titles for seven (7) days. Books marked "NOT FOR HOME USE" and General Reference materials are strictly for room-use only.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            When must borrowed books be returned?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">Overnight books must be returned on or before 9:00 AM the following school morning. The library circulation counter is open continuously from 7:00 AM to 6:00 PM with No Noon Break for early returns.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            What are the fines for late or overdue books?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">Overdue overnight books incur a fine of ₱1.50 per hour or ₱10.00 per day. Borrowers with overdue books or standing obligations to the library will not be allowed to borrow materials until all library accounts are settled.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            What if I lose a borrowed book?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">Report the loss immediately to the circulation librarian. The calculation of overdue fines will freeze as of the report date. You will be given a grace period of two (2) weeks to locate or replace the book with an acceptable copy. If not replaced within 2 weeks, overdue fines will resume until fully settled.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            What are the disciplinary penalties for library infractions?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">Suspension of library privileges is enforced for violations: 1st Offense results in a 1-week suspension; 2nd Offense results in a 1-month suspension; 3rd Offense results in suspension for the entire semester/trimester.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" onclick="toggleFaq(this)">
+            Who are the official library personnel if I need assistance?
+            <div class="icon"><i class="fas fa-chevron-down"></i></div>
+          </div>
+          <div class="faq-a">The library is staffed by Romulo Joseph M. Jereza, IV, RL, MLIS (Supervising Librarian), Neña Divina D. Fevidal, RL, MLIS (Librarian Designate), and Library Assistants Ivan Jarvis C. Becamon, Jacqueline P. Duero, and Ronel P. Mas.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== CONTACT / SUGGESTION FORM ======================== -->
+  <div class="section-divider"></div>
+  <section class="section-wrapper" id="contact">
+    <div class="section-head-row">
+      <div class="section-tag tag-gold"><i class="fas fa-envelope"></i> Contact & Feedback</div>
+      <h2 class="section-title">Suggestions & Inquiries</h2>
+      <p class="section-sub">Send your library suggestions, book acquisition requests, or general inquiries. We review
+        all submissions regularly.</p>
+    </div>
+    <div class="feedback-container">
+      <div class="feedback-info">
+        <h3>Get in Touch</h3>
+        <p>We value your feedback! Whether it's a book you'd like added to our collection, a concern about library
+          services, or a general inquiry — let us know.</p>
+        <div class="feedback-contact-item">
+          <div class="fc-icon"><i class="fas fa-location-dot"></i></div>
+          <span>EVSU Library, Main Campus, Tacloban City, Leyte</span>
+        </div>
+        <div class="feedback-contact-item">
+          <div class="fc-icon"><i class="fas fa-phone"></i></div>
+          <span>(053) 832-xxxx | library@evsu.edu.ph</span>
+        </div>
+        <div class="feedback-contact-item">
+          <div class="fc-icon"><i class="fas fa-clock"></i></div>
+          <span>Monday–Friday: 7:00 AM – 6:00 PM (No Noon Break)</span>
+        </div>
+        <div
+          style="margin-top:24px;padding:18px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;font-size:13px;color:var(--text-muted);line-height:1.6;">
+          <i class="fas fa-circle-info" style="color:var(--gold);margin-right:6px;"></i>
+          <strong style="color:var(--text);">Are you library staff?</strong> Access the administrative portal through
+          the
+          <a href="login.html" style="color:var(--gold);font-weight:700;text-decoration:none;">Staff Login</a> page.
+        </div>
+      </div>
+      <div class="feedback-form-card">
+        <h4 style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:20px;">Send a Message</h4>
+        <form id="feedbackForm" onsubmit="submitFeedback(event)">
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">Full Name</label>
+              <input type="text" class="form-control" id="fb_name" placeholder="Your full name" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Address</label>
+              <input type="email" class="form-control" id="fb_email" placeholder="your@email.com" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <select class="form-select" id="fb_category">
+              <option value="General Inquiry">General Inquiry</option>
+              <option value="Book Acquisition Request">Book Acquisition Request</option>
+              <option value="Library Service Feedback">Library Service Feedback</option>
+              <option value="Technical Issue">Technical Issue</option>
+              <option value="Suggestion">Suggestion</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Message</label>
+            <textarea class="form-control textarea" id="fb_message"
+              placeholder="Describe your inquiry or suggestion in detail..." required></textarea>
+          </div>
+          <button type="submit" class="btn-submit-form">
+            <i class="fas fa-paper-plane"></i> Submit Feedback
+          </button>
+          <div class="form-success" id="formSuccess">
+            <i class="fas fa-check-circle" style="color:#34d399;font-size:18px;flex-shrink:0;"></i>
+            <span>Message received! We'll respond to your inquiry within 1–2 business days.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================== CTA BAND ======================== -->
+  <div style="padding: 0 0 80px;">
+    <div class="cta-band">
+      <div class="cta-band-text">
+        <h2>Library Staff? Access Your Dashboard</h2>
+        <p>Administrators and Librarians can sign in to the management portal to manage catalog inventory, process
+          circulation transactions, and monitor system analytics.</p>
+      </div>
+      <a href="login.html" class="btn-cta-gold">
+        <i class="fas fa-arrow-right-to-bracket"></i> Staff Portal Login
+      </a>
+    </div>
+  </div>
+
+  <!-- ======================== FOOTER ======================== -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <h4>EVSU-OC SmartLib</h4>
+          <p>Integrated Library Management System of Eastern Visayas State University &bull; Ormoc City Campus — empowering research, learning,
+            and knowledge access.</p>
+        </div>
+        <div class="footer-col">
+          <h5>Library</h5>
+          <a href="#catalog">Book Catalog</a>
+          <a href="#policies">Rules & Policies</a>
+          <a href="#staff">Library Staff</a>
+          <a href="#faq">FAQs</a>
+          <a href="#contact">Contact Us</a>
+        </div>
+        <div class="footer-col">
+          <h5>Institution</h5>
+          <a href="#">EVSU Ormoc Campus</a>
+          <a href="#">Academic Resources</a>
+          <a href="#">Research Portal</a>
+        </div>
+        <div class="footer-col">
+          <h5>Staff Access</h5>
+          <a href="login.html">Administrator Login</a>
+          <a href="login.html">Librarian Login</a>
+        </div>
+      </div>
+      <hr class="footer-divider">
+      <div class="footer-bottom">
+        <div class="logo-sm">
+          <div class="brand-icon" style="width:32px;height:32px;font-size:14px;"><img src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"></div>
+          <span>EVSU-OC SmartLib © 2026</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-light);">
+          Eastern Visayas State University &bull; Ormoc City Campus — Library & Information Services Division
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ======================== CHATBOT ======================== -->
+  <div class="chatbot-panel" id="chatbotPanel">
+    <div class="chatbot-header">
+      <div class="chatbot-avatar"><i class="fas fa-robot"></i></div>
+      <div class="chatbot-header-info">
+        <h4>SmartLib Assistant</h4>
+        <p><span class="chatbot-online"></span> EVSU Guide Knowledge Base Active</p>
+      </div>
+    </div>
+    <div class="chatbot-body" id="chatBody">
+      <div class="chat-msg bot">
+        <div class="chat-bubble">👋 Hello! I'm your EVSU SmartLib Assistant, trained with the official <strong>EVSU Student's Library Guide</strong>. Ask me about library hours, borrowing limits, returning deadlines, fines, staff, or policies!</div>
+        <div class="chat-time">Just now</div>
+      </div>
+    </div>
+    <div class="chatbot-suggestions" id="chatSuggestions">
+      <div class="chat-chip" onclick="sendQuickMsg('Library hours')">⏰ Library Hours</div>
+      <div class="chat-chip" onclick="sendQuickMsg('Borrowing limits')">📚 Borrowing Limits</div>
+      <div class="chat-chip" onclick="sendQuickMsg('Return deadline')">⏳ Return Deadline</div>
+      <div class="chat-chip" onclick="sendQuickMsg('Overdue fines')">💰 Overdue Fines</div>
+      <div class="chat-chip" onclick="sendQuickMsg('Lost book policy')">🔍 Lost Book Policy</div>
+      <div class="chat-chip" onclick="sendQuickMsg('Library staff')">👥 Library Staff</div>
+      <div class="chat-chip" onclick="sendQuickMsg('Quality mission')">🎯 Quality Mission</div>
+    </div>
+    <div class="chatbot-footer">
+      <input class="chatbot-input" id="chatInput" type="text" placeholder="Ask about EVSU library rules, hours, fines..."
+        onkeypress="handleChatKey(event)">
+      <button class="chatbot-send" onclick="sendChatMsg()"><i class="fas fa-paper-plane"></i></button>
+    </div>
+  </div>
+  <div class="chatbot-fab" id="chatbotFab" onclick="toggleChatbot()" title="Chat with SmartLib Assistant">
+    <i class="fas fa-comment-dots"></i>
+  </div>
+
+  <script>
+    // ======== MOBILE NAV ========
+    function toggleMobileNav() {
+      const nav = document.querySelector('nav.nav-links');
+      nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    // ======== FAQ ACCORDION ========
+    function toggleFaq(el) {
+      const item = el.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+      if (!isOpen) item.classList.add('open');
+    }
+
+    // ======== FEEDBACK FORM ========
+    async function submitFeedback(e) {
+      e.preventDefault();
+      const name = document.getElementById('fb_name').value.trim();
+      const email = document.getElementById('fb_email').value.trim();
+      const category = document.getElementById('fb_category').value;
+      const message = document.getElementById('fb_message').value.trim();
+      const successEl = document.getElementById('formSuccess');
+      try {
+        const resp = await fetch('/public/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, category, message })
+        });
+        if (resp.ok) {
+          successEl.classList.add('show');
+          document.getElementById('feedbackForm').reset();
+          setTimeout(() => successEl.classList.remove('show'), 7000);
+        }
+      } catch (err) {
+        successEl.classList.add('show');
+        setTimeout(() => successEl.classList.remove('show'), 7000);
+      }
+    }
+
+    // ======== CHATBOT ========
+    function toggleChatbot() {
+      const panel = document.getElementById('chatbotPanel');
+      const fab = document.getElementById('chatbotFab');
+      const isOpen = panel.classList.contains('open');
+      panel.classList.toggle('open', !isOpen);
+      fab.classList.toggle('open', !isOpen);
+    }
+
+    const officialKnowledgeBase = [
+      {
+        keywords: ['hour', 'open', 'close', 'schedule', 'time', 'noon break', 'saturday'],
+        answer: '🏛️ <strong>Library Hours:</strong><br>• Monday to Friday: <strong>7:00 AM – 6:00 PM</strong> (NO NOON BREAK)<br>• Borrowing of books for overnight use: <strong>2:00 PM – 5:00 PM</strong><br>• Returning deadline: <strong>On or before 9:00 AM</strong> next morning.'
+      },
+      {
+        keywords: ['borrow', 'limit', 'how many', 'privilege', 'quota', 'entitled', 'faculty'],
+        answer: '📚 <strong>Loan Privileges:</strong><br>• <strong>Students:</strong> Up to <strong>3 books</strong> of different titles strictly for overnight use.<br>• <strong>Faculty:</strong> Up to <strong>5 books</strong> of different titles for <strong>7 days</strong>.<br>• <em>Note:</em> Books marked "NOT FOR HOME USE" & General Reference are strictly for room-use only.'
+      },
+      {
+        keywords: ['return', 'due', 'deadline', 'when to return', 'morning', '9:00', '9 am'],
+        answer: '⏳ <strong>Returning Policy:</strong><br>Overnight books must be returned on or before <strong>9:00 AM</strong> the following school morning at the Circulation counter. Early returns are accepted throughout our continuous 7:00 AM – 6:00 PM operating hours.'
+      },
+      {
+        keywords: ['fine', 'overdue', 'late', 'penalty', 'rate', 'cost', 'fee', 'charge'],
+        answer: '💰 <strong>Overdue Fines:</strong><br>• <strong>₱1.50 per hour</strong> or <strong>₱10.00 per day</strong> for overnight circulation books.<br>• ⚠️ <em>Important:</em> Borrowers with overdue books or standing obligations are blocked from borrowing any materials until all accounts are settled.'
+      },
+      {
+        keywords: ['lost', 'missing', 'replace', 'damage'],
+        answer: '🔍 <strong>Lost Book Policy:</strong><br>1. Report the lost book immediately to the Circulation Librarian.<br>2. Overdue fines will <strong>freeze</strong> as of the date reported.<br>3. You are granted a grace period of <strong>2 weeks</strong> to locate or replace the item.<br>4. If not replaced within 2 weeks, overdue fines will resume until settled.'
+      },
+      {
+        keywords: ['staff', 'personnel', 'librarian', 'who is', 'jereza', 'fevidal', 'becamon', 'duero', 'mas', 'assistant'],
+        answer: '👥 <strong>EVSU Library Personnel:</strong><br>• <strong>Romulo Joseph M. Jereza, IV, RL, MLIS</strong> — Supervising Librarian<br>• <strong>Neña Divina D. Fevidal, RL, MLIS</strong> — Librarian Designate<br>• <strong>Ivan Jarvis C. Becamon</strong> — Library Assistant<br>• <strong>Jacqueline P. Duero</strong> — Library Assistant<br>• <strong>Ronel P. Mas</strong> — Library Assistant'
+      },
+      {
+        keywords: ['suspension', 'offense', 'sanction', 'discipline', 'violation', 'punishment'],
+        answer: '⚖️ <strong>Disciplinary Sanctions:</strong><br>• <strong>1st Offense:</strong> 1-week suspension of library privileges<br>• <strong>2nd Offense:</strong> 1-month suspension of library privileges<br>• <strong>3rd Offense:</strong> 1 semester / trimester suspension'
+      },
+      {
+        keywords: ['mission', 'vision', 'goal', 'quality mission', 'objective'],
+        answer: '🎯 <strong>EVSU Library Quality Mission:</strong><br><em>"Complementing the teaching-learning process by providing effective and efficient library resources services to the students, faculty and staff of the University in support of its philosophy, goals and objectives."</em>'
+      },
+      {
+        keywords: ['section', 'services', 'area', 'reference', 'periodical', 'reserve', 'circulation', 'e-section', 'opac', 'internet'],
+        answer: '🏛️ <strong>Library Sections & Services:</strong><br>• <strong>6 Sections:</strong> General Reference, Periodicals, Reserved, Circulation, New Books Display, E-Section.<br>• <strong>6 Services:</strong> Lending, Reference/Information, Current Awareness, Referral, Library Orientation, and Internet/OPAC Services.'
+      },
+      {
+        keywords: ['card', 'id', 'requirement', 'register', 'membership', 'borrower card'],
+        answer: '🪪 <strong>Library ID & Requirements:</strong><br>A validated EVSU School ID / Library ID must be presented upon entering and during every borrowing transaction at the Circulation counter. Library IDs are non-transferable.'
+      }
+    ];
+
+    function appendChatMsg(htmlContent, type) {
+      const body = document.getElementById('chatBody');
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const div = document.createElement('div');
+      div.className = `chat-msg ${type}`;
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble';
+      if (type === 'user') bubble.textContent = htmlContent;
+      else bubble.innerHTML = htmlContent; // Bot replies come only from the fixed local guide text above.
+      const time = document.createElement('div');
+      time.className = 'chat-time';
+      time.textContent = now;
+      div.append(bubble, time);
+      body.appendChild(div);
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function findGuideAnswer(queryText) {
+      const lower = queryText.toLowerCase().trim();
+      let bestMatch = null;
+      let highestScore = 0;
+
+      for (const entry of officialKnowledgeBase) {
+        let score = 0;
+        for (const kw of entry.keywords) {
+          if (lower.includes(kw)) {
+            score += kw.length; // give more weight to longer/specific keywords
+          }
+        }
+        if (score > highestScore) {
+          highestScore = score;
+          bestMatch = entry.answer;
+        }
+      }
+
+      if (highestScore > 0 && bestMatch) {
+        return bestMatch;
+      }
+
+      return "I'm not completely certain about that specific query based on the EVSU Student's Library Guide. You can ask about our <strong>hours (7AM–6PM)</strong>, <strong>borrowing limits (3 books overnight)</strong>, <strong>9:00 AM return deadline</strong>, <strong>fines (₱1.50/hr, ₱10/day)</strong>, <strong>lost book policy (2 weeks grace)</strong>, or visit our Circulation desk!";
+    }
+
+    function sendQuickMsg(q) {
+      appendChatMsg(q, 'user');
+      const answer = findGuideAnswer(q);
+      setTimeout(() => appendChatMsg(answer, 'bot'), 400);
+    }
+
+    function sendChatMsg() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      appendChatMsg(text, 'user');
+      input.value = '';
+      const response = findGuideAnswer(text);
+      setTimeout(() => appendChatMsg(response, 'bot'), 500);
+    }
+
+    function handleChatKey(e) {
+      if (e.key === 'Enter') sendChatMsg();
+    }
+
+    // ======== DYNAMIC BOOK CATALOG ========
+    let catalogActiveCategory = 'all';
+    let catalogSearchTimer = null;
+
+    // Escape HTML to prevent XSS when rendering user-searchable data
+    function esc(str) {
+      if (!str) return '';
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    async function loadPublicStats() {
+      try {
+        const res = await fetch('/public/stats');
+        if (!res.ok) return;
+        const data = await res.json();
+        const heroEl = document.getElementById('heroTitlesCount');
+        const miniTitles = document.getElementById('miniStatTitles');
+        const miniAvail = document.getElementById('miniStatAvailable');
+        const miniTotal = document.getElementById('miniStatTotal');
+        if (heroEl) heroEl.textContent = data.total_titles.toLocaleString();
+        if (miniTitles) miniTitles.textContent = data.total_titles.toLocaleString();
+        if (miniAvail) miniAvail.textContent = data.available_copies.toLocaleString();
+        if (miniTotal) miniTotal.textContent = data.total_copies.toLocaleString();
+
+        // Populate category filter pills
+        if (data.categories && data.categories.length > 0) {
+          const bar = document.getElementById('categoryFilterBar');
+          data.categories.forEach(cat => {
+            const btn = document.createElement('button');
+            btn.className = 'cat-pill';
+            btn.textContent = cat;
+            btn.onclick = function() { filterCatalogCategory(cat, this); };
+            bar.appendChild(btn);
+          });
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    function renderBookCard(book) {
+      const isAvail = book.available_copies > 0;
+      const statusClass = isAvail ? 'available' : 'loaned';
+      const statusIcon = isAvail ? 'fa-circle-check' : 'fa-clock';
+      const statusText = isAvail ? `${book.available_copies} Available` : 'All Copies On Loan';
+      const copiesText = `${book.available_copies} / ${book.total_copies}`;
+
+      return `<div class="catalog-book-card">
+        <div class="book-meta-top">
+          <span class="book-category-badge">${esc(book.category)}</span>
+          <span class="book-acc-badge">${esc(book.accession_no)}</span>
+        </div>
+        <div class="book-card-title">${esc(book.title)}</div>
+        <div class="book-card-author"><i class="fas fa-user-pen" style="color:var(--gold);font-size:12px;"></i> ${esc(book.author)}</div>
+        <div class="book-details-list">
+          ${book.publisher ? `<div class="book-detail-row"><span>Publisher</span><strong>${esc(book.publisher)}</strong></div>` : ''}
+          ${book.year_published ? `<div class="book-detail-row"><span>Year</span><strong>${esc(book.year_published)}</strong></div>` : ''}
+          ${book.call_number ? `<div class="book-detail-row"><span>Call No.</span><strong>${esc(book.call_number)}</strong></div>` : ''}
+          ${book.isbn ? `<div class="book-detail-row"><span>ISBN</span><strong>${esc(book.isbn)}</strong></div>` : ''}
+          ${book.condition ? `<div class="book-detail-row"><span>Condition</span><strong>${esc(book.condition)}</strong></div>` : ''}
+        </div>
+        <div class="book-card-footer">
+          <span class="status-pill ${statusClass}"><i class="fas ${statusIcon}"></i> ${statusText}</span>
+          <span style="font-size:12px;color:var(--text-muted);font-weight:600;"><i class="fas fa-copy" style="margin-right:4px;"></i>${copiesText} copies</span>
+        </div>
+      </div>`;
+    }
+
+    async function loadCatalogBooks(search, category) {
+      const grid = document.getElementById('booksGrid');
+      const loader = document.getElementById('catalogLoading');
+      const empty = document.getElementById('catalogEmpty');
+      loader.style.display = 'block';
+      grid.style.display = 'none';
+      empty.style.display = 'none';
+
+      try {
+        let url = '/public/books?limit=50';
+        if (search) url += '&search=' + encodeURIComponent(search);
+        if (category && category !== 'all') url += '&category=' + encodeURIComponent(category);
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('API error');
+        const books = await res.json();
+
+        loader.style.display = 'none';
+
+        if (books.length === 0) {
+          empty.style.display = 'block';
+          grid.style.display = 'none';
+          return;
+        }
+
+        grid.innerHTML = books.map(renderBookCard).join('');
+        grid.style.display = 'grid';
+      } catch (e) {
+        loader.style.display = 'none';
+        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-exclamation-triangle" style="font-size:28px;color:var(--gold);margin-bottom:10px;"></i><p>Unable to load catalog. Please try again later.</p></div>';
+        grid.style.display = 'grid';
+      }
+    }
+
+    function handleCatalogSearch(val) {
+      clearTimeout(catalogSearchTimer);
+      const clearBtn = document.getElementById('catalogClearBtn');
+      clearBtn.style.display = val.trim() ? 'block' : 'none';
+      catalogSearchTimer = setTimeout(() => {
+        loadCatalogBooks(val.trim(), catalogActiveCategory);
+      }, 400);
+    }
+
+    function clearCatalogSearch() {
+      const input = document.getElementById('catalogSearchInput');
+      input.value = '';
+      document.getElementById('catalogClearBtn').style.display = 'none';
+      // Reset category filter to All
+      catalogActiveCategory = 'all';
+      document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+      document.querySelector('.cat-pill').classList.add('active');
+      loadCatalogBooks('', 'all');
+    }
+
+    function filterCatalogCategory(cat, el) {
+      catalogActiveCategory = cat;
+      document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+      el.classList.add('active');
+      const search = document.getElementById('catalogSearchInput').value.trim();
+      loadCatalogBooks(search, cat);
+    }
+
+    // ======== INIT ON PAGE LOAD ========
+    document.addEventListener('DOMContentLoaded', () => {
+      loadPublicStats();
+      loadCatalogBooks('', 'all');
+    });
+  </script>
+</body>
+
+</html>

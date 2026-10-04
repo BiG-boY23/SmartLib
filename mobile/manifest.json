@@ -1,0 +1,14 @@
+{
+  "id": "/mobile/",
+  "name": "EVSU SmartLib",
+  "short_name": "SmartLib",
+  "description": "Your EVSU library in your pocket",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
+  "display": "standalone",
+  "background_color": "#f7f5f2",
+  "theme_color": "#730d24",
+  "icons": [
+    { "src": "/mobile-assets/evsu-smartlib-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Portal Login — EVSU-OC SmartLib</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    :root {
+      --evsu-maroon: #800000;
+      --evsu-maroon-hover: #990000;
+      --evsu-gold: #d4af37;
+      --evsu-gold-light: #f3e5ab;
+      --bg-body: #0b0d12;
+      --bg-card: #161b26;
+      --bg-input: #0a0c10;
+      --text-main: #f8f9fa;
+      --text-muted: #8c96a6;
+      --border: #232a3b;
+      --border-focus: #d4af37;
+      --border-gold: rgba(212, 175, 55, 0.3);
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --danger-border: rgba(239, 68, 68, 0.35);
+      --danger-text: #fca5a5;
+      --radius: 16px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background glow shapes */
+    .bg-shape-1 {
+      position: absolute; width: 450px; height: 450px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(128, 0, 0, 0.18) 0%, rgba(11, 13, 18, 0) 70%);
+      top: -100px; left: -100px; z-index: 0; pointer-events: none;
+    }
+    .bg-shape-2 {
+      position: absolute; width: 500px; height: 500px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(212, 175, 55, 0.12) 0%, rgba(11, 13, 18, 0) 70%);
+      bottom: -150px; right: -100px; z-index: 0; pointer-events: none;
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 440px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+      padding: 40px 36px;
+      z-index: 1;
+      position: relative;
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .brand-logo-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .brand-icon {
+      width: 72px;
+      height: 72px;
+      background: #1a0508;
+      border: 2px solid var(--evsu-gold);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(128, 0, 0, 0.45), 0 0 16px rgba(212, 175, 55, 0.25);
+      overflow: hidden;
+    }
+    .brand-icon img { width: 100%; height: 100%; object-fit: cover; }
+
+    .login-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+
+    .login-subtitle {
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+
+    .staff-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      background: rgba(128, 0, 0, 0.25);
+      border: 1px solid rgba(128, 0, 0, 0.4);
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--evsu-gold-light);
+      margin-top: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Alert Banner */
+    .alert-banner {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      border-radius: 10px;
+      color: var(--danger-text);
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 24px;
+      line-height: 1.4;
+    }
+    .alert-banner.show { display: flex; }
+    .alert-banner i { font-size: 16px; flex-shrink: 0; }
+
+    /* Form Inputs */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 15px;
+      transition: color 0.2s;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 14px 12px 42px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-main);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .form-input:focus {
+      border-color: var(--evsu-gold);
+      box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
+    }
+    .form-input:focus + .input-icon {
+      color: var(--evsu-gold);
+    }
+    .form-input.password-field { padding-right: 86px; }
+    .password-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:0; background:none; color:var(--evsu-gold-light); display:flex; align-items:center; gap:5px; font-family:inherit; font-size:11px; font-weight:700; cursor:pointer; }
+    .password-toggle b { font-size:12px; }
+
+    .btn-submit {
+      width: 100%;
+      padding: 13px;
+      background: var(--evsu-maroon);
+      color: #ffffff;
+      border: 1px solid var(--evsu-gold);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 10px;
+      box-shadow: 0 4px 14px rgba(128, 0, 0, 0.35);
+    }
+
+    .btn-submit:hover {
+      background: var(--evsu-maroon-hover);
+      box-shadow: 0 6px 20px rgba(128, 0, 0, 0.45);
+      transform: translateY(-1px);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
+    }
+
+    .btn-submit i {
+      font-size: 14px;
+    }
+    .login-options { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:2px 0 12px; color:var(--text-muted); font-size:12px; }
+    .remember-option { display:flex; align-items:center; gap:7px; cursor:pointer; }
+    .login-options button { border:0; background:none; color:var(--evsu-gold-light); font:inherit; cursor:pointer; }
+
+    /* Footer Links */
+    .login-footer {
+      margin-top: 26px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .back-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+
+    .back-link:hover {
+      color: var(--evsu-gold);
+      background: rgba(255, 255, 255, 0.04);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg-shape-1"></div>
+  <div class="bg-shape-2"></div>
+
+  <div class="login-container">
+    <div class="login-header">
+      <div class="brand-logo-container">
+        <div class="brand-icon"><img src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"></div>
+      </div>
+      <h1 class="login-title">EVSU-OC SmartLib</h1>
+      <p class="login-subtitle">Ormoc City Campus — Staff Authentication Portal</p>
+      <div class="staff-badge">
+        <i class="fas fa-shield-alt"></i> Restricted Access — Staff Only
+      </div>
+    </div>
+
+    <!-- Error Alert Banner -->
+    <div id="errorAlert" class="alert-banner">
+      <i class="fas fa-exclamation-circle"></i>
+      <span id="errorMessage">Invalid Staff ID or Password. Please try again.</span>
+    </div>
+
+    <form id="staffLoginForm" onsubmit="handleStaffLogin(event)">
+      <div class="form-group">
+        <label class="form-label" for="username">Staff ID / Username</label>
+        <div class="input-wrapper">
+          <input type="text" id="username" class="form-input" placeholder="e.g. ADMIN-EVSU-2026" required autocomplete="username">
+          <i class="fas fa-user-shield input-icon"></i>
+        </div>
+      </div>
+
+      <div class="login-options">
+        <label class="remember-option"><input type="checkbox" id="rememberMe"> Remember me</label>
+        <button type="button" onclick="forgotPassword()">Forgot password?</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <div class="input-wrapper">
+          <input type="password" id="password" class="form-input password-field" placeholder="••••••••••••" required autocomplete="current-password">
+          <button type="button" class="password-toggle" onclick="togglePasswordField('password', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button>
+          <i class="fas fa-lock input-icon"></i>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="submitBtn">
+        <span>Sign In to Staff Portal</span>
+        <i class="fas fa-arrow-right"></i>
+      </button>
+    </form>
+
+    <div class="login-footer">
+      <a href="/" class="back-link" onclick="window.location.href='/'; return false;">
+        <i class="fas fa-arrow-left"></i> Back to Public Landing Page
+      </a>
+    </div>
+  </div>
+
+  <script>
+    function togglePasswordField(inputId, button) {
+      const input = document.getElementById(inputId);
+      input.type = input.type === 'password' ? 'text' : 'password';
+      const visible = input.type === 'text';
+      button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+      button.querySelector('span').textContent = visible ? 'Hide' : 'Show';
+    }
+
+    async function handleStaffLogin(e) {
+      e.preventDefault();
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+      const alertBanner = document.getElementById('errorAlert');
+      const alertMsg = document.getElementById('errorMessage');
+      const submitBtn = document.getElementById('submitBtn');
+
+      alertBanner.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
+
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+      const rememberMe = document.getElementById('rememberMe').checked;
+
+      try {
+        const response = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, remember_me: rememberMe })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          alertMsg.textContent = data.detail || 'Incorrect Staff ID or password. Please verify credentials.';
+          alertBanner.classList.add('show');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+          return;
+        }
+
+        // Store JWT token and role
+        localStorage.removeItem('token'); localStorage.removeItem('role'); localStorage.removeItem('username');
+        sessionStorage.removeItem('token'); sessionStorage.removeItem('role'); sessionStorage.removeItem('username');
+        const storage = rememberMe ? localStorage : sessionStorage;
+        storage.setItem('token', data.access_token);
+        storage.setItem('role', data.role);
+        storage.setItem('username', data.username);
+
+        const userRole = (data.role || '').toLowerCase();
+
+        if (userRole === 'superadmin' || userRole === 'admin') {
+          window.location.href = '/admin-dashboard.html';
+        } else if (userRole === 'librarian') {
+          window.location.href = '/librarian-dashboard.html';
+        } else {
+          fetch('/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${data.access_token}` } }).catch(() => {});
+          ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+          alertMsg.textContent = 'Access restricted: Staff role authorization required.';
+          alertBanner.classList.add('show');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+        }
+
+      } catch (err) {
+        alertMsg.textContent = 'Network or server communication error. Please check backend connection.';
+        alertBanner.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+      }
+    }
+
+    async function forgotPassword() {
+      const email = prompt('Enter the email address on your SmartLib account:');
+      if (!email || !email.trim()) return;
+      try {
+        const response = await fetch('/auth/forgot-password', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim() })
+        });
+        const data = await response.json().catch(() => ({}));
+        alert(response.ok ? data.message : (data.detail || 'Could not send the reset email.'));
+      } catch { alert('Could not reach the library server.'); }
+    }
+
+    // Auto check if already logged in (only if user explicitly navigated to login)
+    window.addEventListener('DOMContentLoaded', () => {
+      // Don't auto-redirect if URL has ?prompt=login or user is browsing
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('logout')) {
+        localStorage.removeItem('token'); localStorage.removeItem('role'); localStorage.removeItem('username');
+        sessionStorage.removeItem('token'); sessionStorage.removeItem('role'); sessionStorage.removeItem('username');
+        return;
+      }
+    });
+  </script>
+</body>
+</html>

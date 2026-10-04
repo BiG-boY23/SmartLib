@@ -1,0 +1,47 @@
+# ── Secrets & config ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python cache ───────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environment ────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Database (local SQLite) ────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Test / coverage ────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── IDE / editor ───────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ── OS junk ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Build / dist ───────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+
+# ── Node / React Native (mobile-native) ────────────────────
+node_modules/
+.expo/
+*.tsbuildinfo
+package-lock.json

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#730d24">
+  <title>EVSU SmartLib Account Security</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:#f7f5f2;color:#252129;font:16px system-ui,sans-serif;display:grid;place-items:center;padding:20px}.card{width:min(100%,440px);background:#fff;border:1px solid #eee9e4;border-radius:22px;padding:30px;box-shadow:0 18px 55px #32131d12}.brand{display:flex;align-items:center;gap:11px;color:#730d24;font-weight:800}.mark{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;color:#fff;background:#730d24}.eyebrow{color:#730d24;text-transform:uppercase;font-size:10px;font-weight:800;letter-spacing:1.5px;margin-top:26px}h1{font-size:27px;margin:6px 0 8px}p{color:#817c82;line-height:1.55;font-size:14px}.field{display:grid;gap:7px;margin:16px 0}.field label{font-size:13px;font-weight:700}.field input{font:inherit;border:1px solid #e7e1dc;border-radius:12px;padding:12px}.password-input-wrap{position:relative}.password-input-wrap input{width:100%;padding-right:80px}.password-toggle{position:absolute;right:8px;top:5px;bottom:5px;border:0;background:none;color:#730d24;display:flex;align-items:center;gap:5px;font:700 11px system-ui,sans-serif;cursor:pointer}.password-toggle b{font-size:12px}.button{border:0;border-radius:12px;background:#730d24;color:#fff;font-weight:800;padding:14px 18px;width:100%;cursor:pointer}.message{padding:12px;border-radius:11px;font-size:13px;line-height:1.5;background:#f6e9eb;color:#730d24}.message.success{background:#eaf4ee;color:#277955}.hidden{display:none}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><span class="mark">S</span><span>EVSU SmartLib</span></div>
+    <div class="eyebrow">Account security</div>
+    <h1 id="title">Working on your request…</h1>
+    <p id="description">Please keep this page open for a moment.</p>
+    <div id="message" class="message hidden" role="status" aria-live="polite"></div>
+    <form id="reset-form" class="hidden">
+      <div class="field"><label for="new-password">New password</label><div class="password-input-wrap"><input id="new-password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required><button class="password-toggle" type="button" onclick="togglePasswordField('new-password', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>
+      <div class="field"><label for="confirm-password">Confirm new password</label><div class="password-input-wrap"><input id="confirm-password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required><button class="password-toggle" type="button" onclick="togglePasswordField('confirm-password', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>
+      <button class="button" type="submit">Set new password</button>
+    </form>
+  </main>
+  <script>
+    const title = document.getElementById('title');
+    const description = document.getElementById('description');
+    const message = document.getElementById('message');
+    const form = document.getElementById('reset-form');
+    const token = decodeURIComponent(location.hash.slice(1));
+    function togglePasswordField(inputId, button) {
+      const input = document.getElementById(inputId);
+      input.type = input.type === 'password' ? 'text' : 'password';
+      const visible = input.type === 'text';
+      button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+      button.querySelector('span').textContent = visible ? 'Hide' : 'Show';
+    }
+    function showMessage(text, success = false) {
+      message.textContent = text;
+      message.className = `message${success ? ' success' : ''}`;
+      history.replaceState(null, '', location.pathname);
+    }
+    async function post(path, body) {
+      const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'The request could not be completed.');
+      return data;
+    }
+    if (!token) {
+      title.textContent = 'Link is missing';
+      description.textContent = 'Request a new verification or password reset email, then open its link again.';
+    } else if (location.pathname === '/verify-email') {
+      title.textContent = 'Verifying your email';
+      post('/auth/verify-email', { token }).then((data) => {
+        title.textContent = 'Email verified';
+        description.textContent = 'You can now sign in to EVSU SmartLib.';
+        showMessage(data.message, true);
+      }).catch((error) => {
+        title.textContent = 'Verification link unavailable';
+        description.textContent = 'Request a fresh verification link and try again.';
+        showMessage(error.message);
+      });
+    } else {
+      title.textContent = 'Choose a new password';
+      description.textContent = 'Use at least 8 characters. This reset link can only be used once.';
+      form.classList.remove('hidden');
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const password = document.getElementById('new-password').value;
+        const confirmation = document.getElementById('confirm-password').value;
+        if (password !== confirmation) { showMessage('The passwords do not match.'); return; }
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        try {
+          const data = await post('/auth/reset-password', { token, new_password: password });
+          form.classList.add('hidden');
+          title.textContent = 'Password updated';
+          description.textContent = 'Return to EVSU SmartLib and sign in with your new password.';
+          showMessage(data.message, true);
+        } catch (error) { showMessage(error.message); button.disabled = false; }
+      });
+    }
+  </script>
+</body>
+</html>

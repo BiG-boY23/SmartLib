@@ -1,10 +1,14 @@
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from database import get_db
-from models import User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion, AuditLog, SmtpLog
+from models import (
+    User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion,
+    AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread,
+)
 from schemas import (
     BookCreate,
     BookUpdate,
@@ -20,6 +24,8 @@ from schemas import (
     AuditLogResponse,
     SmtpLogResponse,
     DashboardStatsResponse,
+    AnnouncementCreate,
+    SupportMessageCreate,
 )
 import crud
 from security import require_roles, get_current_user
@@ -192,6 +198,8 @@ def update_request_status(
     updated, msg = crud.update_borrow_status(db, req_id, status_update.status)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
+    db.add(Notification(user_id=updated.user_id, title="Borrow request updated", body=f"Your request for {updated.book.title if updated.book else 'a book'} is now {updated.status.value.replace('_', ' ').lower()}.", kind="borrowing"))
+    db.commit()
     return updated
 
 
@@ -215,7 +223,65 @@ def update_acquisition(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Acquisition not found"
         )
+    db.add(Notification(user_id=updated.user_id, title="Book suggestion updated", body=f"Your suggestion for ‘{updated.title}’ is now {updated.status}.", kind="suggestion"))
+    db.commit()
     return updated
+
+
+@router.get("/announcements")
+def list_library_announcements(db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    return db.query(Announcement).order_by(Announcement.created_at.desc()).limit(50).all()
+
+
+@router.post("/announcements", status_code=status.HTTP_201_CREATED)
+def publish_library_announcement(req: AnnouncementCreate, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    post = Announcement(title=req.title.strip(), body=req.body.strip(), created_by=current_user.id)
+    db.add(post)
+    db.flush()
+    patrons = db.query(User).filter(User.role.in_([UserRole.STUDENT, UserRole.FACULTY]), User.is_active.is_(True)).all()
+    for patron in patrons:
+        db.add(Notification(user_id=patron.id, title="Library announcement", body=post.title, kind="announcement"))
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@router.get("/messages")
+def list_support_inbox(db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    threads = db.query(SupportThread).order_by(SupportThread.updated_at.desc()).all()
+    result = []
+    for thread in threads:
+        patron = db.query(User).filter(User.id == thread.user_id).first()
+        latest = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.desc()).first()
+        unread = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(False), SupportMessage.read_by_staff.is_(False)).count()
+        result.append({"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "updated_at": thread.updated_at, "last_message": latest.body if latest else "", "unread_count": unread, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""})
+    return result
+
+
+@router.get("/messages/{thread_id}")
+def read_support_thread(thread_id: int, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    thread = db.query(SupportThread).filter(SupportThread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(False)).update({SupportMessage.read_by_staff: True}, synchronize_session=False)
+    db.commit()
+    patron = db.query(User).filter(User.id == thread.user_id).first()
+    messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.asc()).all()
+    return {"thread": {"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "updated_at": thread.updated_at, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""}, "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "created_at": m.created_at} for m in messages]}
+
+
+@router.post("/messages/{thread_id}/reply", status_code=status.HTTP_201_CREATED)
+def reply_to_support_thread(thread_id: int, req: SupportMessageCreate, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    thread = db.query(SupportThread).filter(SupportThread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if thread.is_closed:
+        raise HTTPException(status_code=400, detail="This conversation is closed")
+    thread.updated_at = datetime.utcnow()
+    db.add(SupportMessage(thread_id=thread.id, sender_id=current_user.id, is_staff=True, body=req.message.strip()))
+    db.add(Notification(user_id=thread.user_id, title="Reply from the library", body=f"A librarian replied to ‘{thread.subject}’.", kind="message"))
+    db.commit()
+    return {"message": "Reply sent."}
 
 
 # User Management & Staff Provisioning

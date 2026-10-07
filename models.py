@@ -30,6 +30,7 @@ class BorrowStatus(str, enum.Enum):
     RETURNED = "RETURNED"
     REJECTED = "REJECTED"
     OVERDUE = "OVERDUE"
+    CANCELLED = "CANCELLED"
 
 
 class User(Base):
@@ -175,6 +176,53 @@ class Feedback(Base):
     category = Column(String, default="General Inquiry", nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(160), nullable=False)
+    body = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(160), nullable=False)
+    body = Column(Text, nullable=False)
+    kind = Column(String(32), default="library", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    read_at = Column(DateTime, nullable=True)
+
+
+class SupportThread(Base):
+    __tablename__ = "support_threads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    subject = Column(String(160), nullable=False)
+    is_closed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    thread_id = Column(Integer, ForeignKey("support_threads.id"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_staff = Column(Boolean, default=False, nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    read_by_user = Column(Boolean, default=False, nullable=False)
+    read_by_staff = Column(Boolean, default=False, nullable=False)
 
 
 class AuditLog(Base):

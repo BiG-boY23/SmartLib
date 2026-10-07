@@ -11,7 +11,7 @@
     },
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-secure-store"],
+    "plugins": ["expo-secure-store", "expo-notifications", "expo-brightness"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ph.edu.evsu.smartlib",

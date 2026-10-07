@@ -180,6 +180,7 @@ class BookResponse(BookBase):
 class BorrowRequestCreate(BaseModel):
     accession_no: str
     pickup_date: str
+    pickup_time: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     notes: Optional[str] = None
 
 
@@ -269,6 +270,24 @@ class FeedbackResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SupportThreadCreate(BaseModel):
+    subject: str = Field(min_length=3, max_length=160)
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class SupportMessageCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class AnnouncementCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=160)
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class AssistantRequest(BaseModel):
+    message: str = Field(min_length=2, max_length=500)
 
 
 # Audit & Logs

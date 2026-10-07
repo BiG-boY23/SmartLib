@@ -258,28 +258,28 @@ def delete_book(db: Session, book_id: int):
 
 
 # Borrow & Circulation CRUD
-_req_counter = 901
-
-
 def create_borrow_request(
     db: Session, user: User, request_data: BorrowRequestCreate
 ):
-    global _req_counter
     book = get_book_by_accession(db, request_data.accession_no)
     if not book:
         return None, "Book not found"
     if book.available_copies <= 0:
         return None, "Book is currently unavailable"
 
-    req_id = f"REQ-{_req_counter}"
-    _req_counter += 1
+    # Keep request identifiers unique across restarts and concurrent submissions.
+    req_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
 
     borrow_rec = BorrowRecord(
         req_id=req_id,
         user_id=user.id,
         book_id=book.id,
         status=BorrowStatus.PENDING,
-        pickup_date=request_data.pickup_date,
+        pickup_date=(
+            f"{request_data.pickup_date}T{request_data.pickup_time}"
+            if request_data.pickup_time
+            else request_data.pickup_date
+        ),
         notes=request_data.notes,
     )
     db.add(borrow_rec)

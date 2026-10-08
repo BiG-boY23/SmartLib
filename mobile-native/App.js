@@ -45,6 +45,7 @@ const TOKEN_KEY = 'smartlib_access_token';
 const API_KEY = 'smartlib_api_base';
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_BASE_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000');
+const EMPTY_AUTH_FORM = { username: '', password: '', confirm_password: '', new_password: '', confirm_new_password: '', otp: '', first_name: '', last_name: '', email: '', account_type: 'student', department_id: null, course_id: null, remember_me: false };
 const TABS = [
   { id: 'home', icon: '⌂', label: 'Home' },
   { id: 'catalog', icon: '⌕', label: 'Explore' },
@@ -98,6 +99,9 @@ export default function App() {
   const [tab, setTab] = useState('home');
   const [busy, setBusy] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [signupOptions, setSignupOptions] = useState({ departments: [], courses: [] });
+  const [signupOptionsError, setSignupOptionsError] = useState('');
+  const [signupOptionsLoading, setSignupOptionsLoading] = useState(false);
   const [books, setBooks] = useState([]);
   const [borrowings, setBorrowings] = useState([]);
   const [digitalId, setDigitalId] = useState(null);
@@ -180,6 +184,13 @@ export default function App() {
     if (search.trim()) params.set('search', search.trim());
     setBooks(await request(`/mobile/books?${params.toString()}`));
   }, [request]);
+  const loadSignupOptions = useCallback(async () => {
+    setSignupOptionsLoading(true);
+    setSignupOptionsError('');
+    try { setSignupOptions(await request('/auth/signup-options', {}, null, apiBase)); }
+    catch (error) { setSignupOptionsError(error.message); }
+    finally { setSignupOptionsLoading(false); }
+  }, [apiBase, request]);
   const loadBorrowings = useCallback(async () => {
     const rows = await request('/mobile/my-borrowings');
     setBorrowings(rows);
@@ -310,62 +321,64 @@ export default function App() {
     setBusy(true); setAuthError('');
     try {
       const base = __DEV__ ? await saveApiBase() : apiBase;
-      if (!base) return;
+      if (!base) return false;
       if (authMode === 'register' || authMode === 'forgot-new-password') {
         const password = authMode === 'register' ? form.password : form.new_password;
         const confirmation = authMode === 'register' ? form.confirm_password : form.confirm_new_password;
-        if (password !== confirmation) { setAuthError('The password and confirmation do not match.'); return; }
+        if (password !== confirmation) { setAuthError('The password and confirmation do not match.'); return false; }
         if (password.length < 8 || password.length > 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-          setAuthError('Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.'); return;
+          setAuthError('Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.'); return false;
         }
       }
       if (authMode === 'register') {
+        if (!form.department_id || !form.course_id) { setAuthError('Choose a department and course before continuing.'); return false; }
         const body = {
           first_name: form.first_name.trim(), last_name: form.last_name.trim(), username: form.username.trim(),
           email: form.email.trim(), password: form.password, confirm_password: form.confirm_password,
-          account_type: form.account_type, department: form.department.trim() || null,
+          account_type: form.account_type, department_id: form.department_id, course_id: form.course_id,
         };
         await request('/auth/register/request-otp', { method: 'POST', body: JSON.stringify(body) }, null, base);
         setAuthMode('register-otp'); setAuthError('We sent a 6-digit code to your email. Enter it to create your account.');
-        return;
+        return true;
       }
       if (form.resend_otp && (authMode === 'register-otp' || authMode === 'forgot-otp')) {
         const path = authMode === 'register-otp' ? '/auth/register/request-otp' : '/auth/forgot-password/request-otp';
         const body = authMode === 'register-otp' ? {
           first_name: form.first_name.trim(), last_name: form.last_name.trim(), username: form.username.trim(),
           email: form.email.trim(), password: form.password, confirm_password: form.confirm_password,
-          account_type: form.account_type, department: form.department.trim() || null,
+          account_type: form.account_type, department_id: form.department_id, course_id: form.course_id,
         } : { email: form.email.trim() };
         const data = await request(path, { method: 'POST', body: JSON.stringify(body) }, null, base);
         setAuthError(data.message || 'A new code has been sent.');
-        return;
+        return true;
       }
       if (authMode === 'register-otp') {
         const data = await request('/auth/register/verify-otp', { method: 'POST', body: JSON.stringify({ email: form.email.trim(), otp: form.otp.trim() }) }, null, base);
         setAuthMode('login'); setAuthError(data.message || 'Your account is ready. Sign in to continue.');
-        return;
+        return true;
       }
       if (authMode === 'forgot') {
         const data = await request('/auth/forgot-password/request-otp', { method: 'POST', body: JSON.stringify({ email: form.email.trim() }) }, null, base);
         setAuthMode('forgot-otp'); setAuthError(data.message || 'If an active account uses that email, a verification code will be sent.');
-        return;
+        return true;
       }
       if (authMode === 'forgot-otp') {
         const data = await request('/auth/forgot-password/verify-otp', { method: 'POST', body: JSON.stringify({ email: form.email.trim(), otp: form.otp.trim() }) }, null, base);
         setResetToken(data.reset_token); setAuthMode('forgot-new-password'); setAuthError(data.message || 'Email verified. Choose a new password.');
-        return;
+        return true;
       }
       if (authMode === 'forgot-new-password') {
         const data = await request('/auth/forgot-password/complete', { method: 'POST', body: JSON.stringify({ token: resetToken, new_password: form.new_password, confirm_new_password: form.confirm_new_password }) }, null, base);
         setResetToken(''); setAuthMode('login'); setAuthError(data.message || 'Password changed. Sign in using your new password.');
-        return;
+        return true;
       }
       const data = await request('/auth/login', { method: 'POST', body: JSON.stringify({ username: form.username.trim(), password: form.password, remember_me: form.remember_me }) }, null, base);
       const profile = await request('/auth/me', {}, data.access_token, base);
       if (form.remember_me) await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
       else await SecureStore.deleteItemAsync(TOKEN_KEY);
       setToken(data.access_token); setUser(profile); setTab('home'); setScreen('app');
-    } catch (error) { setAuthError(error.message); }
+      return true;
+    } catch (error) { setAuthError(error.message); return false; }
     finally { setBusy(false); }
   }
 
@@ -525,8 +538,12 @@ export default function App() {
     return () => { subscription.remove(); if (idleTimer.current) clearTimeout(idleTimer.current); };
   }, [screen, token, resetIdleTimer]);
 
+  useEffect(() => {
+    if (screen === 'auth' && authMode === 'register') loadSignupOptions();
+  }, [screen, authMode, loadSignupOptions]);
+
   if (screen === 'loading') return <View style={styles.loading}><StatusBar barStyle="dark-content" /><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} accessibilityLabel="EVSU OC SmartLib logo" /><ActivityIndicator color={COLORS.wine} size="large" /><Text style={styles.helperText}>Opening your library…</Text></View>;
-  if (screen === 'auth') return <AuthScreen apiBase={apiDraft} onApiChange={setApiDraft} onSubmit={submitAuth} mode={authMode} setMode={(mode) => { setAuthMode(mode); setAuthError(''); }} error={authError} busy={busy} />;
+  if (screen === 'auth') return <AuthScreen apiBase={apiDraft} onApiChange={setApiDraft} onSubmit={submitAuth} mode={authMode} setMode={(mode) => { setAuthMode(mode); setAuthError(''); }} onRegistrationFailed={() => setAuthMode('register')} error={authError} busy={busy} signupOptions={signupOptions} signupOptionsError={signupOptionsError} signupOptionsLoading={signupOptionsLoading} onRefreshSignupOptions={loadSignupOptions} />;
 
   const firstName = (user?.full_name || 'reader').trim().split(/\s+/)[0];
   const unreadNotifications = notifications.filter((item) => !item.read).length;
@@ -552,9 +569,59 @@ export default function App() {
   </View>;
 }
 
-function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, error, busy }) {
-  const [form, setForm] = useState({ username: '', password: '', confirm_password: '', new_password: '', confirm_new_password: '', otp: '', first_name: '', last_name: '', email: '', account_type: 'student', department: '', remember_me: false });
+function SelectField({ label, value, options, placeholder, disabled, onSelect }) {
+  const [open, setOpen] = useState(false);
+  return <View style={styles.field}><Text style={styles.label}>{label}</Text><Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value || placeholder}`} disabled={disabled} onPress={() => setOpen(true)} style={[styles.selectTrigger, disabled && styles.selectDisabled]}><Text style={[styles.selectValue, !value && styles.selectPlaceholder]}>{value || placeholder}</Text><Text style={styles.selectChevron}>⌄</Text></Pressable><Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}><View style={styles.modalShade}><View style={styles.selectSheet}><View style={styles.modalHandle} /><Text style={styles.modalTitle}>Choose {label.toLowerCase()}</Text><ScrollView keyboardShouldPersistTaps="handled">{options.map((item) => <Pressable key={item.id} style={styles.selectOption} onPress={() => { onSelect(item); setOpen(false); }}><Text style={styles.selectOptionText}>{item.name}</Text><Text style={styles.settingsChevron}>›</Text></Pressable>)}{!options.length && <Text style={styles.emptyMessage}>No options have been added yet.</Text>}</ScrollView><Button title="Close" secondary onPress={() => setOpen(false)} style={styles.modalCancel} /></View></View></Modal></View>;
+}
+
+function PasswordStrengthIndicator({ password }) {
+  const criteria = [password.length >= 8 && password.length <= 12, /[a-z]/.test(password), /[A-Z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)];
+  const score = criteria.filter(Boolean).length;
+  const strong = score === criteria.length;
+  const tone = !password ? 'weak' : strong ? 'strong' : score >= 3 ? 'medium' : 'weak';
+  const label = !password ? 'Set a password' : strong ? 'Strong · valid' : score >= 3 ? 'Getting stronger' : 'Weak · add more variety';
+  return (
+    <View style={styles.passwordStrength}>
+      <View style={styles.passwordStrengthBars}>
+        {criteria.map((_, index) => (
+          <View
+            key={index}
+            style={[
+              styles.passwordStrengthBar,
+              (score > index || (!password && index === 0)) &&
+                styles[`passwordStrength${tone}`],
+            ]}
+          />
+        ))}
+      </View>
+      <Text
+        style={[
+          styles.passwordStrengthText,
+          styles[`passwordStrengthText${tone}`],
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, onRegistrationFailed, error, busy, signupOptions, signupOptionsError, signupOptionsLoading, onRefreshSignupOptions }) {
+  const [form, setForm] = useState(EMPTY_AUTH_FORM);
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  async function submitForm(value = form) {
+    const succeeded = await onSubmit(value);
+    if (succeeded !== false && mode === 'register-otp' && !value.resend_otp) setForm(EMPTY_AUTH_FORM);
+    if (succeeded === false && ['login', 'register', 'register-otp'].includes(mode)) {
+      setForm(EMPTY_AUTH_FORM);
+      if (mode === 'register-otp') onRegistrationFailed();
+    }
+  }
+  const notice = Boolean(error && /we sent|new code has been sent|account is ready|email verified and account created|password changed|choose a new password/i.test(error));
+  useEffect(() => {
+    if (!error || notice || !['login', 'register', 'register-otp'].includes(mode)) return;
+    setForm(EMPTY_AUTH_FORM);
+  }, [error, mode]);
   const register = mode === 'register';
   const registerOtp = mode === 'register-otp';
   const forgot = mode === 'forgot';
@@ -563,12 +630,12 @@ function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, error, busy
   const authStep = register || registerOtp || forgot || forgotOtp || newPassword;
   const title = register ? 'Create your account' : registerOtp ? 'Verify your email' : forgot ? 'Reset your password' : forgotOtp ? 'Enter your code' : newPassword ? 'Choose a new password' : 'Welcome back';
   const subtitle = register ? 'Join your EVSU library community.' : registerOtp ? `Enter the 6-digit code sent to ${form.email}. Your account is created after verification.` : forgot ? 'We’ll email a 6-digit code to continue.' : forgotOtp ? `Enter the 6-digit code sent to ${form.email}.` : newPassword ? 'Set a new password for your account.' : 'Sign in with your institutional account.';
-  const successful = error && !/couldn’t|could not|can’t|invalid|expired|must |already registered|do not match|not configured/i.test(error);
+  const successful = notice;
   return <KeyboardAvoidingView style={styles.authPage} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><StatusBar barStyle="light-content" /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.authScroll}><View style={styles.authHero}><View style={styles.brandLine}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.brandLogoImage} accessibilityLabel="EVSU OC SmartLib logo" /><Text style={styles.brandTextLight}>EVSU SmartLib</Text></View><Text style={styles.authHeroTitle}>Your campus library, wherever you are.</Text><Text style={styles.authHeroBody}>Find your next read, request a copy, and keep your library card close at hand.</Text></View><View style={styles.authCard}>
     <Text style={styles.authTitle}>{title}</Text><Text style={styles.authSubtitle}>{subtitle}</Text>{error ? <Text style={[styles.errorBox, successful && styles.successBox]}>{error}</Text> : null}
-    {register ? <><View style={styles.row}><Field label="First name" value={form.first_name} onChangeText={(value) => update('first_name', value)} style={styles.flex} autoCapitalize="words" /><Field label="Last name" value={form.last_name} onChangeText={(value) => update('last_name', value)} style={styles.flex} autoCapitalize="words" /></View><Field label="Student or staff ID" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your institutional ID" autoCapitalize="characters" /><Field label="EVSU email" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" /><Text style={styles.label}>Account type</Text><View style={styles.choiceRow}>{['student', 'faculty'].map((role) => <Pressable key={role} onPress={() => update('account_type', role)} style={[styles.choice, form.account_type === role && styles.choiceSelected]}><Text style={[styles.choiceText, form.account_type === role && styles.choiceTextSelected]}>{role === 'student' ? 'Student' : 'Faculty'}</Text></Pressable>)}</View><Field label="Department" value={form.department} onChangeText={(value) => update('department', value)} placeholder="Optional" autoCapitalize="words" /><Field label="Password" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–12 characters" /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text><Field label="Confirm password" value={form.confirm_password} onChangeText={(value) => update('confirm_password', value)} secureTextEntry placeholder="Enter the password again" /></> : registerOtp || forgotOtp ? <><Field label="6-digit email code" value={form.otp} onChangeText={(value) => update('otp', value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" autoCapitalize="none" /><Pressable style={styles.authSwitch} onPress={() => onSubmit({ ...form, resend_otp: true })}><Text style={styles.authSwitchAction}>Send a new code</Text></Pressable></> : forgot ? <Field label="EVSU email" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" /> : newPassword ? <><Field label="New password" value={form.new_password} onChangeText={(value) => update('new_password', value)} secureTextEntry placeholder="8–12 characters" /><Field label="Confirm new password" value={form.confirm_new_password} onChangeText={(value) => update('confirm_new_password', value)} secureTextEntry placeholder="Enter it again" /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text></> : <><Field label="Institutional ID or email" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Enter your ID or email" autoCapitalize="none" /><Field label="Password" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="Enter your password" /><Pressable style={styles.authSwitch} onPress={() => setMode('forgot')}><Text style={styles.authSwitchAction}>Forgot password?</Text></Pressable><Pressable style={styles.rememberRow} onPress={() => update('remember_me', !form.remember_me)}><View style={[styles.checkBox, form.remember_me && styles.checkBoxChecked]}>{form.remember_me ? <Text style={styles.checkMark}>✓</Text> : null}</View><Text style={styles.authSwitchText}>Remember me</Text></Pressable></>}
+    {register ? <><View style={styles.row}><Field label="First name" value={form.first_name} onChangeText={(value) => update('first_name', value)} style={styles.flex} autoCapitalize="words" /><Field label="Last name" value={form.last_name} onChangeText={(value) => update('last_name', value)} style={styles.flex} autoCapitalize="words" /></View><Field label="Student or staff ID" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your institutional ID" autoCapitalize="characters" /><Field label="EVSU email" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" /><Text style={styles.label}>Account type</Text><View style={styles.choiceRow}>{['student', 'faculty'].map((role) => <Pressable key={role} onPress={() => update('account_type', role)} style={[styles.choice, form.account_type === role && styles.choiceSelected]}><Text style={[styles.choiceText, form.account_type === role && styles.choiceTextSelected]}>{role === 'student' ? 'Student' : 'Faculty'}</Text></Pressable>)}</View><SelectField label="Department" value={signupOptions.departments.find((item) => item.id === form.department_id)?.name} options={signupOptions.departments} placeholder={signupOptionsLoading ? 'Loading departments…' : signupOptionsError ? 'Could not load departments' : 'Choose your department'} disabled={signupOptionsLoading || !signupOptions.departments.length} onSelect={(item) => { update('department_id', item.id); update('course_id', null); }} /><SelectField label="Course" value={signupOptions.courses.find((item) => item.id === form.course_id)?.name} options={signupOptions.courses.filter((item) => item.department_id === form.department_id)} placeholder={form.department_id ? 'Choose your course' : 'Select a department first'} disabled={signupOptionsLoading || !form.department_id || !signupOptions.courses.some((item) => item.department_id === form.department_id)} onSelect={(item) => update('course_id', item.id)} />{signupOptionsError ? <Pressable onPress={onRefreshSignupOptions} style={styles.authSwitch}><Text style={styles.authSwitchAction}>Retry loading departments and courses</Text></Pressable> : !signupOptionsLoading && !signupOptions.departments.length ? <Text style={styles.serverHint}>No department options are available yet. Ask the superAdmin to add them in the Admin Portal.</Text> : null}<Field label="Password" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–12 characters" /><PasswordStrengthIndicator password={form.password} /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text><Field label="Confirm password" value={form.confirm_password} onChangeText={(value) => update('confirm_password', value)} secureTextEntry placeholder="Enter the password again" /></> : registerOtp || forgotOtp ? <><Field label="6-digit email code" value={form.otp} onChangeText={(value) => update('otp', value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" autoCapitalize="none" /><Pressable style={styles.authSwitch} onPress={() => submitForm({ ...form, resend_otp: true })}><Text style={styles.authSwitchAction}>Send a new code</Text></Pressable></> : forgot ? <Field label="EVSU email" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" /> : newPassword ? <><Field label="New password" value={form.new_password} onChangeText={(value) => update('new_password', value)} secureTextEntry placeholder="8–12 characters" /><Field label="Confirm new password" value={form.confirm_new_password} onChangeText={(value) => update('confirm_new_password', value)} secureTextEntry placeholder="Enter it again" /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text></> : <><Field label="Institutional ID or email" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Enter your ID or email" autoCapitalize="none" /><Field label="Password" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="Enter your password" /><Pressable style={styles.authSwitch} onPress={() => setMode('forgot')}><Text style={styles.authSwitchAction}>Forgot password?</Text></Pressable><Pressable style={styles.rememberRow} onPress={() => update('remember_me', !form.remember_me)}><View style={[styles.checkBox, form.remember_me && styles.checkBoxChecked]}>{form.remember_me ? <Text style={styles.checkMark}>✓</Text> : null}</View><Text style={styles.authSwitchText}>Remember me</Text></Pressable></>}
     {__DEV__ && <><Field label="Library server address" value={apiBase} onChangeText={onApiChange} placeholder="http://192.168.1.20:8000" autoCapitalize="none" keyboardType="url" /><Text style={styles.serverHint}>Development only: enter your computer’s Wi-Fi IP and port 8000. Keep the phone and computer on the same network.</Text></>}
-    <Button title={busy ? 'Please wait…' : register ? 'Continue to email code' : registerOtp ? 'Verify code & create account' : forgot ? 'Send verification code' : forgotOtp ? 'Verify code' : newPassword ? 'Save new password' : 'Sign in'} disabled={busy} onPress={() => onSubmit(form)} />{authStep && <Pressable onPress={() => setMode('login')} style={styles.authSwitch}><Text style={styles.authSwitchText}>Back to <Text style={styles.authSwitchAction}>sign in</Text></Text></Pressable>}{mode === 'login' && <Pressable onPress={() => setMode('register')} style={styles.authSwitch}><Text style={styles.authSwitchText}>New to SmartLib? <Text style={styles.authSwitchAction}>Create account</Text></Text></Pressable>}</View></ScrollView></KeyboardAvoidingView>;
+    <Button title={busy ? 'Please wait…' : register ? 'Continue to email code' : registerOtp ? 'Verify code & create account' : forgot ? 'Send verification code' : forgotOtp ? 'Verify code' : newPassword ? 'Save new password' : 'Sign in'} disabled={busy} onPress={() => submitForm()} />{authStep && <Pressable onPress={() => setMode('login')} style={styles.authSwitch}><Text style={styles.authSwitchText}>Back to <Text style={styles.authSwitchAction}>sign in</Text></Text></Pressable>}{mode === 'login' && <Pressable onPress={() => setMode('register')} style={styles.authSwitch}><Text style={styles.authSwitchText}>New to SmartLib? <Text style={styles.authSwitchAction}>Create account</Text></Text></Pressable>}</View></ScrollView></KeyboardAvoidingView>;
 }
 
 function Greeting({ eyebrow, title, subtitle, right }) {
@@ -607,7 +674,7 @@ function DigitalIdScreen({ digitalId, busy, onRefresh }) {
 function IdFact({ label, value }) { return <View style={styles.idFact}><Text style={styles.cardLabel}>{label.toUpperCase()}</Text><Text style={styles.idValue}>{value}</Text></View>; }
 
 function ProfileScreen({ user, onSuggest, onMessages, onUpdates, onDigitalId, onSignOut, onChangePassword, onChangeApi }) {
-  return <><Greeting eyebrow="Your account" title="Account" subtitle="Library membership and account settings." /><View style={styles.profileCard}><View style={styles.profileHeader}><View style={styles.profileAvatar}><Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text></View><View style={styles.flex}><Text style={styles.profileName}>{user?.full_name}</Text><Text style={styles.profileEmail}>{user?.email}</Text></View><View style={styles.rolePill}><Text style={styles.roleText}>VERIFIED</Text></View></View><ProfileFact label="Institutional ID" value={user?.username} /><ProfileFact label="Account type" value={user?.role} /><ProfileFact label="Department" value={user?.department || 'EVSU Main Campus'} /></View><SectionTitle title="Library services" /><View style={styles.settingsGroup}><SettingsRow icon="✉" title="Message a librarian" onPress={onMessages} /><SettingsRow icon="♧" title="Notifications & library news" onPress={onUpdates} /><SettingsRow icon="▣" title="Digital library ID" onPress={onDigitalId} /><SettingsRow icon="＋" title="Suggest a book" onPress={onSuggest} /></View><SectionTitle title="About" /><View style={styles.aboutCard}><Text style={styles.aboutTitle}>EVSU SmartLib</Text><Text style={styles.aboutBody}>Your campus library collection, borrowing requests, updates, and librarian support in one place.</Text></View><SectionTitle title="Account management" /><View style={styles.settingsGroup}><SettingsRow icon="⌑" title="Change password" onPress={onChangePassword} />{__DEV__ && <SettingsRow icon="⚙" title="Development server address" onPress={onChangeApi} />}<SettingsRow icon="⇥" title="Sign out" onPress={onSignOut} /></View></>;
+  return <><Greeting eyebrow="Your account" title="Account" subtitle="Library membership and account settings." /><View style={styles.profileCard}><View style={styles.profileHeader}><View style={styles.profileAvatar}><Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text></View><View style={styles.flex}><Text style={styles.profileName}>{user?.full_name}</Text><Text style={styles.profileEmail}>{user?.email}</Text></View><View style={styles.rolePill}><Text style={styles.roleText}>VERIFIED</Text></View></View><ProfileFact label="Institutional ID" value={user?.username} /><ProfileFact label="Account type" value={user?.role} /><ProfileFact label="Department" value={user?.department || 'EVSU Main Campus'} />{user?.course ? <ProfileFact label="Course" value={user.course} /> : null}</View><SectionTitle title="Library services" /><View style={styles.settingsGroup}><SettingsRow icon="✉" title="Message a librarian" onPress={onMessages} /><SettingsRow icon="♧" title="Notifications & library news" onPress={onUpdates} /><SettingsRow icon="▣" title="Digital library ID" onPress={onDigitalId} /><SettingsRow icon="＋" title="Suggest a book" onPress={onSuggest} /></View><SectionTitle title="About" /><View style={styles.aboutCard}><Text style={styles.aboutTitle}>EVSU SmartLib</Text><Text style={styles.aboutBody}>Your campus library collection, borrowing requests, updates, and librarian support in one place.</Text></View><SectionTitle title="Account management" /><View style={styles.settingsGroup}><SettingsRow icon="⌑" title="Change password" onPress={onChangePassword} />{__DEV__ && <SettingsRow icon="⚙" title="Development server address" onPress={onChangeApi} />}<SettingsRow icon="⇥" title="Sign out" onPress={onSignOut} /></View></>;
 }
 
 function ServerModal({ value, onChange, onClose, onSave }) {
@@ -833,6 +900,24 @@ const styles = StyleSheet.create({
   passwordToggle: { position: 'absolute', right: 9, top: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 5 },
   passwordToggleGlyph: { fontWeight: '900', fontSize: 23 },
   passwordToggleLabel: { color: COLORS.wine, fontSize: 10, fontWeight: '800' },
+  passwordStrength: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -5, marginBottom: 12 },
+  passwordStrengthBars: { flexDirection: 'row', gap: 4, flex: 1 },
+  passwordStrengthBar: { height: 5, flex: 1, borderRadius: 4, backgroundColor: '#e8e2e3' },
+  passwordStrengthweak: { backgroundColor: COLORS.red },
+  passwordStrengthmedium: { backgroundColor: COLORS.amber },
+  passwordStrengthstrong: { backgroundColor: COLORS.green },
+  passwordStrengthText: { fontSize: 10, fontWeight: '700' },
+  passwordStrengthTextweak: { color: COLORS.red },
+  passwordStrengthTextmedium: { color: COLORS.amber },
+  passwordStrengthTextstrong: { color: COLORS.green },
+  selectTrigger: { minHeight: 46, borderWidth: 1, borderColor: '#e7e1dc', borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: COLORS.paper },
+  selectDisabled: { opacity: 0.58, backgroundColor: COLORS.canvas },
+  selectValue: { color: COLORS.ink, fontSize: 13, flex: 1 },
+  selectPlaceholder: { color: '#a8a2a7' },
+  selectChevron: { color: COLORS.wine, fontSize: 21, marginLeft: 8 },
+  selectSheet: { maxHeight: '75%', backgroundColor: COLORS.paper, paddingHorizontal: 21, paddingTop: 16, paddingBottom: 24, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  selectOption: { minHeight: 52, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.line, paddingHorizontal: 8 },
+  selectOptionText: { flex: 1, color: COLORS.ink, fontSize: 14 },
   textarea: { minHeight: 92, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: 10 },
   choiceRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },

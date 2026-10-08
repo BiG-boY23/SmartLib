@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     Float,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -43,6 +44,7 @@ class User(Base):
     full_name = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.LIBRARIAN, nullable=False)
     department = Column(String, nullable=True)
+    course = Column(String, nullable=True)
     contact_no = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     email_verified = Column(Boolean, default=True, nullable=False, server_default="1")
@@ -87,9 +89,23 @@ class PendingRegistration(Base):
     full_name = Column(String, nullable=False)
     role = Column(Enum(UserRole), nullable=False)
     department = Column(String, nullable=True)
+    course = Column(String, nullable=True)
     otp_hash = Column(String(64), nullable=False)
     expires_at = Column(DateTime, nullable=False)
     attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SignupOption(Base):
+    __tablename__ = "signup_options"
+    __table_args__ = (UniqueConstraint("kind", "department_id", "name", name="uq_signup_option_scope"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String(16), nullable=False, index=True)  # department or course
+    name = Column(String(120), nullable=False)
+    department_id = Column(Integer, ForeignKey("signup_options.id"), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

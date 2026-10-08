@@ -6,7 +6,7 @@ from sqlalchemy import func
 
 from database import get_db
 from models import (
-    User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion,
+    User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion, SignupOption,
     AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread,
 )
 from schemas import (
@@ -26,6 +26,9 @@ from schemas import (
     DashboardStatsResponse,
     AnnouncementCreate,
     SupportMessageCreate,
+    SignupOptionCreate,
+    SignupOptionUpdate,
+    SignupOptionResponse,
 )
 import crud
 from security import require_roles, get_current_user
@@ -285,6 +288,147 @@ def reply_to_support_thread(thread_id: int, req: SupportMessageCreate, db: Sessi
 
 
 # User Management & Staff Provisioning
+@router.get("/signup-options", response_model=List[SignupOptionResponse])
+def list_signup_options(
+    db: Session = Depends(get_db), current_user: User = Depends(superadmin_only)
+):
+    return db.query(SignupOption).order_by(SignupOption.kind, SignupOption.name).all()
+
+
+@router.post("/signup-options", response_model=SignupOptionResponse, status_code=status.HTTP_201_CREATED)
+def create_signup_option(
+    req: SignupOptionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(superadmin_only),
+):
+    name = req.name.strip()
+    department = None
+    if req.kind == "department":
+        if req.department_id is not None:
+            raise HTTPException(status_code=400, detail="A department option cannot have a parent department.")
+    else:
+        department = db.query(SignupOption).filter(
+            SignupOption.id == req.department_id,
+            SignupOption.kind == "department",
+            SignupOption.is_active.is_(True),
+        ).first()
+        if not department:
+            raise HTTPException(status_code=400, detail="Choose an active department for this course.")
+    duplicate = db.query(SignupOption).filter(
+        SignupOption.kind == req.kind,
+        SignupOption.department_id == (department.id if department else None),
+        SignupOption.name.ilike(name),
+    ).first()
+    if duplicate:
+        if duplicate.is_active:
+            raise HTTPException(status_code=400, detail="That option already exists.")
+        duplicate.is_active = True
+        db.commit()
+        db.refresh(duplicate)
+        return duplicate
+    option = SignupOption(
+        kind=req.kind,
+        name=name,
+        department_id=department.id if department else None,
+        created_by=current_user.id,
+    )
+    db.add(option)
+    db.commit()
+    db.refresh(option)
+    crud.log_audit(db, current_user.username, f"Signup {req.kind} option added: {name}", "Authorized")
+    return option
+
+
+@router.put("/signup-options/{option_id}", response_model=SignupOptionResponse)
+def update_signup_option(
+    option_id: int,
+    req: SignupOptionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(superadmin_only),
+):
+    option = db.query(SignupOption).filter(SignupOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Signup option not found.")
+    name = req.name.strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail="Option name must contain at least two characters.")
+    if req.kind != option.kind:
+        raise HTTPException(status_code=400, detail="An option's type cannot be changed after creation.")
+
+    department = None
+    if option.kind == "department":
+        if req.department_id is not None:
+            raise HTTPException(status_code=400, detail="A department option cannot have a parent department.")
+    else:
+        department = db.query(SignupOption).filter(
+            SignupOption.id == req.department_id,
+            SignupOption.kind == "department",
+            SignupOption.is_active.is_(True),
+        ).first()
+        if not department:
+            raise HTTPException(status_code=400, detail="Choose an active department for this course.")
+
+    parent_id = department.id if department else None
+    duplicate = db.query(SignupOption).filter(
+        SignupOption.id != option.id,
+        SignupOption.kind == option.kind,
+        SignupOption.department_id == parent_id,
+        func.lower(SignupOption.name) == name.casefold(),
+        SignupOption.is_active.is_(True),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Another active option already uses that name in this department.")
+
+    option.name = name
+    option.department_id = parent_id
+    db.commit()
+    db.refresh(option)
+    crud.log_audit(db, current_user.username, f"Signup {option.kind} option updated: {name}", "Authorized")
+    return option
+
+
+@router.delete("/signup-options/{option_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_signup_option(
+    option_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(superadmin_only),
+):
+    option = db.query(SignupOption).filter(SignupOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Signup option not found.")
+    if option.kind == "department":
+        db.query(SignupOption).filter(
+            SignupOption.kind == "course", SignupOption.department_id == option.id
+        ).update({SignupOption.is_active: False}, synchronize_session=False)
+    option.is_active = False
+    db.commit()
+    crud.log_audit(db, current_user.username, f"Signup option deactivated: {option.name}", "Authorized")
+
+
+@router.patch("/signup-options/{option_id}/restore", response_model=SignupOptionResponse)
+def restore_signup_option(
+    option_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(superadmin_only),
+):
+    option = db.query(SignupOption).filter(SignupOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Signup option not found.")
+    if option.kind == "course":
+        parent = db.query(SignupOption).filter(
+            SignupOption.id == option.department_id,
+            SignupOption.kind == "department",
+            SignupOption.is_active.is_(True),
+        ).first()
+        if not parent:
+            raise HTTPException(status_code=400, detail="Reactivate the department before restoring this course.")
+    option.is_active = True
+    db.commit()
+    db.refresh(option)
+    crud.log_audit(db, current_user.username, f"Signup option restored: {option.name}", "Authorized")
+    return option
+
+
 @router.get("/users", response_model=List[UserResponse])
 def list_all_users(
     skip: int = 0,

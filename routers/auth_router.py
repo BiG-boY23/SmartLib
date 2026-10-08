@@ -15,7 +15,7 @@ from email_service import (
     public_base_url,
     send_email,
 )
-from models import EmailActionToken, PendingRegistration, User, UserRole, UserSession
+from models import EmailActionToken, PendingRegistration, SignupOption, User, UserRole, UserSession
 from rate_limits import enforce_rate_limit
 from schemas import (
     EmailActionRequest,
@@ -187,6 +187,22 @@ def register(req: RegisterRequest, request: Request, db: Session = Depends(get_d
     )
 
 
+@router.get("/signup-options")
+def get_signup_options(db: Session = Depends(get_db)):
+    departments = db.query(SignupOption).filter(
+        SignupOption.kind == "department", SignupOption.is_active.is_(True)
+    ).order_by(SignupOption.name.asc()).all()
+    department_ids = [item.id for item in departments]
+    courses = db.query(SignupOption).filter(
+        SignupOption.kind == "course", SignupOption.is_active.is_(True),
+        SignupOption.department_id.in_(department_ids) if department_ids else SignupOption.id == -1,
+    ).order_by(SignupOption.name.asc()).all()
+    return {
+        "departments": [{"id": item.id, "name": item.name} for item in departments],
+        "courses": [{"id": item.id, "name": item.name, "department_id": item.department_id} for item in courses],
+    }
+
+
 @router.post("/register/request-otp", status_code=status.HTTP_202_ACCEPTED)
 def request_registration_otp(req: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     enforce_rate_limit(f"register-otp-ip:{_ip(request)}", 5, 60 * 60)
@@ -196,6 +212,14 @@ def request_registration_otp(req: RegisterRequest, request: Request, db: Session
         raise HTTPException(status_code=400, detail="Username / Institutional ID already registered")
     if crud.get_user_by_email(db, email=email):
         raise HTTPException(status_code=400, detail="Email address already registered")
+    department = db.query(SignupOption).filter(
+        SignupOption.id == req.department_id, SignupOption.kind == "department", SignupOption.is_active.is_(True)
+    ).first() if req.department_id else None
+    course = db.query(SignupOption).filter(
+        SignupOption.id == req.course_id, SignupOption.kind == "course", SignupOption.is_active.is_(True)
+    ).first() if req.course_id else None
+    if not department or not course or course.department_id != department.id:
+        raise HTTPException(status_code=400, detail="Choose a valid department and a course offered by that department.")
     try:
         ensure_smtp_configured()
     except EmailConfigurationError:
@@ -210,7 +234,8 @@ def request_registration_otp(req: RegisterRequest, request: Request, db: Session
         hashed_password=get_password_hash(req.password),
         full_name=f"{req.first_name.strip()} {req.last_name.strip()}".strip(),
         role=req.account_type,
-        department=req.department,
+        department=department.name,
+        course=course.name,
         otp_hash=_hash_action_token(f"{email}:{otp}"),
         expires_at=datetime.utcnow() + timedelta(minutes=10),
         attempts=0,
@@ -253,6 +278,7 @@ def verify_registration_otp(req: RegistrationOtpRequest, request: Request, db: S
         full_name=pending.full_name,
         role=pending.role,
         department=pending.department,
+        course=pending.course,
         email_verified=True,
     )
     db.add(user)

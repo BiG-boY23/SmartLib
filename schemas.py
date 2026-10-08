@@ -30,6 +30,9 @@ class RegisterRequest(BaseModel):
     last_name: str
     account_type: UserRole = UserRole.STUDENT
     department: Optional[str] = None
+    course: Optional[str] = None
+    department_id: Optional[int] = None
+    course_id: Optional[int] = None
 
     @model_validator(mode="after")
     def passwords_match(self):
@@ -92,6 +95,7 @@ class UserBase(BaseModel):
     full_name: str
     role: UserRole
     department: Optional[str] = None
+    course: Optional[str] = None
     contact_no: Optional[str] = None
 
 
@@ -118,6 +122,26 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SignupOptionCreate(BaseModel):
+    kind: str = Field(pattern=r"^(department|course)$")
+    name: str = Field(min_length=2, max_length=120)
+    department_id: Optional[int] = None
+
+
+class SignupOptionUpdate(SignupOptionCreate):
+    pass
+
+
+class SignupOptionResponse(BaseModel):
+    id: int
+    kind: str
+    name: str
+    department_id: Optional[int] = None
+    is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
 

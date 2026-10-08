@@ -33,6 +33,13 @@ async def lifespan(app: FastAPI):
             connection.exec_driver_sql(
                 "ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 1"
             )
+    if "course" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN course VARCHAR")
+    pending_columns = {column["name"] for column in inspect(engine).get_columns("pending_registrations")}
+    if "course" not in pending_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE pending_registrations ADD COLUMN course VARCHAR")
     db = SessionLocal()
     try:
         crud.seed_initial_data(db)

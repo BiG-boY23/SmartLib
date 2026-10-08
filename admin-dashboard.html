@@ -345,6 +345,26 @@
 
   <div class="toast-container" id="toastBox"></div>
 
+  <div class="modal-overlay" id="signupOptionEditModal">
+    <div class="settings-modal" style="max-width:560px;">
+      <div class="modal-header">
+        <h2><i class="fa-solid fa-pen-to-square" style="color:var(--evsu-gold);"></i> Edit sign-up option</h2>
+        <button class="modal-close" type="button" onclick="closeSignupOptionEdit()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="card-body">
+        <form onsubmit="handleSaveSignupOptionEdit(event)">
+          <input type="hidden" id="signupOptionEditId">
+          <div class="form-group"><label for="signupOptionEditName">Display name</label><input id="signupOptionEditName" class="form-control" maxlength="120" required></div>
+          <div class="form-group" id="signupOptionEditDepartmentWrap" style="display:none;"><label for="signupOptionEditDepartment">Department</label><select id="signupOptionEditDepartment" class="form-select" required></select></div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
+            <button type="button" class="btn btn-outline" onclick="closeSignupOptionEdit()">Cancel</button>
+            <button type="submit" class="btn btn-maroon"><i class="fa-solid fa-floppy-disk"></i> Save changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- ACCOUNT SETTINGS MODAL -->
   <div class="modal-overlay" id="accountSettingsModal">
     <div class="settings-modal">
@@ -696,6 +716,21 @@
             </div>
           </div>
         </div>
+        <div class="card" id="signupOptionsAdmin" style="display:none; margin-top:18px;">
+          <div class="card-head"><h3><i class="fa-solid fa-list-check text-gold"></i> Mobile Sign-up Courses &amp; Departments</h3></div>
+          <div class="card-body">
+            <p style="color:var(--text-muted); margin:0 0 16px;">Manage the database options shown in mobile account registration. Only the superAdmin can edit these lists.</p>
+            <form onsubmit="handleAddSignupOption(event)" style="display:grid; grid-template-columns:1fr 1.5fr 1.5fr auto; gap:12px; align-items:end;">
+              <div class="form-group" style="margin:0;"><label>Option type</label><select id="signupOptionKind" class="form-select" onchange="toggleSignupOptionKind()"><option value="department">Department</option><option value="course">Course</option></select></div>
+              <div class="form-group" style="margin:0;"><label>Display name</label><input id="signupOptionName" class="form-control" maxlength="120" placeholder="e.g. College of Engineering" required></div>
+              <div class="form-group" id="signupParentWrap" style="display:none; margin:0;"><label>Department</label><select id="signupParentDepartment" class="form-select"></select></div>
+              <button type="submit" class="btn btn-maroon"><i class="fa-solid fa-plus"></i> Add option</button>
+            </form>
+            <div class="table-responsive" style="margin-top:18px;">
+              <table id="signupOptionsTable"><thead><tr><th>Type</th><th>Option</th><th>Department</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- PANEL 3: BOOKS -->
@@ -866,14 +901,15 @@
                 </div>
 
                 <!-- PATRON PREVIEW BADGE -->
-                <div id="circPatronBadge" style="display:none; margin-bottom:18px; padding:12px 14px; border-radius:8px; background:rgba(212,175,55,0.06); border:1px solid var(--border);">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                      <strong id="patronBadgeName" style="color:var(--text-main); font-size:14px;">—</strong>
-                      <div id="patronBadgeDetails" style="font-size:11px; color:var(--text-muted);">—</div>
+                <div id="circPatronBadge" style="display:none; margin-bottom:18px; padding:14px; border-radius:10px; background:rgba(212,175,55,0.06); border:1px solid var(--border);">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                    <div style="min-width:0;flex:1;">
+                      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Verified patron</div>
+                      <strong id="patronBadgeName" style="color:var(--text-main); font-size:15px;">—</strong>
                     </div>
                     <span id="patronBadgeStatus" class="badge badge-success">Eligible</span>
                   </div>
+                  <div id="patronBadgeDetails" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin-top:12px;font-size:12px;color:var(--text-muted);"></div>
                 </div>
 
                 <div class="card-head" style="padding:12px 0 8px 0; margin-top:10px; border-top:1px dashed var(--border);">
@@ -1022,6 +1058,8 @@
 
     const API_BASE = '';
     let chartInstance = null;
+    let currentAdminRole = '';
+    let signupOptionCache = [];
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     function getAuthHeaders() {
@@ -1152,6 +1190,7 @@
         document.getElementById('navUsers').classList.add('active');
         document.getElementById('panelUsers').classList.add('active');
         await loadUsers();
+        if (currentAdminRole === 'superadmin') await loadSignupOptionsAdmin();
       } else if (key === 'books') {
         document.getElementById('navBooks').classList.add('active');
         document.getElementById('panelBooks').classList.add('active');
@@ -1220,6 +1259,109 @@
           `;
         });
       } catch (err) { console.error(err); }
+    }
+
+    function toggleSignupOptionKind() {
+      const isCourse = document.getElementById('signupOptionKind').value === 'course';
+      document.getElementById('signupParentWrap').style.display = isCourse ? '' : 'none';
+    }
+
+    async function loadSignupOptionsAdmin() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/signup-options`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Could not load sign-up options.');
+        signupOptionCache = await res.json();
+        const departments = signupOptionCache.filter(item => item.kind === 'department' && item.is_active);
+        const parent = document.getElementById('signupParentDepartment');
+        parent.innerHTML = departments.map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+        renderSignupOptionsAdmin();
+      } catch (err) { toast(err.message || 'Could not load sign-up options.', 'danger'); }
+    }
+
+    function renderSignupOptionsAdmin() {
+      const departments = new Map(signupOptionCache.filter(item => item.kind === 'department').map(item => [item.id, item.name]));
+      const tbody = document.getElementById('signupOptionsTable').querySelector('tbody');
+      tbody.innerHTML = signupOptionCache.map(item => `<tr>
+        <td>${item.kind === 'department' ? 'Department' : 'Course'}</td>
+        <td><strong>${escapeHtml(item.name)}</strong></td>
+        <td>${item.kind === 'course' ? escapeHtml(departments.get(item.department_id) || '—') : '—'}</td>
+        <td><span class="badge ${item.is_active ? 'badge-success' : 'badge-secondary'}">${item.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-outline btn-sm" onclick="openSignupOptionEdit(${item.id})"><i class="fa-solid fa-pen"></i> Edit</button>${item.is_active ? `<button class="btn btn-outline btn-sm" onclick="deactivateSignupOption(${item.id})">Deactivate</button>` : `<button class="btn btn-outline btn-sm" onclick="restoreSignupOption(${item.id})">Restore</button>`}</td>
+      </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted);">No options yet. Add a department, then add its courses.</td></tr>';
+    }
+
+    function openSignupOptionEdit(id) {
+      const item = signupOptionCache.find(option => option.id === id);
+      if (!item) return;
+      document.getElementById('signupOptionEditId').value = String(item.id);
+      document.getElementById('signupOptionEditName').value = item.name;
+      const wrap = document.getElementById('signupOptionEditDepartmentWrap');
+      const select = document.getElementById('signupOptionEditDepartment');
+      if (item.kind === 'course') {
+        const departments = signupOptionCache.filter(option => option.kind === 'department' && option.is_active);
+        select.innerHTML = departments.map(option => `<option value="${option.id}" ${option.id === item.department_id ? 'selected' : ''}>${escapeHtml(option.name)}</option>`).join('');
+        wrap.style.display = '';
+      } else {
+        wrap.style.display = 'none';
+      }
+      document.getElementById('signupOptionEditModal').classList.add('open');
+    }
+
+    function closeSignupOptionEdit() {
+      document.getElementById('signupOptionEditModal').classList.remove('open');
+    }
+
+    async function handleSaveSignupOptionEdit(event) {
+      event.preventDefault();
+      const id = Number(document.getElementById('signupOptionEditId').value);
+      const item = signupOptionCache.find(option => option.id === id);
+      if (!item) return;
+      const body = {
+        kind: item.kind,
+        name: document.getElementById('signupOptionEditName').value.trim(),
+        department_id: item.kind === 'course' ? Number(document.getElementById('signupOptionEditDepartment').value) : null,
+      };
+      try {
+        const res = await fetch(`${API_BASE}/admin/signup-options/${id}`, { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Could not update that sign-up option.');
+        closeSignupOptionEdit();
+        toast('Sign-up option updated.', 'success');
+        await loadSignupOptionsAdmin();
+      } catch (err) { toast(err.message, 'danger'); }
+    }
+
+    async function handleAddSignupOption(event) {
+      event.preventDefault();
+      const kind = document.getElementById('signupOptionKind').value;
+      const body = { kind, name: document.getElementById('signupOptionName').value.trim(), department_id: kind === 'course' ? Number(document.getElementById('signupParentDepartment').value) : null };
+      try {
+        const res = await fetch(`${API_BASE}/admin/signup-options`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Could not add that sign-up option.');
+        document.getElementById('signupOptionName').value = '';
+        toast(`${kind === 'department' ? 'Department' : 'Course'} saved.`, 'success');
+        await loadSignupOptionsAdmin();
+      } catch (err) { toast(err.message, 'danger'); }
+    }
+
+    async function deactivateSignupOption(id) {
+      if (!window.confirm('Remove this option from new sign-ups? Existing member records will be kept.')) return;
+      try {
+        const res = await fetch(`${API_BASE}/admin/signup-options/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Could not deactivate that option.');
+        toast('Sign-up option deactivated.', 'success'); await loadSignupOptionsAdmin();
+      } catch (err) { toast(err.message, 'danger'); }
+    }
+
+    async function restoreSignupOption(id) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/signup-options/${id}/restore`, { method: 'PATCH', headers: getAuthHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Could not restore that option.');
+        toast('Sign-up option restored.', 'success'); await loadSignupOptionsAdmin();
+      } catch (err) { toast(err.message, 'danger'); }
     }
 
     async function handleProvisionStaff(e) {
@@ -1768,8 +1910,15 @@
         const badge = document.getElementById('circPatronBadge');
         if (data.found) {
           verifiedPatron = data;
-          document.getElementById('patronBadgeName').innerText = `${data.full_name} (${data.username})`;
-          document.getElementById('patronBadgeDetails').innerText = `${data.role} • ${data.department} • Active Loans: ${data.active_loans_count}/${data.max_allowed || (data.role === 'faculty' ? 5 : 3)}`;
+          input.value = data.username;
+          document.getElementById('patronBadgeName').innerText = data.full_name || '—';
+          document.getElementById('patronBadgeDetails').innerHTML = [
+            ['Student / Staff ID', data.username],
+            ['Department', data.department],
+            ['Course', data.course || 'Not provided'],
+            ['Account type', data.role],
+            ['Active loans', `${data.active_loans_count}/${data.max_allowed || (data.role === 'faculty' ? 5 : 3)}`],
+          ].map(([label, value]) => `<div><strong style="color:var(--text-muted);font-size:10px;display:block;text-transform:uppercase;letter-spacing:.04em;">${escapeHtml(label)}</strong><span style="color:var(--text-main);">${escapeHtml(value)}</span></div>`).join('');
           
           const statusElem = document.getElementById('patronBadgeStatus');
           statusElem.innerText = data.status_tag;
@@ -2084,6 +2233,8 @@
         currentUser = await response.json();
         const role = (currentUser.role || '').toLowerCase();
         if (!['superadmin', 'admin'].includes(role)) throw new Error('Forbidden');
+        currentAdminRole = role;
+        document.getElementById('signupOptionsAdmin').style.display = role === 'superadmin' ? '' : 'none';
       } catch (authErr) {
         console.error('Admin authentication guard failed:', authErr);
         handleLogout();

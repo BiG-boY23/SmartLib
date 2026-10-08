@@ -1,8 +1,9 @@
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from models import (
     User,
@@ -362,15 +363,27 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus):
 
 def get_circulation_patron_info(db: Session, patron_identifier: str):
     """Instant lookup of patron status for circulation desk scanning."""
+    scanned_value = str(patron_identifier or "").strip()
+    # Mobile member cards encode the institutional ID in a versioned payload.
+    # Some keyboard-wedge scanners send that payload twice in one read, so
+    # extract the ID instead of attempting to match the entire QR string.
+    qr_match = re.search(
+        r"EVSU-CARD-[^:]+::(.+?)::(?:student|faculty|admin|superadmin|librarian)(?=$|EVSU-CARD-)",
+        scanned_value,
+        flags=re.IGNORECASE,
+    )
+    if qr_match:
+        scanned_value = qr_match.group(1).strip()
+
     patron = db.query(User).filter(
         or_(
-            User.username == patron_identifier,
-            User.email == patron_identifier,
-            User.full_name == patron_identifier
+            func.lower(User.username) == scanned_value.casefold(),
+            func.lower(User.email) == scanned_value.casefold(),
+            func.lower(User.full_name) == scanned_value.casefold(),
         )
     ).first()
     if not patron:
-        return {"found": False, "message": f"Patron '{patron_identifier}' not found in registry."}
+        return {"found": False, "message": "Scanned library ID was not recognized. Ask the patron to refresh their Library ID and try again."}
 
     # Active loans
     active_borrows = (
@@ -417,6 +430,7 @@ def get_circulation_patron_info(db: Session, patron_identifier: str):
         "full_name": patron.full_name or patron.username,
         "email": patron.email,
         "department": patron.department or "General Student",
+        "course": patron.course or "Not provided",
         "role": patron.role.value if patron.role else "Student",
         "is_active": patron.is_active,
         "can_borrow": can_borrow,

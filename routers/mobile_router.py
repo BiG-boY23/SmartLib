@@ -132,12 +132,21 @@ def get_digital_student_id(
         "patron_id": current_user.username,
         "full_name": current_user.full_name,
         "role": current_user.role.value.upper(),
-        "department": current_user.department or "EVSU Main Campus",
+        "department": current_user.department or "EVSU Ormoc City Campus",
+        "course": current_user.course,
         "is_active": current_user.is_active,
         "active_borrows_count": active_borrows_count,
         "qr_payload": qr_payload,
         "issued_at": issued_at,
     }
+
+
+@router.get("/profile/digital-id/image")
+def download_library_id(current_user: User = Depends(patron_roles)):
+    from fastapi.responses import Response
+    from reporting import library_id_png
+    return Response(library_id_png(current_user), media_type="image/png", headers={
+        "Content-Disposition": 'attachment; filename="SmartLib-library-id.png"', "Cache-Control": "no-store"})
 
 
 @router.get("/announcements")

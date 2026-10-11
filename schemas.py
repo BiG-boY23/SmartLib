@@ -86,6 +86,7 @@ class PasswordResetComplete(EmailActionRequest):
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
+    confirm_new_password: Optional[str] = None
 
 
 # User Schemas
@@ -151,6 +152,7 @@ class DigitalIDPayload(BaseModel):
     full_name: str
     role: str
     department: str
+    course: Optional[str] = None
     is_active: bool
     active_borrows_count: int
     qr_payload: str
@@ -279,10 +281,10 @@ class AcquisitionResponse(BaseModel):
 
 # Feedback Schemas
 class FeedbackCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=120)
     email: EmailStr
     category: Optional[str] = "General Inquiry"
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
 
 
 class FeedbackResponse(BaseModel):
@@ -338,6 +340,8 @@ class SmtpLogResponse(BaseModel):
 
 class DashboardStatsResponse(BaseModel):
     total_books: int
+    catalog_titles: int
     active_borrows: int
     uncollected_fines: float
-    digital_reads: int
+    registered_patrons: int
+    pending_requests: int

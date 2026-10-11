@@ -471,12 +471,16 @@ def change_password(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if req.confirm_new_password is not None and req.new_password != req.confirm_new_password:
+        raise HTTPException(status_code=400, detail="New passwords do not match.")
     if not verify_password(req.current_password, current_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password")
     try:
         validate_password_policy(req.new_password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if verify_password(req.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Choose a password different from your current password.")
     now = datetime.utcnow()
     current_user.hashed_password = get_password_hash(req.new_password)
     db.query(UserSession).filter(UserSession.user_id == current_user.id, UserSession.revoked_at.is_(None)).update(

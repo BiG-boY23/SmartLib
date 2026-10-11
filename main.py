@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from database import engine, Base, SessionLocal, get_db
 from models import Book
-from routers import auth_router, admin_router, mobile_router
+from routers import auth_router, admin_router, mobile_router, report_router
 from schemas import FeedbackCreate, FeedbackResponse, BookResponse
 import crud
 
@@ -99,6 +99,7 @@ async def security_response_headers(request, call_next):
 app.include_router(auth_router.router)
 app.include_router(admin_router.router)
 app.include_router(mobile_router.router)
+app.include_router(report_router.router)
 
 # Installable patron app assets; mobile API routes above take precedence.
 mobile_assets_path = os.path.join(os.path.dirname(__file__), "mobile")

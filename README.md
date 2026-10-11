@@ -85,6 +85,19 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
+## Circulation reports, feedback, and Library ID
+
+- Admin and librarian dashboards use recorded database counts. Their charts show actual checkouts and returns over the last 30 days (admin) or 7 days (librarian).
+- Open **Circulation Reports** in either staff portal. Choose a date range (up to 366 days), department, course, and audience. Set both dates to the same day for a daily report, or select **Today**. Details can be sorted by date, department, or course.
+- Reports count unique borrowers/returners separately from items. A student borrowing several books counts once per day; period totals count each person once across the entire selected range. Pending requests and approvals are not checkouts. Dates use Philippine time (UTC+08:00); department/course come from the member's current recorded profile.
+- CSV includes totals, daily counts, and all matching activity details. PDF and Word include an analytics chart and activity details. The browser preview limits detail rows to 200; exports include all matching rows.
+- **Suggestions & inquiries** is available to both staff roles. Public feedback is saved through the landing-page form. Mobile book recommendations can be reviewed in the same inbox.
+- The mobile **Library ID** screen displays the Ormoc City Campus card and offers PNG download and sharing. On Android, choose a destination folder; on iOS, use the share sheet. The backend must be reachable to generate the image.
+- Mobile **Change password** checks the current password and matching new passwords, keeps the 8–12 character policy, and signs out existing sessions after success.
+- Circulation checkouts are due 24 hours after issue for students and faculty. A late return accrues ₱1.50 per started overdue hour, capped at ₱10 for each started 24-hour overdue period, matching the rates published on the library policy page. The fine is added when the item is checked back in.
+
+After pulling these changes, install backend dependencies with `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`, then run `npm.cmd install` from `D:\Master\mobile-native`. Restart Uvicorn and Expo, and hard-refresh both staff dashboards.
+
 ## Running Automated Tests
 
 Run the pytest suite to verify all API routes, authentication, RBAC rules, cataloging, and circulation logic:

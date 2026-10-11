@@ -44,23 +44,8 @@ superadmin_only = require_roles([UserRole.SUPERADMIN])
 def get_dashboard_stats(
     db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)
 ):
-    total_books = db.query(func.sum(Book.total_copies)).scalar() or db.query(Book).count()
-    active_borrows = (
-        db.query(BorrowRecord)
-        .filter(BorrowRecord.status.in_([BorrowStatus.APPROVED, BorrowStatus.CHECKED_OUT]))
-        .count()
-    )
-    uncollected_fines = (
-        db.query(func.sum(Fine.amount)).filter(Fine.is_paid == False).scalar() or 1450.0
-    )
-    digital_reads = 918  # Metric for digital repository reads
-
-    return {
-        "total_books": total_books,
-        "active_borrows": active_borrows,
-        "uncollected_fines": uncollected_fines,
-        "digital_reads": digital_reads,
-    }
+    from reporting import dashboard_stats
+    return dashboard_stats(db)
 
 
 # Book Management

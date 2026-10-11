@@ -1,5 +1,6 @@
 import re
 import uuid
+import math
 from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -17,6 +18,20 @@ from models import (
     UserRole,
     BorrowStatus,
 )
+
+LOAN_PERIOD_DAYS = 1
+OVERDUE_HOURLY_FINE = 1.50
+OVERDUE_DAILY_FINE_CAP = 10.00
+
+
+def calculate_overdue_fine(due_date: datetime, returned_at: datetime) -> float:
+    """Apply the published ₱1.50/hour rate, capped at ₱10 for each 24h late day."""
+    seconds_late = max(0, (returned_at - due_date).total_seconds())
+    if not seconds_late:
+        return 0.0
+    hours_late = math.ceil(seconds_late / 3600)
+    overdue_days = math.ceil(seconds_late / 86400)
+    return round(min(hours_late * OVERDUE_HOURLY_FINE, overdue_days * OVERDUE_DAILY_FINE_CAP), 2)
 from schemas import (
     UserCreate,
     UserUpdate,
@@ -331,11 +346,12 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus):
 
     record.status = new_status
     if new_status == BorrowStatus.APPROVED:
-        record.issue_date = datetime.utcnow()
-        record.due_date = datetime.utcnow() + timedelta(days=7)
+        # Approval reserves the pickup; the loan clock starts at checkout.
+        record.issue_date = None
+        record.due_date = None
     elif new_status == BorrowStatus.CHECKED_OUT:
         record.issue_date = datetime.utcnow()
-        record.due_date = datetime.utcnow() + timedelta(days=7)
+        record.due_date = datetime.utcnow() + timedelta(days=LOAN_PERIOD_DAYS)
         if record.book and record.book.available_copies > 0:
             record.book.available_copies -= 1
     elif new_status == BorrowStatus.RETURNED:
@@ -488,6 +504,10 @@ def execute_circulation(
 ):
     # Normalized modes
     norm_mode = mode.lower().strip()
+    # Older clients labelled a return request "return_late". The actual due
+    # date determines whether it was late, so route it through the real check-in.
+    if norm_mode == "return_late":
+        norm_mode = "return"
 
     # 1. Real Borrow Mode (from UI tab or scanner)
     if norm_mode in ["borrow", "issue"]:
@@ -534,16 +554,9 @@ def execute_circulation(
         # Check out
         book.available_copies -= 1
         now = datetime.utcnow()
-        if is_faculty:
-            due = now + timedelta(days=7)
-            loan_label = "7-Day Faculty Loan"
-            due_str = due.strftime("%b %d, %Y")
-        else:
-            # EVSU Overnight Student Loan: due on or before 9:00 AM next business day
-            days_ahead = 3 if now.weekday() == 4 else (2 if now.weekday() == 5 else 1)
-            due = (now + timedelta(days=days_ahead)).replace(hour=9, minute=0, second=0, microsecond=0)
-            loan_label = "Overnight Student Loan (Due 9:00 AM)"
-            due_str = f"{due.strftime('%b %d, %Y')} at 9:00 AM"
+        due = now + timedelta(days=LOAN_PERIOD_DAYS)
+        loan_label = "1-Day Faculty Loan" if is_faculty else "1-Day Student Loan"
+        due_str = due.strftime("%b %d, %Y at %I:%M %p")
 
         rec = BorrowRecord(
             req_id=f"CIR-{int(now.timestamp())}-{uuid.uuid4().hex[:6].upper()}",
@@ -602,8 +615,7 @@ def execute_circulation(
             is_overdue = False
             fine_amount = 0.0
             if active_rec.due_date and now > active_rec.due_date:
-                days = (now - active_rec.due_date).days or 1
-                fine_amount = float(days * 10.0) # ₱10 / day
+                fine_amount = calculate_overdue_fine(active_rec.due_date, now)
                 fine = Fine(
                     borrow_record_id=active_rec.id,
                     user_id=active_rec.user_id,
@@ -665,7 +677,7 @@ def execute_circulation(
             book_id=book.id,
             status=BorrowStatus.CHECKED_OUT,
             issue_date=datetime.utcnow(),
-            due_date=datetime.utcnow() + timedelta(days=7),
+            due_date=datetime.utcnow() + timedelta(days=LOAN_PERIOD_DAYS),
         )
         db.add(record)
         db.commit()
@@ -674,7 +686,7 @@ def execute_circulation(
         log_smtp(db, patron.email, "Borrow Confirmation", f"Notice: Issued {book.accession_no}")
         return {
             "status": "success",
-            "message": f"Issued {book.accession_no} to {patron.username}. Due in 7 days.",
+            "message": f"Issued {book.accession_no} to {patron.username}. Due in 1 day.",
         }
 
     elif norm_mode == "borrow_blocked":
@@ -701,20 +713,6 @@ def execute_circulation(
             "message": f"Book {accession_no} returned on time by {patron.username if patron else 'Patron'}.",
         }
 
-    elif norm_mode == "return_late":
-        if book:
-            book.available_copies += 1
-        fine = Fine(borrow_record_id=1, user_id=patron.id if patron else 1, amount=50.0, is_paid=False)
-        db.add(fine)
-        db.commit()
-
-        log_audit(db, patron.username if patron else "Patron", f"Returned {accession_no} late (₱50 fine applied)", "Fine Applied")
-        log_smtp(db, patron.email if patron else "patron@evsu.edu.ph", "Overdue Fine Notice", f"Warning: ₱50 Fine computed for {accession_no}")
-        return {
-            "status": "warning",
-            "message": f"Overdue return for {accession_no}. ₱50.00 fine added to patron account.",
-        }
-
     return {"status": "info", "message": "Circulation processed"}
 
 
@@ -725,9 +723,7 @@ _acq_counter = 201
 def create_acquisition(
     db: Session, user: User, acq_data: AcquisitionCreate
 ):
-    global _acq_counter
-    acq_id = f"ACQ-{_acq_counter}"
-    _acq_counter += 1
+    acq_id = f"ACQ-{uuid.uuid4().hex[:12].upper()}"
 
     acq = AcquisitionSuggestion(
         acq_id=acq_id,
@@ -817,7 +813,7 @@ def seed_initial_data(db: Session):
             hashed_password=get_password_hash("password123"),
             full_name="EVSU Student Patron",
             role=UserRole.STUDENT,
-            department="Main Campus",
+            department="Ormoc City Campus",
         )
         db.add_all([super_admin, librarian, librarian2, student])
         db.commit()
@@ -833,7 +829,7 @@ def seed_initial_data(db: Session):
                 hashed_password=get_password_hash("password123"),
                 full_name="EVSU Student Patron",
                 role=UserRole.STUDENT,
-                department="Main Campus",
+                department="Ormoc City Campus",
             )
         )
         db.commit()

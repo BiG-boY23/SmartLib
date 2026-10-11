@@ -138,6 +138,15 @@
     .alert-banner.show { display: flex; }
     .alert-banner i { font-size: 16px; flex-shrink: 0; }
 
+    .login-result-overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(3, 5, 9, .76); backdrop-filter: blur(5px); }
+    .login-result-overlay[hidden] { display: none; }
+    .login-result-card { width: min(100%, 390px); padding: 30px; text-align: center; border: 1px solid var(--border); border-radius: 18px; background: var(--bg-card); box-shadow: 0 24px 80px rgba(0,0,0,.55); }
+    .login-result-icon { width: 56px; height: 56px; display: grid; place-items: center; margin: 0 auto 17px; border-radius: 50%; font-size: 27px; font-weight: 800; color: #a7f3d0; background: rgba(16,185,129,.16); }
+    .login-result-card.failed .login-result-icon { color: var(--danger-text); background: var(--danger-bg); }
+    .login-result-card h2 { color: var(--text-main); font-size: 21px; margin-bottom: 9px; }
+    .login-result-card p { color: var(--text-muted); font-size: 14px; line-height: 1.55; margin-bottom: 23px; overflow-wrap: anywhere; }
+    .login-result-card button { width: 100%; padding: 12px 18px; border: 0; border-radius: 10px; background: var(--evsu-maroon); color: white; font: inherit; font-weight: 700; cursor: pointer; }
+
     /* Form Inputs */
     .form-group {
       margin-bottom: 20px;
@@ -314,6 +323,15 @@
     </div>
   </div>
 
+  <div id="loginResultOverlay" class="login-result-overlay" role="presentation" hidden>
+    <section id="loginResultCard" class="login-result-card" role="alertdialog" aria-modal="true" aria-labelledby="loginResultTitle" aria-describedby="loginResultMessage">
+      <div id="loginResultIcon" class="login-result-icon" aria-hidden="true">✓</div>
+      <h2 id="loginResultTitle"></h2>
+      <p id="loginResultMessage"></p>
+      <button id="loginResultButton" type="button">Continue</button>
+    </section>
+  </div>
+
   <script>
     function togglePasswordField(inputId, button) {
       const input = document.getElementById(inputId);
@@ -321,6 +339,37 @@
       const visible = input.type === 'text';
       button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
       button.querySelector('span').textContent = visible ? 'Hide' : 'Show';
+    }
+
+    function showLoginResult(success, message, onContinue) {
+      const overlay = document.getElementById('loginResultOverlay');
+      const card = document.getElementById('loginResultCard');
+      const title = document.getElementById('loginResultTitle');
+      const icon = document.getElementById('loginResultIcon');
+      const action = document.getElementById('loginResultButton');
+      const submit = document.getElementById('submitBtn');
+      card.classList.toggle('failed', !success);
+      title.textContent = success ? 'Sign in successful' : 'Sign in failed';
+      icon.textContent = success ? '✓' : '!';
+      document.getElementById('loginResultMessage').textContent = message;
+      if (!success) {
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
+      }
+      action.textContent = success ? 'Continue to dashboard' : 'Try again';
+      overlay.hidden = false;
+      action.focus();
+      action.onclick = () => {
+        overlay.hidden = true;
+        if (success) onContinue();
+        else {
+          document.getElementById('username').value = '';
+          document.getElementById('password').value = '';
+          submit.disabled = false;
+          submit.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+          document.getElementById('username').focus();
+        }
+      };
     }
 
     async function handleStaffLogin(e) {
@@ -349,10 +398,7 @@
         const data = await response.json();
 
         if (!response.ok) {
-          alertMsg.textContent = data.detail || 'Incorrect Staff ID or password. Please verify credentials.';
-          alertBanner.classList.add('show');
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+          showLoginResult(false, data.detail || 'Incorrect Staff ID or password. Please verify your staff credentials.');
           return;
         }
 
@@ -367,23 +413,17 @@
         const userRole = (data.role || '').toLowerCase();
 
         if (userRole === 'superadmin' || userRole === 'admin') {
-          window.location.href = '/admin-dashboard.html';
+          showLoginResult(true, `Your ${userRole === 'superadmin' ? 'Super Admin' : 'Administrator'} account has been authenticated. Continue to the administration dashboard.`, () => { window.location.href = '/admin-dashboard.html'; });
         } else if (userRole === 'librarian') {
-          window.location.href = '/librarian-dashboard.html';
+          showLoginResult(true, 'Your Librarian account has been authenticated. Continue to the librarian dashboard.', () => { window.location.href = '/librarian-dashboard.html'; });
         } else {
           fetch('/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${data.access_token}` } }).catch(() => {});
           ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
-          alertMsg.textContent = 'Access restricted: Staff role authorization required.';
-          alertBanner.classList.add('show');
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+          showLoginResult(false, 'Access is restricted to administrator and librarian accounts.');
         }
 
       } catch (err) {
-        alertMsg.textContent = 'Network or server communication error. Please check backend connection.';
-        alertBanner.classList.add('show');
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+        showLoginResult(false, 'Could not reach the library server. Check the connection and try again.');
       }
     }
 

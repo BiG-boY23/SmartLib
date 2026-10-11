@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Brightness from 'expo-brightness';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { isRunningInExpoGo } from 'expo';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import QRCode from 'react-native-qrcode-svg';
@@ -436,13 +438,14 @@ export default function App() {
 
   async function changePassword() {
     const { current_password, new_password, confirm_password } = changePasswordForm;
+    if (!current_password) { Alert.alert('Current password required', 'Enter your current password to continue.'); return; }
     if (new_password !== confirm_password) { Alert.alert('Passwords do not match', 'Enter the same new password in both fields.'); return; }
     if (new_password.length < 8 || new_password.length > 12 || !/[a-z]/.test(new_password) || !/[A-Z]/.test(new_password) || !/\d/.test(new_password) || !/[^A-Za-z0-9]/.test(new_password)) {
       Alert.alert('Password does not meet the policy', 'Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.'); return;
     }
     setBusy(true);
     try {
-      const result = await request('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password, new_password }) });
+      const result = await request('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password, new_password, confirm_new_password: confirm_password }) });
       setShowChangePassword(false); setChangePasswordForm({ current_password: '', new_password: '', confirm_password: '' });
       await SecureStore.deleteItemAsync(TOKEN_KEY); setToken(null); setUser(null); setScreen('auth'); setAuthMode('login');
       Alert.alert('Password changed', result.message || 'Sign in again with your new password.');
@@ -552,7 +555,7 @@ export default function App() {
       {tab === 'home' && <HomeScreen firstName={firstName} user={user} books={books} borrowings={borrowings} announcements={announcements} busy={busy} onExplore={() => changeTab('catalog')} onTab={changeTab} onBorrow={openBorrowRequest} onAssistant={() => setAssistantVisible(true)} onMessages={() => { setActiveThread(null); changeTab('messages'); }} />}
       {tab === 'catalog' && <CatalogScreen books={visibleBooks} categories={categories} category={category} onCategory={setCategory} query={query} onQuery={setQuery} availabilityFilter={availabilityFilter} setAvailabilityFilter={setAvailabilityFilter} busy={busy} onBorrow={openBorrowRequest} />}
       {tab === 'borrowings' && <BorrowingsScreen borrowings={borrowings} busy={busy} onRefresh={loadBorrowings} onExplore={() => changeTab('catalog')} onSelect={setSelectedBorrowing} />}
-      {tab === 'digital-id' && <DigitalIdScreen digitalId={digitalId} busy={busy} onRefresh={loadDigitalId} />}
+      {tab === 'digital-id' && <DigitalIdScreen digitalId={digitalId} busy={busy} onRefresh={loadDigitalId} apiBase={apiBase} token={token} />}
       {tab === 'updates' && <UpdatesScreen announcements={announcements} notifications={notifications} isStaff={isStaff} onPublish={() => setShowAnnouncementEditor(true)} onRead={markNotificationRead} onRefresh={loadLibraryUpdates} />}
       {tab === 'messages' && <MessagesScreen user={user} isStaff={isStaff} threads={messageThreads} activeThread={activeThread} messages={threadMessages} draft={messageDraft} setDraft={setMessageDraft} onOpen={loadMessageThread} onBack={() => { setActiveThread(null); loadMessageThreads(); }} onSend={sendThreadReply} onCompose={() => setShowComposeMessage(true)} />}
       {tab === 'profile' && <ProfileScreen user={user} onSuggest={() => setShowSuggestion(true)} onMessages={() => { setActiveThread(null); changeTab('messages'); }} onUpdates={() => changeTab('updates')} onDigitalId={() => changeTab('digital-id')} onSignOut={signOut} onChangePassword={() => setShowChangePassword(true)} onChangeApi={() => { setApiDraft(apiBase); setScreen('server-settings'); }} />}
@@ -653,7 +656,7 @@ function BookCard({ book, index, onBorrow }) {
 function HomeScreen({ firstName, user, books, borrowings, announcements, busy, onExplore, onTab, onBorrow, onAssistant, onMessages }) {
   const available = books.filter((book) => book.available_copies > 0).length;
   const pending = borrowings.filter((entry) => entry.status === 'PENDING').length;
-  return <><Greeting eyebrow="EVSU library · main campus" title={`Hello, ${firstName} 👋`} subtitle="Ready to find something worth reading?" right={<View style={styles.rolePill}><Text style={styles.roleText}>{user?.role}</Text></View>} /><View style={styles.hero}><Text style={styles.heroEyebrow}>A world of knowledge</Text><Text style={styles.heroTitle}>Your next chapter starts here.</Text><Text style={styles.heroSubtitle}>{busy ? 'Updating the collection…' : `${available} books ready to discover`}</Text><Button title="Explore books  →" onPress={onExplore} style={styles.heroButton} textStyle={styles.heroButtonText} /></View><SectionTitle title="Quick access" /><View style={styles.quickGrid}>{[['⌕', 'Find a book', 'Search the catalog', 'catalog'], ['▤', 'My requests', pending ? `${pending} awaiting review` : 'Check your loans', 'borrowings'], ['▣', 'Library ID', 'Digital membership', 'digital-id']].map(([icon, label, sub, target]) => <Pressable key={target} style={styles.quickCard} onPress={() => onTab(target)}><Text style={styles.quickIcon}>{icon}</Text><Text style={styles.quickTitle}>{label}</Text><Text style={styles.quickSub}>{sub}</Text></Pressable>)}</View><View style={styles.serviceRow}><Pressable style={styles.serviceCard} onPress={onAssistant}><Text style={styles.serviceGlyph}>✦</Text><View style={styles.flex}><Text style={styles.quickTitle}>AI Library Assistant</Text><Text style={styles.quickSub}>Ask about books and library services</Text></View><Text style={styles.actionText}>Open</Text></Pressable><Pressable style={styles.serviceCard} onPress={onMessages}><Text style={styles.serviceGlyph}>✉</Text><View style={styles.flex}><Text style={styles.quickTitle}>Message the library</Text><Text style={styles.quickSub}>Talk to an admin or librarian</Text></View><Text style={styles.actionText}>Chat</Text></Pressable></View><SectionTitle title="News & announcements" action="See all →" onAction={() => onTab('updates')} />{announcements.length ? announcements.slice(0, 2).map((post) => <Pressable key={post.id} style={styles.newsCard} onPress={() => onTab('updates')}><Text style={styles.newsEyebrow}>EVSU SMARTLIB · {new Date(post.created_at).toLocaleDateString()}</Text><Text style={styles.newsTitle}>{post.title}</Text><Text style={styles.newsBody} numberOfLines={3}>{post.body}</Text></Pressable>) : <EmptyState icon="▤" title="Library updates will appear here" message="Check back for collection news, events, and service announcements." />}<SectionTitle title="Recently added" action="View all →" onAction={onExplore} />{books.length ? <View style={styles.bookGrid}>{books.slice(0, 4).map((book, index) => <BookCard key={book.id} book={book} index={index} onBorrow={onBorrow} />)}</View> : <EmptyState icon="⌕" title="Catalog is waiting for you" message="The collection will appear here when it loads." />}</>;
+  return <><Greeting eyebrow="EVSU · Ormoc City Campus" title={`Hello, ${firstName} 👋`} subtitle="Ready to find something worth reading?" right={<View style={styles.rolePill}><Text style={styles.roleText}>{user?.role}</Text></View>} /><View style={styles.hero}><Text style={styles.heroEyebrow}>A world of knowledge</Text><Text style={styles.heroTitle}>Your next chapter starts here.</Text><Text style={styles.heroSubtitle}>{busy ? 'Updating the collection…' : `${available} books ready to discover`}</Text><Button title="Explore books  →" onPress={onExplore} style={styles.heroButton} textStyle={styles.heroButtonText} /></View><SectionTitle title="Quick access" /><View style={styles.quickGrid}>{[['⌕', 'Find a book', 'Search the catalog', 'catalog'], ['▤', 'My requests', pending ? `${pending} awaiting review` : 'Check your loans', 'borrowings'], ['▣', 'Library ID', 'Digital membership', 'digital-id']].map(([icon, label, sub, target]) => <Pressable key={target} style={styles.quickCard} onPress={() => onTab(target)}><Text style={styles.quickIcon}>{icon}</Text><Text style={styles.quickTitle}>{label}</Text><Text style={styles.quickSub}>{sub}</Text></Pressable>)}</View><View style={styles.serviceRow}><Pressable style={styles.serviceCard} onPress={onAssistant}><Text style={styles.serviceGlyph}>✦</Text><View style={styles.flex}><Text style={styles.quickTitle}>AI Library Assistant</Text><Text style={styles.quickSub}>Ask about books and library services</Text></View><Text style={styles.actionText}>Open</Text></Pressable><Pressable style={styles.serviceCard} onPress={onMessages}><Text style={styles.serviceGlyph}>✉</Text><View style={styles.flex}><Text style={styles.quickTitle}>Message the library</Text><Text style={styles.quickSub}>Talk to an admin or librarian</Text></View><Text style={styles.actionText}>Chat</Text></Pressable></View><SectionTitle title="News & announcements" action="See all →" onAction={() => onTab('updates')} />{announcements.length ? announcements.slice(0, 2).map((post) => <Pressable key={post.id} style={styles.newsCard} onPress={() => onTab('updates')}><Text style={styles.newsEyebrow}>EVSU SMARTLIB · {new Date(post.created_at).toLocaleDateString()}</Text><Text style={styles.newsTitle}>{post.title}</Text><Text style={styles.newsBody} numberOfLines={3}>{post.body}</Text></Pressable>) : <EmptyState icon="▤" title="Library updates will appear here" message="Check back for collection news, events, and service announcements." />}<SectionTitle title="Recently added" action="View all →" onAction={onExplore} />{books.length ? <View style={styles.bookGrid}>{books.slice(0, 4).map((book, index) => <BookCard key={book.id} book={book} index={index} onBorrow={onBorrow} />)}</View> : <EmptyState icon="⌕" title="Catalog is waiting for you" message="The collection will appear here when it loads." />}</>;
 }
 
 function CatalogScreen({ books, categories, category, onCategory, query, onQuery, availabilityFilter, setAvailabilityFilter, busy, onBorrow }) {
@@ -666,15 +669,65 @@ function BorrowingsScreen({ borrowings, busy, onRefresh, onExplore, onSelect }) 
   return <><Greeting eyebrow="Your library activity" title="My books" subtitle="Borrow requests, due dates, and return reminders." right={<Pressable onPress={onRefresh}><Text style={styles.actionText}>Refresh</Text></Pressable>} /><View style={styles.reminderNote}><Text style={styles.reminderGlyph}>♧</Text><Text style={styles.reminderCopy}>Return reminders are scheduled for the day before and the due date when notifications are enabled.</Text></View><SectionTitle title={busy ? 'Updating…' : 'Borrowing history'} />{entries.length ? <View style={styles.listStack}>{entries.map((entry) => { const status = entry.status || 'PENDING'; const tone = ['PENDING', 'APPROVED'].includes(status) ? 'amber' : ['REJECTED', 'OVERDUE', 'CANCELLED'].includes(status) ? 'red' : 'green'; const due = entry.due_date ? new Date(entry.due_date) : null; const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0); const dueDay = due ? new Date(due.getFullYear(), due.getMonth(), due.getDate()) : null; const daysLeft = dueDay ? Math.ceil((dueDay - dayStart) / 86400000) : null; const dueLabel = !due ? 'Due date not set' : daysLeft < 0 ? `Overdue by ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'}` : daysLeft === 0 ? 'Due today' : `Due in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`; return <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${entry.book_title || 'borrow request'}; ${status}`} key={entry.id} style={({ pressed }) => [styles.listCard, pressed && styles.listCardPressed]} onPress={() => onSelect(entry)}><Text style={styles.listIcon}>▤</Text><View style={styles.listContent}><Text style={styles.listTitle}>{entry.book_title || `Book ${entry.book_id}`}</Text><Text style={styles.listSub}>{entry.req_id} · Pickup {formatPickupLabel(entry.pickup_date)}</Text>{['APPROVED', 'CHECKED_OUT', 'OVERDUE'].includes(status) && <Text style={[styles.dueDateText, (daysLeft !== null && daysLeft <= 0) && styles.dueDateLate]}>{dueLabel}{due ? ` · ${due.toLocaleDateString()}` : ''}</Text>}</View><Badge tone={tone}>{status.replaceAll('_', ' ')}</Badge><Text style={styles.settingsChevron}>›</Text></Pressable>; })}</View> : <EmptyState icon="▤" title="No requests yet" message="Requested books will appear here."><Button title="Browse the catalog" secondary onPress={onExplore} /></EmptyState>}</>;
 }
 
-function DigitalIdScreen({ digitalId, busy, onRefresh }) {
-  if (!digitalId) return <><Greeting eyebrow="Always with you" title="Library ID" subtitle="Your digital EVSU library membership." /><View style={styles.emptyBox}><ActivityIndicator color={COLORS.wine} /><Text style={styles.emptyTitle}>{busy ? 'Loading your library ID…' : 'Could not load your ID'}</Text><Button title="Try again" secondary onPress={onRefresh} /></View></>;
-  return <><Greeting eyebrow="Always with you" title="Library ID" subtitle="Show your membership at the library desk." /><View style={styles.digitalCard}><View style={styles.digitalHead}><View style={styles.brandLine}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.brandLogoImage} accessibilityLabel="EVSU OC SmartLib logo" /><Text style={styles.brandTextLight}>EVSU SmartLib</Text></View><Text style={styles.cardLabel}>MEMBER CARD</Text></View><View style={styles.cardName}><Text style={styles.cardLabel}>CARD HOLDER</Text><Text style={styles.cardHolder}>{digitalId.full_name}</Text></View><View style={styles.idGrid}><IdFact label="Institutional ID" value={digitalId.patron_id} /><IdFact label="Membership" value={digitalId.role} /><IdFact label="Department" value={digitalId.department || 'EVSU Main Campus'} /><IdFact label="Active loans" value={String(digitalId.active_borrows_count)} /></View><View style={styles.qrBox}><QRCode value={digitalId.qr_payload} size={150} color="#241d20" backgroundColor="#ffffff" quietZone={5} /></View><Text style={styles.qrPayload}>{digitalId.qr_payload}</Text><Text style={styles.cardFoot}>{digitalId.is_active ? 'Membership active · brightness raised for scanning' : 'Contact the library desk about your account'}</Text></View><Button title={busy ? 'Refreshing…' : 'Refresh card'} secondary onPress={onRefresh} style={styles.refreshButton} /></>;
+function DigitalIdScreen({ digitalId, busy, onRefresh, apiBase, token }) {
+  const [saving, setSaving] = useState(false);
+  const imageUrl = `${apiBase.replace(/\/+$/, '')}/mobile/profile/digital-id/image`;
+  async function downloadImage(share = false) {
+    if (saving) return;
+    setSaving(true);
+    let localUri;
+    try {
+      const filename = `SmartLib-ID-${String(digitalId.patron_id).replace(/[^a-z0-9_-]/gi, '_')}.png`;
+      localUri = FileSystem.cacheDirectory + filename;
+      const result = await FileSystem.downloadAsync(imageUrl, localUri, { headers: { Authorization: `Bearer ${token}` } });
+      if (result.status !== 200) throw new Error('Your ID could not be downloaded. Refresh the card or sign in again.');
+      if (Platform.OS === 'android' && !share) {
+        const permission = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (!permission.granted) return;
+        const destination = await FileSystem.StorageAccessFramework.createFileAsync(permission.directoryUri, filename, 'image/png');
+        const content = await FileSystem.readAsStringAsync(localUri, { encoding: FileSystem.EncodingType.Base64 });
+        await FileSystem.writeAsStringAsync(destination, content, { encoding: FileSystem.EncodingType.Base64 });
+        Alert.alert('Library ID saved', 'Your PNG image is saved in the folder you selected.');
+      } else {
+        if (!(await Sharing.isAvailableAsync())) throw new Error('Image sharing is not available on this device.');
+        await Sharing.shareAsync(localUri, { mimeType: 'image/png', UTI: 'public.png', dialogTitle: 'Save or share your Library ID' });
+      }
+    } catch (error) { Alert.alert('Could not save Library ID', error.message); }
+    finally { if (localUri) await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {}); setSaving(false); }
+  }
+  if (!digitalId) return <><Greeting eyebrow="Ormoc City Campus" title="Library ID" subtitle="Your digital library membership." /><ActivityIndicator color={COLORS.wine} /><Button title="Refresh card" onPress={onRefresh} disabled={busy} /></>;
+  return <>
+    <Greeting eyebrow="EVSU · Ormoc City Campus" title="Library ID" subtitle="Present your QR code at the circulation desk." />
+    <View style={styles.libraryIdCard}>
+      <View style={styles.libraryIdHeader}>
+        <Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.libraryIdLogo} accessibilityLabel="EVSU SmartLib logo" />
+        <Text style={styles.libraryIdSchool}>EASTERN VISAYAS STATE UNIVERSITY</Text>
+        <Text style={styles.libraryIdCampus}>ORMOC CITY CAMPUS</Text>
+        <Text style={styles.libraryIdSubtitle}>SMARTLIB · LIBRARY MEMBERSHIP</Text>
+      </View>
+      <View style={styles.libraryQrFrame}>
+        <QRCode value={digitalId.qr_payload} size={224} quietZone={10} color="#111111" backgroundColor="#ffffff" />
+        <Text style={styles.libraryQrHint}>Scan at the circulation desk</Text>
+      </View>
+      <Text style={styles.libraryIdName}>{digitalId.full_name}</Text>
+      <Text style={styles.libraryIdNumber}>{digitalId.patron_id}</Text>
+      <Text style={styles.libraryIdRole}>{digitalId.role} · {digitalId.is_active ? 'Active member' : 'Inactive member'}</Text>
+      <View style={styles.libraryIdFooter}>
+        <Text style={styles.libraryIdDepartment}>{digitalId.department || 'Ormoc City Campus'}</Text>
+        {!!digitalId.course && <Text style={styles.libraryIdCourse}>{digitalId.course}</Text>}
+      </View>
+    </View>
+    <Button title={saving ? 'Preparing image…' : 'Download ID image'} onPress={() => downloadImage()} disabled={saving} />
+    <Button title="Share ID image" secondary onPress={() => downloadImage(true)} disabled={saving} style={{ marginTop: 10 }} />
+    <Text style={[styles.serverHint, { marginTop: 12 }]}>Keep this ID private. Staff check your current membership when they scan it.</Text>
+    <Button title={busy ? 'Refreshing…' : 'Refresh card'} secondary onPress={onRefresh} disabled={busy || saving} />
+  </>;
 }
 
 function IdFact({ label, value }) { return <View style={styles.idFact}><Text style={styles.cardLabel}>{label.toUpperCase()}</Text><Text style={styles.idValue}>{value}</Text></View>; }
 
 function ProfileScreen({ user, onSuggest, onMessages, onUpdates, onDigitalId, onSignOut, onChangePassword, onChangeApi }) {
-  return <><Greeting eyebrow="Your account" title="Account" subtitle="Library membership and account settings." /><View style={styles.profileCard}><View style={styles.profileHeader}><View style={styles.profileAvatar}><Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text></View><View style={styles.flex}><Text style={styles.profileName}>{user?.full_name}</Text><Text style={styles.profileEmail}>{user?.email}</Text></View><View style={styles.rolePill}><Text style={styles.roleText}>VERIFIED</Text></View></View><ProfileFact label="Institutional ID" value={user?.username} /><ProfileFact label="Account type" value={user?.role} /><ProfileFact label="Department" value={user?.department || 'EVSU Main Campus'} />{user?.course ? <ProfileFact label="Course" value={user.course} /> : null}</View><SectionTitle title="Library services" /><View style={styles.settingsGroup}><SettingsRow icon="✉" title="Message a librarian" onPress={onMessages} /><SettingsRow icon="♧" title="Notifications & library news" onPress={onUpdates} /><SettingsRow icon="▣" title="Digital library ID" onPress={onDigitalId} /><SettingsRow icon="＋" title="Suggest a book" onPress={onSuggest} /></View><SectionTitle title="About" /><View style={styles.aboutCard}><Text style={styles.aboutTitle}>EVSU SmartLib</Text><Text style={styles.aboutBody}>Your campus library collection, borrowing requests, updates, and librarian support in one place.</Text></View><SectionTitle title="Account management" /><View style={styles.settingsGroup}><SettingsRow icon="⌑" title="Change password" onPress={onChangePassword} />{__DEV__ && <SettingsRow icon="⚙" title="Development server address" onPress={onChangeApi} />}<SettingsRow icon="⇥" title="Sign out" onPress={onSignOut} /></View></>;
+  return <><Greeting eyebrow="Your account" title="Account" subtitle="Library membership and account settings." /><View style={styles.profileCard}><View style={styles.profileHeader}><View style={styles.profileAvatar}><Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text></View><View style={styles.flex}><Text style={styles.profileName}>{user?.full_name}</Text><Text style={styles.profileEmail}>{user?.email}</Text></View><View style={styles.rolePill}><Text style={styles.roleText}>VERIFIED</Text></View></View><ProfileFact label="Institutional ID" value={user?.username} /><ProfileFact label="Account type" value={user?.role} /><ProfileFact label="Department" value={user?.department || 'EVSU Ormoc City Campus'} />{user?.course ? <ProfileFact label="Course" value={user.course} /> : null}</View><SectionTitle title="Library services" /><View style={styles.settingsGroup}><SettingsRow icon="✉" title="Message a librarian" onPress={onMessages} /><SettingsRow icon="♧" title="Notifications & library news" onPress={onUpdates} /><SettingsRow icon="▣" title="Digital library ID" onPress={onDigitalId} /><SettingsRow icon="＋" title="Suggest a book" onPress={onSuggest} /></View><SectionTitle title="About" /><View style={styles.aboutCard}><Text style={styles.aboutTitle}>EVSU SmartLib</Text><Text style={styles.aboutBody}>Your campus library collection, borrowing requests, updates, and librarian support in one place.</Text></View><SectionTitle title="Account management" /><View style={styles.settingsGroup}><SettingsRow icon="⌑" title="Change password" onPress={onChangePassword} />{__DEV__ && <SettingsRow icon="⚙" title="Development server address" onPress={onChangeApi} />}<SettingsRow icon="⇥" title="Sign out" onPress={onSignOut} /></View></>;
 }
 
 function ServerModal({ value, onChange, onClose, onSave }) {
@@ -721,7 +774,26 @@ function BorrowingDetailsModal({ entry, onClose, onCancel }) {
 }
 
 function ChangePasswordModal({ visible, value, onChange, onClose, onSubmit, busy }) {
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalWrap}><View style={styles.modalCard}><View style={styles.modalHandle} /><Text style={styles.modalTitle}>Change password</Text><Text style={styles.modalSub}>Choose a secure password you have not used before.</Text><Field label="Current password" value={value.current_password} onChangeText={(text) => onChange('current_password', text)} secureTextEntry placeholder="Enter your current password" /><Field label="New password" value={value.new_password} onChangeText={(text) => onChange('new_password', text)} secureTextEntry placeholder="8–12 characters" /><Field label="Confirm new password" value={value.confirm_password} onChangeText={(text) => onChange('confirm_password', text)} secureTextEntry placeholder="Enter it again" /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol. You’ll be signed out after changing it.</Text><Button title={busy ? 'Updating…' : 'Update password'} onPress={onSubmit} disabled={busy} /><Button title="Cancel" secondary onPress={onClose} style={styles.modalCancel} /></View></KeyboardAvoidingView></View></Modal>;
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { if (!busy) onClose(); }}>
+      <View style={styles.modalShade}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalWrap}>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }} contentContainerStyle={styles.modalCard}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Change password</Text>
+            <Text style={styles.modalSub}>Choose a secure password you have not used before.</Text>
+            <Field label="Current password" value={value.current_password} onChangeText={(text) => onChange('current_password', text)} secureTextEntry autoCorrect={false} editable={!busy} placeholder="Enter your current password" />
+            <Field label="New password" value={value.new_password} onChangeText={(text) => onChange('new_password', text)} secureTextEntry autoCorrect={false} maxLength={12} editable={!busy} placeholder="8–12 characters" />
+            <PasswordStrengthIndicator password={value.new_password} />
+            <Field label="Confirm new password" value={value.confirm_password} onChangeText={(text) => onChange('confirm_password', text)} secureTextEntry autoCorrect={false} maxLength={12} editable={!busy} placeholder="Enter the new password again" />
+            <Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol. You’ll be signed out after changing it.</Text>
+            <Button title={busy ? 'Updating…' : 'Update password'} onPress={onSubmit} disabled={busy || !value.current_password || !value.new_password || !value.confirm_password} />
+            <Button title="Cancel" secondary onPress={onClose} disabled={busy} style={styles.modalCancel} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
 }
 
 function SuggestionModal({ visible, suggestion, setSuggestion, onClose, onSubmit, busy }) {
@@ -823,6 +895,20 @@ const styles = StyleSheet.create({
   emptyTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '800', textAlign: 'center' },
   emptyMessage: { color: COLORS.muted, fontSize: 12, textAlign: 'center', lineHeight: 18, marginBottom: 5 },
   digitalCard: { borderRadius: 22, backgroundColor: COLORS.wine, padding: 21, marginTop: 2 },
+  libraryIdCard: { borderRadius: 20, overflow: 'hidden', backgroundColor: COLORS.paper, borderWidth: 1, borderColor: COLORS.line, marginBottom: 18, alignItems: 'center', paddingTop: 22 },
+  libraryIdHeader: { alignItems: 'center', paddingHorizontal: 15 },
+  libraryIdLogo: { width: 76, height: 76, borderRadius: 38, marginBottom: 10 },
+  libraryIdSchool: { color: COLORS.ink, fontSize: 12, fontWeight: '900', textAlign: 'center' },
+  libraryIdCampus: { color: COLORS.wine, fontSize: 13, fontWeight: '900', marginTop: 5 },
+  libraryIdSubtitle: { color: COLORS.ink, fontSize: 10, marginTop: 7, marginBottom: 18 },
+  libraryQrFrame: { width: '88%', minHeight: 272, borderRadius: 17, borderWidth: 2, borderColor: COLORS.gold, alignItems: 'center', justifyContent: 'center', padding: 14 },
+  libraryQrHint: { color: COLORS.muted, fontSize: 10, marginTop: 5 },
+  libraryIdName: { color: COLORS.ink, fontSize: 20, fontWeight: '900', textAlign: 'center', marginTop: 18, paddingHorizontal: 15 },
+  libraryIdNumber: { color: COLORS.wine, fontSize: 17, fontWeight: '900', marginTop: 4 },
+  libraryIdRole: { color: COLORS.ink, fontSize: 11, marginTop: 5, marginBottom: 18, textTransform: 'capitalize' },
+  libraryIdFooter: { alignSelf: 'stretch', backgroundColor: COLORS.wine, minHeight: 68, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 12 },
+  libraryIdDepartment: { color: COLORS.paper, fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  libraryIdCourse: { color: '#f0dfe2', fontSize: 11, marginTop: 4, textAlign: 'center' },
   digitalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardLabel: { color: '#e4bec5', fontSize: 9, letterSpacing: 1, fontWeight: '700' },
   cardName: { marginTop: 30, marginBottom: 19 },
@@ -892,7 +978,7 @@ const styles = StyleSheet.create({
   authCard: { flex: 1, paddingHorizontal: 22, paddingTop: 26, paddingBottom: 40, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: COLORS.paper, marginTop: -1 },
   authTitle: { color: COLORS.ink, fontSize: 25, fontWeight: '900' },
   authSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 6, marginBottom: 22 },
-  field: { flex: 1, marginBottom: 14, gap: 7 },
+  field: { flexShrink: 0, marginBottom: 14, gap: 7 },
   label: { color: '#48434a', fontSize: 11, fontWeight: '800' },
   input: { minHeight: 46, borderWidth: 1, borderColor: '#e7e1dc', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, color: COLORS.ink, fontSize: 13, backgroundColor: COLORS.paper },
   passwordFieldWrap: { position: 'relative', justifyContent: 'center' },

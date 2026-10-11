@@ -635,25 +635,25 @@
         <div class="grid-4">
           <div class="stat-box">
             <div class="stat-icon maroon"><i class="fa-solid fa-book"></i></div>
-            <div class="stat-info"><h4 id="statBooks">1,420</h4><span>Catalog Holdings</span></div>
+            <div class="stat-info"><h4 id="statBooks">—</h4><span>Catalog Holdings</span></div>
           </div>
           <div class="stat-box">
             <div class="stat-icon gold"><i class="fa-solid fa-hand-holding-book"></i></div>
-            <div class="stat-info"><h4 id="statBorrows">42</h4><span>Active Loans</span></div>
+            <div class="stat-info"><h4 id="statBorrows">—</h4><span>Active Loans</span></div>
           </div>
           <div class="stat-box">
             <div class="stat-icon amber"><i class="fa-solid fa-receipt"></i></div>
-            <div class="stat-info"><h4 id="statFines">₱1,450</h4><span>Uncollected Fines</span></div>
+            <div class="stat-info"><h4 id="statFines">—</h4><span>Uncollected Fines</span></div>
           </div>
           <div class="stat-box">
             <div class="stat-icon emerald"><i class="fa-solid fa-users"></i></div>
-            <div class="stat-info"><h4 id="statUsers">3,200</h4><span>Registered Patrons</span></div>
+            <div class="stat-info"><h4 id="statUsers">—</h4><span>Registered Patrons</span></div>
           </div>
         </div>
 
         <div class="grid-2">
           <div class="card">
-            <div class="card-head"><h3><i class="fa-solid fa-chart-line text-gold"></i> Circulation &amp; Usage Trends</h3></div>
+            <div class="card-head"><h3><i class="fa-solid fa-chart-line text-gold"></i> Circulation · Last 30 days</h3></div>
             <div class="card-body"><canvas id="adminChart" height="190"></canvas></div>
           </div>
           <div class="card">
@@ -936,7 +936,7 @@
                 </div>
 
                 <button class="btn btn-maroon w-100" style="padding:12px; font-weight:700; margin-top:6px;" id="btnConfirmBorrow" onclick="executeBorrowDesk()">
-                  <i class="fa-solid fa-check"></i> Complete Checkout (7-Day Loan)
+                  <i class="fa-solid fa-check"></i> Complete Checkout (1-Day Loan)
                 </button>
               </div>
             </div>
@@ -1041,6 +1041,7 @@
     </div>
   </div>
 
+  <script src="/static/staff-reports.js"></script>
   <script>
     // AUTH GUARD FOR ADMIN PORTAL
     function getActiveToken() {
@@ -1217,6 +1218,7 @@
           const stats = await res.json();
           document.getElementById('statBooks').innerText = stats.total_books.toLocaleString();
           document.getElementById('statBorrows').innerText = stats.active_borrows;
+          document.getElementById('statUsers').innerText = stats.registered_patrons.toLocaleString();
           document.getElementById('statFines').innerText = `₱${stats.uncollected_fines.toLocaleString()}`;
         }
         const auditRes = await fetch(`${API_BASE}/admin/logs/audit`, { headers: getAuthHeaders() });
@@ -1239,7 +1241,6 @@
         const users = await res.json();
         const tbody = document.getElementById('userTable').getElementsByTagName('tbody')[0];
         tbody.innerHTML = '';
-        document.getElementById('statUsers').innerText = users.length;
 
         users.forEach(u => {
           const row = tbody.insertRow();
@@ -2020,7 +2021,7 @@
             <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${escapeHtml(data.book_title || bookAcc)}</div>
             <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:10px;">
               Issued to: <strong style="color:var(--evsu-gold);">${escapeHtml(data.patron_name || patronId)}</strong><br>
-              Due Date: <span class="badge badge-gold" style="font-size:12px;">${escapeHtml(data.due_date || 'In 7 Days')}</span>
+              Due Date: <span class="badge badge-gold" style="font-size:12px;">${escapeHtml(data.due_date || 'In 1 Day')}</span>
             </div>
             <button class="btn btn-outline btn-sm" onclick="resetCircDesk()"><i class="fa-solid fa-plus"></i> Next Checkout</button>
           `;
@@ -2087,11 +2088,11 @@
             <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${escapeHtml(data.book_title || bookAcc)}</div>
             <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:10px;">
               Returned late by <strong style="color:var(--evsu-gold);">${escapeHtml(data.patron_name || 'Patron')}</strong>.<br>
-              <span class="badge badge-warning" style="font-size:12px; margin-top:6px;">₱${(data.fine || 50).toFixed(2)} Fine Applied</span>
+              <span class="badge badge-warning" style="font-size:12px; margin-top:6px;">₱${Number(data.fine || 0).toFixed(2)} Fine Applied</span>
             </div>
           `;
           toast(`Overdue return fine applied: ₱${(data.fine || 50).toFixed(2)}`, 'warning');
-          addCircSessionEntry('Late Return', data.book_title || bookAcc, data.patron_name || 'Patron', `Fine ₱${(data.fine || 50).toFixed(2)}`);
+          addCircSessionEntry('Late Return', data.book_title || bookAcc, data.patron_name || 'Patron', `Fine ₱${Number(data.fine || 0).toFixed(2)}`);
         } else {
           playScannerBeep('error');
           receipt.className = 'scanner-terminal error';
@@ -2195,19 +2196,7 @@
     }
 
     function initChart() {
-      const ctx = document.getElementById('adminChart');
-      if (!ctx || typeof Chart === 'undefined') return;
-      try {
-        if (chartInstance) chartInstance.destroy();
-        chartInstance = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: ['Term 1', 'Term 2', 'Term 3', 'Term 4', 'Term 5', 'Term 6'],
-            datasets: [{ label: 'Circulation Volume', data: [180, 320, 450, 390, 580, 640], borderColor: '#d4af37', backgroundColor: 'rgba(212, 175, 55, 0.1)', fill: true, tension: 0.4 }]
-          },
-          options: { responsive: true, plugins: { legend: { labels: { color: '#d4af37' } } }, scales: { x: { grid: { color: '#232a3b' }, ticks: { color: '#8c96a6' } }, y: { grid: { color: '#232a3b' }, ticks: { color: '#8c96a6' } } } }
-        });
-      } catch (err) { console.warn('Chart rendering error:', err); }
+      return window.SmartLibStaff.loadDashboardChart('adminChart', 30);
     }
 
     function toast(msg, type = 'info') {

@@ -1,4 +1,6 @@
 import os
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from config import load_project_dotenv
@@ -20,12 +22,26 @@ from models import Book
 from routers import auth_router, admin_router, mobile_router, report_router
 from schemas import FeedbackCreate, FeedbackResponse, BookResponse
 import crud
+from library_notifications import process_notifications
+
+
+async def notification_worker():
+    while True:
+        try:
+            await asyncio.to_thread(process_notifications, SessionLocal)
+        except Exception:
+            logging.getLogger(__name__).exception("Library notification worker failed")
+        await asyncio.sleep(60)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Create tables & seed database
     Base.metadata.create_all(bind=engine)
+    thread_columns = {column["name"] for column in inspect(engine).get_columns("support_threads")}
+    if "recipient_role" not in thread_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE support_threads ADD COLUMN recipient_role VARCHAR(20) NOT NULL DEFAULT 'librarian'")
     # Preserve existing accounts as verified when upgrading older SQLite files.
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
     if "email_verified" not in user_columns:
@@ -36,16 +52,45 @@ async def lifespan(app: FastAPI):
     if "course" not in user_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN course VARCHAR")
+    for column in ("first_name", "middle_name", "last_name", "profile_picture_url"):
+        if column not in user_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {column} VARCHAR")
+    book_columns = {column["name"] for column in inspect(engine).get_columns("books")}
+    if "cover_url" not in book_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE books ADD COLUMN cover_url VARCHAR")
+    borrow_columns = {column["name"] for column in inspect(engine).get_columns("borrow_records")}
+    if "copy_accession_no" not in borrow_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE borrow_records ADD COLUMN copy_accession_no VARCHAR")
     pending_columns = {column["name"] for column in inspect(engine).get_columns("pending_registrations")}
     if "course" not in pending_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE pending_registrations ADD COLUMN course VARCHAR")
+    for column in ("first_name", "middle_name", "last_name"):
+        if column not in pending_columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(f"ALTER TABLE pending_registrations ADD COLUMN {column} VARCHAR")
+    approval_email_columns = {column["name"] for column in inspect(engine).get_columns("borrow_approval_emails")}
+    if "last_attempt_at" not in approval_email_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE borrow_approval_emails ADD COLUMN last_attempt_at DATETIME")
     db = SessionLocal()
     try:
         crud.seed_initial_data(db)
+        crud.ensure_book_copies(db, legacy_as_printed=True)
     finally:
         db.close()
-    yield
+    worker = asyncio.create_task(notification_worker())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -99,6 +144,8 @@ async def security_response_headers(request, call_next):
 app.include_router(auth_router.router)
 app.include_router(admin_router.router)
 app.include_router(mobile_router.router)
+from routers import public_assistant_router
+app.include_router(public_assistant_router.router)
 app.include_router(report_router.router)
 
 # Installable patron app assets; mobile API routes above take precedence.
@@ -108,6 +155,14 @@ app.mount("/mobile-assets", StaticFiles(directory=mobile_assets_path), name="mob
 static_assets_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_assets_path):
     app.mount("/static", StaticFiles(directory=static_assets_path), name="static")
+
+book_covers_path = os.path.join(os.path.dirname(__file__), "uploads", "book-covers")
+os.makedirs(book_covers_path, exist_ok=True)
+app.mount("/book-covers", StaticFiles(directory=book_covers_path), name="book-covers")
+
+profile_photos_path = os.path.join(os.path.dirname(__file__), "uploads", "profile-photos")
+os.makedirs(profile_photos_path, exist_ok=True)
+app.mount("/profile-photos", StaticFiles(directory=profile_photos_path), name="profile-photos")
 
 
 @app.get("/favicon.ico", include_in_schema=False)

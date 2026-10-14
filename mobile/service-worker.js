@@ -1,4 +1,4 @@
-const CACHE_NAME = "smartlib-shell-v4";
+const CACHE_NAME = "smartlib-shell-v6";
 const SHELL = ["/mobile/", "/mobile-assets/app.css", "/mobile-assets/app.js", "/mobile-assets/evsu-smartlib-logo.jpg", "/mobile-assets/evsu-smartlib-icon.png", "/mobile-manifest.json"];
 
 self.addEventListener("install", (event) => {

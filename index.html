@@ -1480,6 +1480,24 @@
       opacity: 0.8;
     }
 
+    .catalog-cover-preview {
+      width: min(100%, 170px);
+      height: 200px;
+      margin: 4px auto 18px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 10px;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+    }
+
+    .catalog-cover-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
     .book-meta-top {
       display: flex;
       justify-content: space-between;
@@ -2210,12 +2228,12 @@
       <div class="chatbot-avatar"><i class="fas fa-robot"></i></div>
       <div class="chatbot-header-info">
         <h4>SmartLib Assistant</h4>
-        <p><span class="chatbot-online"></span> EVSU Guide Knowledge Base Active</p>
+        <p><span class="chatbot-online"></span> <span id="chatStatus" role="status">Multilingual library assistant</span></p>
       </div>
     </div>
     <div class="chatbot-body" id="chatBody">
       <div class="chat-msg bot">
-        <div class="chat-bubble">👋 Hello! I'm your EVSU SmartLib Assistant, trained with the official <strong>EVSU Student's Library Guide</strong>. Ask me about library hours, borrowing limits, returning deadlines, fines, staff, or policies!</div>
+        <div class="chat-bubble">👋 Hello! I'm your EVSU SmartLib Assistant, using the <strong>EVSU Student's Library Guide</strong>. Ask in your preferred language about library hours, borrowing limits, returning deadlines, fines, staff, or policies!</div>
         <div class="chat-time">Just now</div>
       </div>
     </div>
@@ -2228,8 +2246,9 @@
       <div class="chat-chip" onclick="sendQuickMsg('Library staff')">👥 Library Staff</div>
       <div class="chat-chip" onclick="sendQuickMsg('Quality mission')">🎯 Quality Mission</div>
     </div>
+    <p style="font-size:11px;padding:8px 16px;margin:0">When AI is available, your question and recent chat are sent to OpenAI with public library data. Confirm official decisions with library staff.</p>
     <div class="chatbot-footer">
-      <input class="chatbot-input" id="chatInput" type="text" placeholder="Ask about EVSU library rules, hours, fines..."
+      <input class="chatbot-input" id="chatInput" type="text" maxlength="500" placeholder="Ask in any language?"
         onkeypress="handleChatKey(event)">
       <button class="chatbot-send" onclick="sendChatMsg()"><i class="fas fa-paper-plane"></i></button>
     </div>
@@ -2279,49 +2298,6 @@
       fab.classList.toggle('open', !isOpen);
     }
 
-    const officialKnowledgeBase = [
-      {
-        keywords: ['hour', 'open', 'close', 'schedule', 'time', 'noon break', 'saturday'],
-        answer: '🏛️ <strong>Library Hours:</strong><br>• Monday to Friday: <strong>7:00 AM – 6:00 PM</strong> (NO NOON BREAK)<br>• All checkouts are due <strong>24 hours after checkout</strong>.'
-      },
-      {
-        keywords: ['borrow', 'limit', 'how many', 'privilege', 'quota', 'entitled', 'faculty'],
-        answer: '📚 <strong>Loan Privileges:</strong><br>• <strong>Students:</strong> Up to <strong>3 books</strong> of different titles.<br>• <strong>Faculty:</strong> Up to <strong>5 books</strong> of different titles.<br>• All checkouts are due <strong>24 hours after checkout</strong>.<br>• <em>Note:</em> Books marked "NOT FOR HOME USE" & General Reference are strictly for room-use only.'
-      },
-      {
-        keywords: ['return', 'due', 'deadline', 'when to return', 'morning', '9:00', '9 am'],
-        answer: '⏳ <strong>Returning Policy:</strong><br>All checked-out books are due <strong>24 hours after checkout</strong>. Returns are accepted during the library\'s 7:00 AM – 6:00 PM operating hours.'
-      },
-      {
-        keywords: ['fine', 'overdue', 'late', 'penalty', 'rate', 'cost', 'fee', 'charge'],
-        answer: '💰 <strong>Overdue Fines:</strong><br>• <strong>₱1.50 per started overdue hour</strong>, capped at <strong>₱10.00 per started 24-hour overdue period</strong>.<br>• ⚠️ Borrowers with unpaid fines cannot borrow additional materials until their account is settled.'
-      },
-      {
-        keywords: ['lost', 'missing', 'replace', 'damage'],
-        answer: '🔍 <strong>Lost Book Policy:</strong><br>1. Report the lost book immediately to the Circulation Librarian.<br>2. Overdue fines will <strong>freeze</strong> as of the date reported.<br>3. You are granted a grace period of <strong>2 weeks</strong> to locate or replace the item.<br>4. If not replaced within 2 weeks, overdue fines will resume until settled.'
-      },
-      {
-        keywords: ['staff', 'personnel', 'librarian', 'who is', 'jereza', 'fevidal', 'becamon', 'duero', 'mas', 'assistant'],
-        answer: '👥 <strong>EVSU Library Personnel:</strong><br>• <strong>Romulo Joseph M. Jereza, IV, RL, MLIS</strong> — Supervising Librarian<br>• <strong>Neña Divina D. Fevidal, RL, MLIS</strong> — Librarian Designate<br>• <strong>Ivan Jarvis C. Becamon</strong> — Library Assistant<br>• <strong>Jacqueline P. Duero</strong> — Library Assistant<br>• <strong>Ronel P. Mas</strong> — Library Assistant'
-      },
-      {
-        keywords: ['suspension', 'offense', 'sanction', 'discipline', 'violation', 'punishment'],
-        answer: '⚖️ <strong>Disciplinary Sanctions:</strong><br>• <strong>1st Offense:</strong> 1-week suspension of library privileges<br>• <strong>2nd Offense:</strong> 1-month suspension of library privileges<br>• <strong>3rd Offense:</strong> 1 semester / trimester suspension'
-      },
-      {
-        keywords: ['mission', 'vision', 'goal', 'quality mission', 'objective'],
-        answer: '🎯 <strong>EVSU Library Quality Mission:</strong><br><em>"Complementing the teaching-learning process by providing effective and efficient library resources services to the students, faculty and staff of the University in support of its philosophy, goals and objectives."</em>'
-      },
-      {
-        keywords: ['section', 'services', 'area', 'reference', 'periodical', 'reserve', 'circulation', 'e-section', 'opac', 'internet'],
-        answer: '🏛️ <strong>Library Sections & Services:</strong><br>• <strong>6 Sections:</strong> General Reference, Periodicals, Reserved, Circulation, New Books Display, E-Section.<br>• <strong>6 Services:</strong> Lending, Reference/Information, Current Awareness, Referral, Library Orientation, and Internet/OPAC Services.'
-      },
-      {
-        keywords: ['card', 'id', 'requirement', 'register', 'membership', 'borrower card'],
-        answer: '🪪 <strong>Library ID & Requirements:</strong><br>A validated EVSU School ID / Library ID must be presented upon entering and during every borrowing transaction at the Circulation counter. Library IDs are non-transferable.'
-      }
-    ];
-
     function appendChatMsg(htmlContent, type) {
       const body = document.getElementById('chatBody');
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -2329,8 +2305,8 @@
       div.className = `chat-msg ${type}`;
       const bubble = document.createElement('div');
       bubble.className = 'chat-bubble';
-      if (type === 'user') bubble.textContent = htmlContent;
-      else bubble.innerHTML = htmlContent; // Bot replies come only from the fixed local guide text above.
+      bubble.textContent = htmlContent;
+      bubble.style.whiteSpace = 'pre-wrap';
       const time = document.createElement('div');
       time.className = 'chat-time';
       time.textContent = now;
@@ -2339,45 +2315,41 @@
       body.scrollTop = body.scrollHeight;
     }
 
-    function findGuideAnswer(queryText) {
-      const lower = queryText.toLowerCase().trim();
-      let bestMatch = null;
-      let highestScore = 0;
-
-      for (const entry of officialKnowledgeBase) {
-        let score = 0;
-        for (const kw of entry.keywords) {
-          if (lower.includes(kw)) {
-            score += kw.length; // give more weight to longer/specific keywords
-          }
-        }
-        if (score > highestScore) {
-          highestScore = score;
-          bestMatch = entry.answer;
-        }
-      }
-
-      if (highestScore > 0 && bestMatch) {
-        return bestMatch;
-      }
-
-      return "I'm not completely certain about that specific query based on the EVSU Student's Library Guide. You can ask about our <strong>hours (7AM–6PM)</strong>, <strong>borrowing limits (3 books for 24 hours)</strong>, <strong>return deadlines</strong>, <strong>fines (₱1.50 per overdue hour, capped at ₱10 per 24 overdue hours)</strong>, <strong>lost book policy (2 weeks grace)</strong>, or visit our Circulation desk!";
-    }
-
-    function sendQuickMsg(q) {
-      appendChatMsg(q, 'user');
-      const answer = findGuideAnswer(q);
-      setTimeout(() => appendChatMsg(answer, 'bot'), 400);
-    }
-
+    const chatHistory = [];
+    let chatBusy = false;
+    function sendQuickMsg(q) { return askPublicAssistant(q); }
     function sendChatMsg() {
       const input = document.getElementById('chatInput');
+      if (chatBusy || !input.value.trim()) return;
       const text = input.value.trim();
-      if (!text) return;
-      appendChatMsg(text, 'user');
       input.value = '';
-      const response = findGuideAnswer(text);
-      setTimeout(() => appendChatMsg(response, 'bot'), 500);
+      return askPublicAssistant(text);
+    }
+    async function askPublicAssistant(text) {
+      if (chatBusy) return;
+      if (text.length > 500) { appendChatMsg('Please keep your question under 500 characters.', 'bot'); return; }
+      chatBusy = true;
+      const button = document.querySelector('.chatbot-send');
+      button.disabled = true;
+      const status = document.getElementById('chatStatus');
+      status.textContent = 'Thinking?';
+      appendChatMsg(text, 'user');
+      try {
+        const response = await fetch('/public/assistant', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, history: chatHistory.slice(-6) }),
+          signal: AbortSignal.timeout(25000)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Unable to answer. Please try again.');
+        appendChatMsg(data.reply, 'bot');
+        chatHistory.push({ role: 'user', content: text }, { role: 'assistant', content: data.reply.slice(0, 500) });
+        chatHistory.splice(0, Math.max(0, chatHistory.length - 6));
+        status.textContent = data.source === 'model' ? 'Multilingual AI' : 'Library guide ? AI unavailable';
+      } catch (error) {
+        appendChatMsg(error.name === 'TimeoutError' ? 'The assistant took too long. Please try again.' : error.message, 'bot');
+        status.textContent = 'Assistant unavailable';
+      } finally { chatBusy = false; button.disabled = false; }
     }
 
     function handleChatKey(e) {
@@ -2436,6 +2408,7 @@
           <span class="book-category-badge">${esc(book.category)}</span>
           <span class="book-acc-badge">${esc(book.accession_no)}</span>
         </div>
+        ${book.cover_url ? `<div class="catalog-cover-preview"><img src="${esc(book.cover_url)}" alt="Cover of ${esc(book.title)}" loading="lazy" onerror="this.parentElement.remove()"></div>` : ''}
         <div class="book-card-title">${esc(book.title)}</div>
         <div class="book-card-author"><i class="fas fa-user-pen" style="color:var(--gold);font-size:12px;"></i> ${esc(book.author)}</div>
         <div class="book-details-list">

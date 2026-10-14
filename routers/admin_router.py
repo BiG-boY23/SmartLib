@@ -1,20 +1,26 @@
-from typing import List, Optional
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+import logging
+import uuid
+from typing import List, Optional, Literal
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 
 from database import get_db
 from models import (
     User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion, SignupOption,
-    AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread,
+    AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread, BorrowApprovalEmail, LibraryEmail,
 )
 from schemas import (
     BookCreate,
     BookUpdate,
     BookResponse,
+    BookCopyResponse,
+    BookCopiesPrintedRequest,
     BorrowRecordResponse,
     BorrowStatusUpdate,
+    LoanExtensionRequest,
     CirculationExecuteRequest,
     AcquisitionResponse,
     AcquisitionStatusUpdate,
@@ -26,14 +32,18 @@ from schemas import (
     DashboardStatsResponse,
     AnnouncementCreate,
     SupportMessageCreate,
+    StaffThreadCreate,
     SignupOptionCreate,
     SignupOptionUpdate,
     SignupOptionResponse,
 )
 import crud
+from email_service import send_email
+from library_notifications import queue_email
 from security import require_roles, get_current_user
 
 router = APIRouter(prefix="/admin", tags=["Web Dashboard (Admin & Librarian)"])
+logger = logging.getLogger(__name__)
 
 # Dependency enforcing ADMIN, LIBRARIAN, or SUPERADMIN
 admin_or_staff = require_roles([UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.LIBRARIAN])
@@ -81,12 +91,78 @@ def update_book_inventory(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    updated = crud.update_book(db, book_id, book_update)
+    try:
+        updated = crud.update_book(db, book_id, book_update)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
         )
     return updated
+
+
+@router.put("/books/{book_id}/cover", response_model=BookResponse)
+async def upload_book_cover(
+    book_id: int,
+    cover: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_staff),
+):
+    book = crud.get_book(db, book_id)
+    if not book:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+
+    filename = os.path.basename(cover.filename or "")
+    extension = os.path.splitext(filename)[1].lower()
+    content = await cover.read(5 * 1024 * 1024 + 1)
+    await cover.close()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Cover image must be 5 MB or smaller.")
+    if extension in {".jpg", ".jpeg"}:
+        valid_image = content.startswith(b"\xff\xd8\xff")
+        extension = ".jpg"
+    elif extension == ".png":
+        valid_image = content.startswith(b"\x89PNG\r\n\x1a\n")
+    else:
+        valid_image = False
+    if not valid_image:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a valid JPG or PNG front-cover image.")
+
+    cover_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "book-covers")
+    os.makedirs(cover_dir, exist_ok=True)
+    stored_name = f"book-{book.id}-{uuid.uuid4().hex}{extension}"
+    stored_path = os.path.join(cover_dir, stored_name)
+    with open(stored_path, "wb") as image_file:
+        image_file.write(content)
+    book.cover_url = f"/book-covers/{stored_name}"
+    db.commit()
+    db.refresh(book)
+    return book
+
+
+@router.get("/books/{book_id}/copies", response_model=List[BookCopyResponse])
+def list_book_copy_qr_records(
+    book_id: int,
+    unprinted_only: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_staff),
+):
+    if not crud.get_book(db, book_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    return crud.get_book_copies(db, book_id, unprinted_only=unprinted_only)
+
+
+@router.post("/books/{book_id}/copies/mark-printed", response_model=List[BookCopyResponse])
+def mark_book_copy_qr_labels_printed(
+    book_id: int,
+    request_data: BookCopiesPrintedRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_staff),
+):
+    if not crud.get_book(db, book_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    return crud.mark_book_copies_printed(db, book_id, request_data.copy_ids)
 
 
 @router.delete("/books/{book_id}")
@@ -171,24 +247,123 @@ def execute_circulation_terminal(
 # Borrow Requests Management
 @router.get("/borrow-requests", response_model=List[BorrowRecordResponse])
 def get_all_borrow_requests(
-    db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)
+    db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff),
+    status_filter: Optional[BorrowStatus] = None, search: str = "",
+    sort: Literal["newest", "oldest", "due", "patron"] = "newest",
+    skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100),
 ):
-    return crud.get_borrow_records(db)
+    query = db.query(BorrowRecord).join(User, BorrowRecord.user_id == User.id).join(Book, BorrowRecord.book_id == Book.id)
+    if status_filter:
+        query = query.filter(BorrowRecord.status == status_filter)
+    if search.strip():
+        term = '%' + search.strip() + '%'
+        query = query.filter(or_(User.full_name.ilike(term), Book.title.ilike(term),
+                                BorrowRecord.req_id.ilike(term), Book.accession_no.ilike(term)))
+    order = {"newest": BorrowRecord.request_date.desc(), "oldest": BorrowRecord.request_date.asc(),
+             "due": BorrowRecord.due_date.asc().nullslast(), "patron": User.full_name.asc()}[sort]
+    records = query.order_by(order, BorrowRecord.id).offset(skip).limit(limit).all()
+    for record in records:
+        record.user_name = record.user.full_name
+        record.book_title = record.book.title
+        record.accession_no = record.book.accession_no
+    deliveries = {
+        item.borrow_record_id: item.status
+        for item in db.query(BorrowApprovalEmail).filter(
+            BorrowApprovalEmail.borrow_record_id.in_([record.id for record in records])
+        ).all()
+    } if records else {}
+    for record in records:
+        record.approval_email_status = deliveries.get(record.id)
+    return records
+
+
+@router.get("/borrow-requests/{req_id}", response_model=BorrowRecordResponse)
+def get_staff_borrow_request(req_id: str, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    record = db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Loan not found.")
+    record.user_name = record.user.full_name
+    record.book_title = record.book.title
+    record.accession_no = record.book.accession_no
+    return record
 
 
 @router.put("/borrow-requests/{req_id}/status", response_model=BorrowRecordResponse)
 def update_request_status(
     req_id: str,
     status_update: BorrowStatusUpdate,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    updated, msg = crud.update_borrow_status(db, req_id, status_update.status)
+    updated, msg = crud.update_borrow_status(db, req_id, status_update.status, persist=False)
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
-    db.add(Notification(user_id=updated.user_id, title="Borrow request updated", body=f"Your request for {updated.book.title if updated.book else 'a book'} is now {updated.status.value.replace('_', ' ').lower()}.", kind="borrowing"))
+        code = status.HTTP_404_NOT_FOUND if msg == "Request record not found" else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=code, detail=msg)
+    if updated.status == BorrowStatus.APPROVED:
+        db.add(Notification(user_id=updated.user_id, title="Borrow request approved", body=f"Your request {updated.req_id} for {updated.book.title if updated.book else 'a book'} has been approved. Check your pickup schedule in My books.", kind="borrowing"))
+        db.add(BorrowApprovalEmail(borrow_record_id=updated.id))
+    else:
+        db.add(Notification(user_id=updated.user_id, title="Borrow request updated", body=f"Your request for {updated.book.title if updated.book else 'a book'} is now {updated.status.value.replace('_', ' ').lower()}.", kind="borrowing"))
+    db.add(AuditLog(user_name=current_user.username, event=f"Updated Borrow Request {req_id} status to {updated.status.value}", status=updated.status.value))
     db.commit()
+    if updated.status == BorrowStatus.APPROVED:
+        response.headers["X-Approval-Email-Status"] = _deliver_approval_email(db, updated)
     return updated
+
+
+def _deliver_approval_email(db: Session, record: BorrowRecord) -> str:
+    delivery = db.query(BorrowApprovalEmail).filter(BorrowApprovalEmail.borrow_record_id == record.id).first()
+    if not delivery or delivery.status == "sent":
+        return delivery.status if delivery else "missing"
+    now = datetime.utcnow()
+    claimed = db.query(BorrowApprovalEmail).filter(
+        BorrowApprovalEmail.id == delivery.id,
+        or_(BorrowApprovalEmail.status.in_(["pending", "failed"]),
+            and_(BorrowApprovalEmail.status == "sending", BorrowApprovalEmail.last_attempt_at < now - timedelta(minutes=5))),
+    ).update({BorrowApprovalEmail.status: "sending", BorrowApprovalEmail.attempts: BorrowApprovalEmail.attempts + 1, BorrowApprovalEmail.last_attempt_at: now}, synchronize_session=False)
+    db.commit()
+    if not claimed:
+        return "sending"
+    db.refresh(delivery)
+    body = (
+        f"Dear {record.user.full_name},\n\n"
+        "Your borrowing request has been approved.\n\n"
+        f"Book title: {record.book.title}\n"
+        f"Request reference: {record.req_id}\n"
+        "Approval status: Approved\n"
+        f"Approval date: {delivery.created_at.strftime('%B %d, %Y at %I:%M %p UTC')}\n"
+        f"Pickup schedule: {record.pickup_date or 'Please contact the library to arrange pickup.'}\n\n"
+        "Please present your library ID at the circulation desk. The loan period begins when the book is checked out.\n\n"
+        "EVSU Ormoc City Campus Library"
+    )
+    subject = f"Borrow request approved — {record.req_id}"
+    try:
+        send_email(record.user.email, subject, body)
+    except Exception as exc:
+        delivery.status = "failed"
+        delivery.last_error = str(exc)
+        db.commit()
+        crud.log_smtp(db, record.user.email, "Borrow Approval", subject, status="Failed: " + str(exc))
+        logger.exception("Borrow approval email failed for request %s", record.req_id)
+        return "failed"
+    delivery.status = "sent"
+    delivery.sent_at = datetime.utcnow()
+    delivery.last_error = None
+    db.commit()
+    crud.log_smtp(db, record.user.email, "Borrow Approval", subject, status="Delivered")
+    return "sent"
+
+
+@router.post("/borrow-requests/{req_id}/approval-email/retry")
+def retry_approval_email(req_id: str, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    record = db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
+    if not record or record.status not in {BorrowStatus.APPROVED, BorrowStatus.CHECKED_OUT, BorrowStatus.RETURNED}:
+        raise HTTPException(status_code=404, detail="Approved borrow request not found.")
+    delivery = db.query(BorrowApprovalEmail).filter(BorrowApprovalEmail.borrow_record_id == record.id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="No approval email is queued for this request.")
+    return {"status": _deliver_approval_email(db, record), "attempts": delivery.attempts}
 
 
 # Acquisition Suggestions Management
@@ -206,14 +381,56 @@ def update_acquisition(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    updated = crud.update_acquisition_status(db, acq_id, status_update.status)
+    if status_update.status not in {"Approved for Purchase", "Declined"}:
+        raise HTTPException(status_code=422, detail="Choose Approved for Purchase or Declined.")
+    updated = db.query(AcquisitionSuggestion).filter(AcquisitionSuggestion.acq_id == acq_id).first()
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Acquisition not found"
         )
-    db.add(Notification(user_id=updated.user_id, title="Book suggestion updated", body=f"Your suggestion for ‘{updated.title}’ is now {updated.status}.", kind="suggestion"))
+    changed = db.query(AcquisitionSuggestion).filter(AcquisitionSuggestion.id == updated.id,
+        AcquisitionSuggestion.status == "Under Review").update({AcquisitionSuggestion.status: status_update.status}, synchronize_session=False)
+    if not changed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This suggestion has already been reviewed.")
+    db.refresh(updated)
+    body = f"Your suggestion for '{updated.title}' is now {updated.status}. Approval for purchase does not mean the book is available yet."
+    db.add(Notification(user_id=updated.user_id, title="Book suggestion updated", body=body, kind="suggestion"))
+    patron = db.query(User).filter(User.id == updated.user_id).first()
+    queue_email(db, f"acquisition:{updated.id}:{updated.status}", patron, "Book suggestion reviewed", body)
+    db.add(AuditLog(user_name=current_user.username, event=f"Reviewed acquisition {acq_id}", status=updated.status))
     db.commit()
     return updated
+
+
+@router.post("/borrow-requests/{req_id}/extend", response_model=BorrowRecordResponse)
+def extend_loan(req_id: str, req: LoanExtensionRequest, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    record = db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Loan not found.")
+    if record.status not in {BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE} or not record.due_date:
+        raise HTTPException(status_code=409, detail="Only an active checked-out loan can be extended.")
+    if not req.due_date.tzinfo or len(req.reason.strip()) < 3:
+        raise HTTPException(status_code=422, detail="Provide a date with a timezone and an extension reason.")
+    due = req.due_date.astimezone(timezone.utc).replace(tzinfo=None)
+    old_due = record.due_date
+    if due <= max(old_due, datetime.utcnow()):
+        raise HTTPException(status_code=422, detail="The new due date must be later than the current due date and now.")
+    changed = db.query(BorrowRecord).filter(BorrowRecord.id == record.id, BorrowRecord.due_date == old_due,
+        BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE])).update(
+        {BorrowRecord.due_date: due, BorrowRecord.status: BorrowStatus.CHECKED_OUT}, synchronize_session=False)
+    if not changed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This loan changed. Reload it before extending.")
+    db.refresh(record)
+    db.query(LibraryEmail).filter(LibraryEmail.event_key == f"due:{record.id}:{old_due.isoformat()}",
+        LibraryEmail.status.in_(["pending", "failed"])).update({LibraryEmail.status: "cancelled"}, synchronize_session=False)
+    body = f"The loan for {record.book.title} ({req_id}) has been extended to {due:%B %d, %Y at %H:%M UTC}."
+    db.add(Notification(user_id=record.user_id, title="Loan extension approved", body=body, kind="borrowing"))
+    queue_email(db, f"extension:{record.id}:{due.isoformat()}", record.user, "Loan extension approved", body)
+    db.add(AuditLog(user_name=current_user.username, event=f"Extended {req_id}: {old_due.isoformat()} to {due.isoformat()}; reason: {req.reason.strip()}", status="Extended"))
+    db.commit()
+    return record
 
 
 @router.get("/announcements")
@@ -223,20 +440,27 @@ def list_library_announcements(db: Session = Depends(get_db), current_user: User
 
 @router.post("/announcements", status_code=status.HTTP_201_CREATED)
 def publish_library_announcement(req: AnnouncementCreate, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    post = Announcement(title=req.title.strip(), body=req.body.strip(), created_by=current_user.id)
+    if len(req.title.strip()) < 3 or not req.body.strip():
+        raise HTTPException(status_code=422, detail="Enter an announcement title and details.")
+    post = Announcement(title=" ".join(req.title.split()), body=req.body.strip(), created_by=current_user.id)
     db.add(post)
     db.flush()
     patrons = db.query(User).filter(User.role.in_([UserRole.STUDENT, UserRole.FACULTY]), User.is_active.is_(True)).all()
     for patron in patrons:
         db.add(Notification(user_id=patron.id, title="Library announcement", body=post.title, kind="announcement"))
+        queue_email(db, f"announcement:{post.id}:{patron.id}", patron, f"Library update: {post.title}", post.body)
     db.commit()
     db.refresh(post)
     return post
 
 
+def _support_recipient_role(user: User) -> str:
+    return "librarian" if user.role == UserRole.LIBRARIAN else "admin"
+
+
 @router.get("/messages")
 def list_support_inbox(db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    threads = db.query(SupportThread).order_by(SupportThread.updated_at.desc()).all()
+    threads = db.query(SupportThread).filter(SupportThread.recipient_role == _support_recipient_role(current_user)).order_by(SupportThread.updated_at.desc()).all()
     result = []
     for thread in threads:
         patron = db.query(User).filter(User.id == thread.user_id).first()
@@ -246,28 +470,57 @@ def list_support_inbox(db: Session = Depends(get_db), current_user: User = Depen
     return result
 
 
+@router.post("/messages", status_code=status.HTTP_201_CREATED)
+def start_staff_conversation(req: StaffThreadCreate, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    if len(req.subject.strip()) < 3 or not req.message.strip():
+        raise HTTPException(status_code=422, detail="Enter a subject and message.")
+    patron = db.query(User).filter(
+        User.username == req.recipient_username.strip(),
+        User.role.in_([UserRole.STUDENT, UserRole.FACULTY]),
+        User.is_active.is_(True),
+    ).first()
+    if not patron:
+        raise HTTPException(status_code=404, detail="Active student or faculty account not found")
+    now = datetime.utcnow()
+    thread = SupportThread(user_id=patron.id, recipient_role=_support_recipient_role(current_user), subject=req.subject.strip(), created_at=now, updated_at=now)
+    db.add(thread)
+    db.flush()
+    db.add(SupportMessage(thread_id=thread.id, sender_id=current_user.id, is_staff=True, body=req.message.strip()))
+    db.add(Notification(user_id=patron.id, title="Message from the library", body=f"A staff member started a conversation: {thread.subject}", kind="message"))
+    db.commit()
+    return {"id": thread.id, "subject": thread.subject, "patron_name": patron.full_name}
+
+
 @router.get("/messages/{thread_id}")
 def read_support_thread(thread_id: int, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    thread = db.query(SupportThread).filter(SupportThread.id == thread_id).first()
+    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.recipient_role == _support_recipient_role(current_user)).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Conversation not found")
     db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(False)).update({SupportMessage.read_by_staff: True}, synchronize_session=False)
     db.commit()
     patron = db.query(User).filter(User.id == thread.user_id).first()
     messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.asc()).all()
-    return {"thread": {"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "updated_at": thread.updated_at, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""}, "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "created_at": m.created_at} for m in messages]}
+    senders = {user.id: user.full_name for user in db.query(User).filter(User.id.in_([m.sender_id for m in messages])).all()} if messages else {}
+    return {"thread": {"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "updated_at": thread.updated_at, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""}, "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "sender_id": m.sender_id, "sender_name": senders.get(m.sender_id, "Library staff" if m.is_staff else "Patron"), "created_at": m.created_at} for m in messages]}
 
 
 @router.post("/messages/{thread_id}/reply", status_code=status.HTTP_201_CREATED)
 def reply_to_support_thread(thread_id: int, req: SupportMessageCreate, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    thread = db.query(SupportThread).filter(SupportThread.id == thread_id).first()
+    if not req.message.strip():
+        raise HTTPException(status_code=422, detail="Enter a message.")
+    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.recipient_role == _support_recipient_role(current_user)).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if thread.is_closed:
         raise HTTPException(status_code=400, detail="This conversation is closed")
     thread.updated_at = datetime.utcnow()
-    db.add(SupportMessage(thread_id=thread.id, sender_id=current_user.id, is_staff=True, body=req.message.strip()))
-    db.add(Notification(user_id=thread.user_id, title="Reply from the library", body=f"A librarian replied to ‘{thread.subject}’.", kind="message"))
+    reply = SupportMessage(thread_id=thread.id, sender_id=current_user.id, is_staff=True, body=req.message.strip())
+    db.add(reply)
+    db.flush()
+    patron = db.query(User).filter(User.id == thread.user_id).first()
+    queue_email(db, f"reply:{reply.id}", patron, f"Library reply: {thread.subject}",
+                f"{current_user.full_name or 'Library staff'} replied:\n\n{reply.body}\n\nOpen Messages in SmartLib to continue this conversation.")
+    db.add(Notification(user_id=thread.user_id, title="Reply from the library", body=f"A library staff member replied to ‘{thread.subject}’.", kind="message"))
     db.commit()
     return {"message": "Reply sent."}
 

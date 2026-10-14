@@ -17,6 +17,7 @@ from models import (
     SmtpLog,
     UserRole,
     BorrowStatus,
+    BookCopy,
 )
 
 LOAN_PERIOD_DAYS = 1
@@ -199,14 +200,47 @@ def get_book(db: Session, book_id: int):
     return db.query(Book).filter(Book.id == book_id).first()
 
 
+def resolve_book_copy(db: Session, accession_no: str):
+    """Resolve a base catalog accession or an exact physical-copy QR tag."""
+    scanned = str(accession_no or "").strip().upper()
+    copy_match = re.fullmatch(r"(.+)-C(\d+)", scanned)
+    if copy_match:
+        base_accession = copy_match.group(1)
+        copy_number = int(copy_match.group(2))
+        book = db.query(Book).filter(func.upper(Book.accession_no) == base_accession).first()
+        if not book or copy_number < 1 or copy_number > book.total_copies:
+            return None, None, True
+        return book, f"{book.accession_no}-C{copy_number:02d}", True
+
+    book = db.query(Book).filter(func.upper(Book.accession_no) == scanned).first()
+    if not book:
+        return None, None, False
+    return book, book.accession_no, False
+
+
 def get_book_by_accession(db: Session, accession_no: str):
-    book = db.query(Book).filter(Book.accession_no == accession_no).first()
-    if book:
-        return book
-    if "-C" in accession_no:
-        base_acc = accession_no.rsplit("-C", 1)[0]
-        return db.query(Book).filter(Book.accession_no == base_acc).first()
-    return None
+    book, _, _ = resolve_book_copy(db, accession_no)
+    return book
+
+
+def _active_copy_records(db: Session, book: Book):
+    return db.query(BorrowRecord).filter(
+        BorrowRecord.book_id == book.id,
+        BorrowRecord.status == BorrowStatus.CHECKED_OUT,
+    ).all()
+
+
+def _allocate_available_copy(db: Session, book: Book):
+    """Return the next unloaned copy tag, refusing ambiguous legacy loans."""
+    active = _active_copy_records(db, book)
+    if any(not row.copy_accession_no for row in active):
+        return None, "An older checkout has no copy QR recorded. Resolve that loan before issuing another copy of this title."
+    used = {row.copy_accession_no.upper() for row in active}
+    for copy_number in range(1, book.total_copies + 1):
+        tag = f"{book.accession_no}-C{copy_number:02d}"
+        if tag.upper() not in used:
+            return tag, None
+    return None, "All physical copies of this book are currently checked out."
 
 
 def get_books(
@@ -235,9 +269,54 @@ def get_books(
     return query.offset(skip).limit(limit).all()
 
 
+def _new_book_copy(book: Book, copy_number: int, qr_printed_at=None):
+    return BookCopy(
+        book_id=book.id,
+        copy_number=copy_number,
+        accession_no=f"{book.accession_no}-C{copy_number:02d}",
+        qr_printed_at=qr_printed_at,
+    )
+
+
+def ensure_book_copies(db: Session, legacy_as_printed: bool = True):
+    """Backfill the persistent copy registry without changing existing tags."""
+    stamp = datetime.utcnow() if legacy_as_printed else None
+    for book in db.query(Book).all():
+        existing = {
+            copy_number
+            for (copy_number,) in db.query(BookCopy.copy_number).filter(BookCopy.book_id == book.id).all()
+        }
+        for copy_number in range(1, book.total_copies + 1):
+            if copy_number not in existing:
+                db.add(_new_book_copy(book, copy_number, stamp))
+    db.commit()
+
+
+def get_book_copies(db: Session, book_id: int, unprinted_only: bool = False):
+    query = db.query(BookCopy).filter(BookCopy.book_id == book_id)
+    if unprinted_only:
+        query = query.filter(BookCopy.qr_printed_at.is_(None))
+    return query.order_by(BookCopy.copy_number.asc()).all()
+
+
+def mark_book_copies_printed(db: Session, book_id: int, copy_ids: List[int]):
+    now = datetime.utcnow()
+    rows = db.query(BookCopy).filter(
+        BookCopy.book_id == book_id,
+        BookCopy.id.in_(copy_ids),
+        BookCopy.qr_printed_at.is_(None),
+    ).all()
+    for row in rows:
+        row.qr_printed_at = now
+    db.commit()
+    return rows
+
+
 def create_book(db: Session, book_data: BookCreate):
     db_book = Book(**book_data.model_dump())
     db.add(db_book)
+    db.flush()
+    db.add_all(_new_book_copy(db_book, copy_number) for copy_number in range(1, db_book.total_copies + 1))
     db.commit()
     db.refresh(db_book)
     log_audit(
@@ -253,8 +332,28 @@ def update_book(db: Session, book_id: int, book_update: BookUpdate):
     db_book = get_book(db, book_id)
     if not db_book:
         return None
-    for field, value in book_update.model_dump(exclude_unset=True).items():
+    changes = book_update.model_dump(exclude_unset=True, exclude={"available_copies"})
+    new_total = changes.get("total_copies", db_book.total_copies)
+    if new_total is None or new_total < 1:
+        raise ValueError("The copy count must be at least one.")
+    if new_total < db_book.total_copies:
+        raise ValueError("The copy count cannot be reduced because existing copy QR records must be retained. Increase the count to add copies.")
+    copy_delta = new_total - db_book.total_copies
+    for field, value in changes.items():
         setattr(db_book, field, value)
+    if copy_delta:
+        db_book.available_copies += copy_delta
+        existing_numbers = {
+            copy_number
+            for (copy_number,) in db.query(BookCopy.copy_number).filter(BookCopy.book_id == db_book.id).all()
+        }
+        next_number = max(existing_numbers, default=0) + 1
+        new_rows = []
+        while len(new_rows) < copy_delta:
+            if next_number not in existing_numbers:
+                new_rows.append(_new_book_copy(db_book, next_number))
+            next_number += 1
+        db.add_all(new_rows)
     db.commit()
     db.refresh(db_book)
     log_audit(db, "Librarian", f"Updated Book Metadata {db_book.accession_no}", "Saved")
@@ -333,47 +432,71 @@ def get_borrow_records(
     for r in records:
         r.user_name = r.user.full_name if r.user else "Unknown"
         r.book_title = r.book.title if r.book else "Unknown"
-        r.accession_no = r.book.accession_no if r.book else "Unknown"
+        r.accession_no = r.copy_accession_no or (r.book.accession_no if r.book else "Unknown")
     return records
 
 
-def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus):
+def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, persist: bool = True):
     record = (
         db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
     )
     if not record:
         return None, "Request record not found"
 
-    record.status = new_status
     if new_status == BorrowStatus.APPROVED:
+        if record.status != BorrowStatus.PENDING:
+            return None, "Only pending requests can be approved."
         # Approval reserves the pickup; the loan clock starts at checkout.
         record.issue_date = None
         record.due_date = None
+        record.status = new_status
+    elif new_status == BorrowStatus.REJECTED:
+        if record.status != BorrowStatus.PENDING:
+            return None, "Only pending requests can be rejected."
+        record.status = new_status
     elif new_status == BorrowStatus.CHECKED_OUT:
-        record.issue_date = datetime.utcnow()
-        record.due_date = datetime.utcnow() + timedelta(days=LOAN_PERIOD_DAYS)
-        if record.book and record.book.available_copies > 0:
-            record.book.available_copies -= 1
+        if record.status != BorrowStatus.APPROVED:
+            return None, "Approve the request before checking it out."
+        if not record.book or record.book.is_archived or record.book.available_copies <= 0:
+            return None, "No available copy can be checked out for this request."
+        copy_tag, allocation_error = _allocate_available_copy(db, record.book)
+        if allocation_error:
+            return None, allocation_error
+        now = datetime.utcnow()
+        record.copy_accession_no = copy_tag
+        record.issue_date = now
+        record.due_date = now + timedelta(days=LOAN_PERIOD_DAYS)
+        record.book.available_copies -= 1
+        record.status = new_status
     elif new_status == BorrowStatus.RETURNED:
-        record.return_date = datetime.utcnow()
-        if record.book:
+        if record.status != BorrowStatus.CHECKED_OUT:
+            return None, "This request has no active checkout. No return was recorded."
+        now = datetime.utcnow()
+        record.return_date = now
+        record.status = new_status
+        if record.book and record.book.available_copies < record.book.total_copies:
             record.book.available_copies += 1
+        if record.due_date and now > record.due_date:
+            db.add(Fine(
+                borrow_record_id=record.id,
+                user_id=record.user_id,
+                amount=calculate_overdue_fine(record.due_date, now),
+                is_paid=False,
+            ))
+    else:
+        return None, f"Status {new_status.value} cannot be set through this action."
 
-    db.commit()
-    db.refresh(record)
-
-    log_audit(
-        db,
-        "Librarian",
-        f"Updated Borrow Request {req_id} status to {new_status.value}",
-        new_status.value,
-    )
-    log_smtp(
-        db,
-        record.user.email if record.user else "patron@evsu.edu.ph",
-        f"Borrow Request {new_status.value.title()}",
-        f"Notice for Request {req_id}: {record.book.title if record.book else ''}",
-    )
+    if persist:
+        db.commit()
+        db.refresh(record)
+        log_audit(
+            db,
+            "Librarian",
+            f"Updated Borrow Request {req_id} status to {new_status.value}",
+            new_status.value,
+        )
+    else:
+        db.flush()
     return record, "Success"
 
 
@@ -414,7 +537,7 @@ def get_circulation_patron_info(db: Session, patron_identifier: str):
         {
             "req_id": r.req_id,
             "book_title": r.book.title if r.book else "Unknown",
-            "accession_no": r.book.accession_no if r.book else "",
+            "accession_no": r.copy_accession_no or (r.book.accession_no if r.book else ""),
             "due_date": r.due_date.strftime("%Y-%m-%d") if r.due_date else ""
         }
         for r in active_borrows
@@ -460,20 +583,28 @@ def get_circulation_patron_info(db: Session, patron_identifier: str):
 
 def get_circulation_book_info(db: Session, accession_no: str):
     """Instant lookup of book availability for circulation desk scanning."""
-    book = get_book_by_accession(db, accession_no)
+    book, canonical_copy_tag, is_copy_tag = resolve_book_copy(db, accession_no)
     if not book:
         return {"found": False, "message": f"Book tag '{accession_no}' not found in catalog."}
 
-    # Check if there is an active borrower for this specific book
-    active_loan = (
-        db.query(BorrowRecord)
-        .filter(
-            BorrowRecord.book_id == book.id,
-            BorrowRecord.status == BorrowStatus.CHECKED_OUT
+    active_loans = _active_copy_records(db, book)
+    active_loan = None
+    legacy_copy_tracking = any(not row.copy_accession_no for row in active_loans)
+    checkout_copy_tag = None
+    allocation_error = None
+    if is_copy_tag:
+        active_loan = next(
+            (row for row in active_loans if (row.copy_accession_no or "").upper() == canonical_copy_tag.upper()),
+            None,
         )
-        .order_by(BorrowRecord.issue_date.desc())
-        .first()
-    )
+        copy_is_available = not active_loan and not legacy_copy_tracking and book.available_copies > 0
+        if copy_is_available:
+            checkout_copy_tag = canonical_copy_tag
+    else:
+        active_loan = active_loans[0] if len(active_loans) == 1 else None
+        if book.available_copies > 0:
+            checkout_copy_tag, allocation_error = _allocate_available_copy(db, book)
+        copy_is_available = bool(checkout_copy_tag)
 
     borrower_info = None
     if active_loan and active_loan.user:
@@ -486,7 +617,10 @@ def get_circulation_book_info(db: Session, accession_no: str):
     return {
         "found": True,
         "id": book.id,
-        "accession_no": book.accession_no,
+        "accession_no": canonical_copy_tag,
+        "checkout_copy_accession_no": checkout_copy_tag,
+        "scanned_accession_no": str(accession_no or "").strip(),
+        "is_copy_tag": is_copy_tag,
         "title": book.title,
         "author": book.author,
         "call_number": book.call_number or "General Shelf",
@@ -494,7 +628,16 @@ def get_circulation_book_info(db: Session, accession_no: str):
         "condition": book.condition or "Good",
         "available_copies": book.available_copies,
         "total_copies": book.total_copies,
-        "is_available": book.available_copies > 0,
+        "is_available": copy_is_available,
+        "copy_status_message": (
+            "This copy is already checked out."
+            if active_loan and is_copy_tag
+            else "An older checkout has no copy QR recorded. Resolve that loan before issuing or returning a specific copy."
+            if legacy_copy_tracking
+            else allocation_error
+            if allocation_error
+            else None
+        ),
         "current_borrower": borrower_info
     }
 
@@ -506,7 +649,7 @@ def execute_circulation(
     norm_mode = mode.lower().strip()
     # Older clients labelled a return request "return_late". The actual due
     # date determines whether it was late, so route it through the real check-in.
-    if norm_mode == "return_late":
+    if norm_mode in {"return_late", "return_ontime"}:
         norm_mode = "return"
 
     # 1. Real Borrow Mode (from UI tab or scanner)
@@ -526,13 +669,25 @@ def execute_circulation(
             return {"status": "blocked", "message": f"Blocked: Patron has ₱{total_fine:.2f} in unpaid library fines."}
 
         # Check book
-        book = get_book_by_accession(db, accession_no)
+        book, requested_copy_tag, is_copy_tag = resolve_book_copy(db, accession_no)
         if not book:
             return {"status": "error", "message": f"Book tag '{accession_no}' not found in catalog."}
         if book.is_archived:
             return {"status": "error", "message": f"Book '{book.title}' is archived and unavailable for checkout."}
         if book.available_copies <= 0:
             return {"status": "unavail", "message": f"All copies of '{book.title}' are currently on loan."}
+
+        active_copies = _active_copy_records(db, book)
+        if is_copy_tag:
+            if any(not row.copy_accession_no for row in active_copies):
+                return {"status": "unavail", "message": "An older checkout has no copy QR recorded. Resolve that loan before issuing a specific copy."}
+            if any((row.copy_accession_no or "").upper() == requested_copy_tag.upper() for row in active_copies):
+                return {"status": "unavail", "message": f"Copy {requested_copy_tag} is already checked out."}
+            copy_tag = requested_copy_tag
+        else:
+            copy_tag, allocation_error = _allocate_available_copy(db, book)
+            if allocation_error:
+                return {"status": "unavail", "message": allocation_error}
 
         # Check role-based borrowing limit (Students: max 3 books, Faculty/Staff: max 5 books)
         is_faculty = patron.role in [UserRole.FACULTY, UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.LIBRARIAN]
@@ -562,6 +717,7 @@ def execute_circulation(
             req_id=f"CIR-{int(now.timestamp())}-{uuid.uuid4().hex[:6].upper()}",
             user_id=patron.id,
             book_id=book.id,
+            copy_accession_no=copy_tag,
             status=BorrowStatus.CHECKED_OUT,
             issue_date=now,
             due_date=due,
@@ -570,7 +726,7 @@ def execute_circulation(
         db.add(rec)
         db.commit()
 
-        log_audit(db, patron.username, f"Issued Book {book.accession_no} ({book.title})", "Approved")
+        log_audit(db, patron.username, f"Issued Copy {copy_tag} ({book.title})", "Approved")
         log_smtp(db, patron.email, "Book Issued Confirmation", f"You borrowed '{book.title}'. Due Date: {due_str}.")
 
         return {
@@ -579,81 +735,111 @@ def execute_circulation(
             "patron_name": patron.full_name or patron.username,
             "patron_id": patron.username,
             "book_title": book.title,
-            "accession_no": book.accession_no,
+            "accession_no": copy_tag,
+            "copy_accession_no": copy_tag,
             "due_date": due_str,
             "loan_type": loan_label
         }
 
     # 2. Real Return Mode (from UI tab or scanner)
     elif norm_mode in ["return", "checkin"]:
-        book = get_book_by_accession(db, accession_no)
+        book, scanned_copy_tag, is_copy_tag = resolve_book_copy(db, accession_no)
         if not book:
             return {"status": "error", "message": f"Book tag '{accession_no}' not recognized in catalog."}
 
-        # Find active loan
+        # A copy QR must match the active loan for that exact physical copy.
+        # Never fall back to another copy of the same title.
         loan_q = db.query(BorrowRecord).filter(
             BorrowRecord.book_id == book.id,
-            BorrowRecord.status == BorrowStatus.CHECKED_OUT
+            BorrowRecord.status == BorrowStatus.CHECKED_OUT,
         )
         if patron_username:
             patron = get_user_by_username(db, patron_username)
-            if patron:
-                loan_q = loan_q.filter(BorrowRecord.user_id == patron.id)
+            if not patron:
+                return {
+                    "status": "error",
+                    "message": f"Patron '{patron_username}' is not registered. No return was recorded.",
+                    "book_title": book.title,
+                    "accession_no": book.accession_no,
+                }
+            loan_q = loan_q.filter(BorrowRecord.user_id == patron.id)
 
-        active_rec = loan_q.order_by(BorrowRecord.issue_date.desc()).first()
+        candidates = loan_q.order_by(BorrowRecord.issue_date.desc()).all()
+        if is_copy_tag:
+            active_rec = next(
+                (row for row in candidates if (row.copy_accession_no or "").upper() == scanned_copy_tag.upper()),
+                None,
+            )
+        elif len(candidates) == 1:
+            # Base accession scans remain useful for single-copy and legacy records.
+            active_rec = candidates[0]
+        elif len(candidates) > 1:
+            return {
+                "status": "error",
+                "message": "More than one copy is currently borrowed. Scan the QR label on the exact returned copy.",
+                "book_title": book.title,
+                "accession_no": book.accession_no,
+            }
+        else:
+            active_rec = None
+
+        if not active_rec:
+            legacy_match = any(not row.copy_accession_no for row in candidates)
+            if is_copy_tag and legacy_match:
+                message = "An earlier active loan has no recorded copy QR label. The physical copy cannot be verified, and no return was recorded. Please reconcile the loan before proceeding."
+            elif is_copy_tag:
+                message = f"No active checkout was found for '{book.title}' under copy {scanned_copy_tag}. No return was recorded."
+            else:
+                message = f"No active checkout was found for '{book.title}'. No return was recorded."
+            return {
+                "status": "error",
+                "message": message,
+                "book_title": book.title,
+                "accession_no": scanned_copy_tag,
+                "legacy_copy_tracking": legacy_match,
+            }
 
         now = datetime.utcnow()
+        active_rec.status = BorrowStatus.RETURNED
+        active_rec.return_date = now
+        borrower_name = active_rec.user.full_name or active_rec.user.username if active_rec.user else "Patron"
         if book.available_copies < book.total_copies:
             book.available_copies += 1
 
-        if active_rec:
-            active_rec.status = BorrowStatus.RETURNED
-            active_rec.return_date = now
-            borrower_name = active_rec.user.full_name or active_rec.user.username if active_rec.user else "Patron"
+        # Check overdue
+        is_overdue = False
+        fine_amount = 0.0
+        if active_rec.due_date and now > active_rec.due_date:
+            fine_amount = calculate_overdue_fine(active_rec.due_date, now)
+            fine = Fine(
+                borrow_record_id=active_rec.id,
+                user_id=active_rec.user_id,
+                amount=fine_amount,
+                is_paid=False
+            )
+            db.add(fine)
+            is_overdue = True
 
-            # Check overdue
-            is_overdue = False
-            fine_amount = 0.0
-            if active_rec.due_date and now > active_rec.due_date:
-                fine_amount = calculate_overdue_fine(active_rec.due_date, now)
-                fine = Fine(
-                    borrow_record_id=active_rec.id,
-                    user_id=active_rec.user_id,
-                    amount=fine_amount,
-                    is_paid=False
-                )
-                db.add(fine)
-                is_overdue = True
+        db.commit()
 
-            db.commit()
-
-            if is_overdue:
-                log_audit(db, borrower_name, f"Returned {book.accession_no} late", f"Fine ₱{fine_amount:.2f}")
-                return {
-                    "status": "warning",
-                    "message": f"Overdue Return: '{book.title}' returned late by {borrower_name}. ₱{fine_amount:.2f} overdue fine added to patron account.",
-                    "book_title": book.title,
-                    "accession_no": book.accession_no,
-                    "patron_name": borrower_name,
-                    "fine": fine_amount
-                }
-            else:
-                log_audit(db, borrower_name, f"Returned {book.accession_no} on time", "Success")
-                return {
-                    "status": "success",
-                    "message": f"Returned on time: '{book.title}' by {borrower_name}. Copy restored to shelf ({book.available_copies}/{book.total_copies} available).",
-                    "book_title": book.title,
-                    "accession_no": book.accession_no,
-                    "patron_name": borrower_name
-                }
-        else:
-            db.commit()
+        if is_overdue:
+            log_audit(db, borrower_name, f"Returned {active_rec.copy_accession_no or book.accession_no} late", f"Fine ₱{fine_amount:.2f}")
             return {
-                "status": "success",
-                "message": f"Book '{book.title}' returned to library collection. Copies available: {book.available_copies}/{book.total_copies}.",
+                "status": "warning",
+                "message": f"Overdue Return: '{book.title}' returned late by {borrower_name}. ₱{fine_amount:.2f} overdue fine added to patron account.",
                 "book_title": book.title,
-                "accession_no": book.accession_no
+                "accession_no": active_rec.copy_accession_no or book.accession_no,
+                "patron_name": borrower_name,
+                "fine": fine_amount
             }
+        log_audit(db, borrower_name, f"Returned {active_rec.copy_accession_no or book.accession_no} on time", "Success")
+        return {
+            "status": "success",
+            "message": f"Returned on time: '{book.title}' by {borrower_name}. Copy restored to shelf ({book.available_copies}/{book.total_copies} available).",
+            "book_title": book.title,
+            "accession_no": active_rec.copy_accession_no or book.accession_no,
+            "patron_name": borrower_name
+        }
 
     # ── BACKWARD COMPATIBILITY BRANCHES (for existing test suites) ──
     patron = get_user_by_username(db, patron_username) if patron_username else None
@@ -670,11 +856,16 @@ def execute_circulation(
         if book.available_copies <= 0:
             return {"status": "error", "message": "Book is currently on loan"}
 
+        copy_tag, allocation_error = _allocate_available_copy(db, book)
+        if allocation_error:
+            return {"status": "error", "message": allocation_error}
+
         book.available_copies -= 1
         record = BorrowRecord(
             req_id=f"CIR-{int(datetime.utcnow().timestamp())}-{uuid.uuid4().hex[:6].upper()}",
             user_id=patron.id,
             book_id=book.id,
+            copy_accession_no=copy_tag,
             status=BorrowStatus.CHECKED_OUT,
             issue_date=datetime.utcnow(),
             due_date=datetime.utcnow() + timedelta(days=LOAN_PERIOD_DAYS),
@@ -700,17 +891,6 @@ def execute_circulation(
         return {
             "status": "unavail",
             "message": f"Error: Book {accession_no} is currently on loan.",
-        }
-
-    elif norm_mode == "return_ontime":
-        if book:
-            book.available_copies += 1
-        db.commit()
-        log_audit(db, patron.username if patron else "Patron", f"Returned {accession_no} on time", "Success")
-        log_smtp(db, patron.email if patron else "patron@evsu.edu.ph", "Return Notice", f"Returned {accession_no} successfully")
-        return {
-            "status": "success",
-            "message": f"Book {accession_no} returned on time by {patron.username if patron else 'Patron'}.",
         }
 
     return {"status": "info", "message": "Circulation processed"}

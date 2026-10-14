@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+import re
+from typing import Optional, List, Literal
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, field_validator
 from models import UserRole, BorrowStatus
 
 
@@ -26,16 +27,27 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=12)
     confirm_password: str = Field(min_length=8, max_length=12)
-    first_name: str
-    last_name: str
+    first_name: str = Field(min_length=1, max_length=80)
+    middle_name: Optional[str] = Field(default=None, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
     account_type: UserRole = UserRole.STUDENT
     department: Optional[str] = None
     course: Optional[str] = None
     department_id: Optional[int] = None
     course_id: Optional[int] = None
 
+    @field_validator("first_name", "middle_name", "last_name")
+    @classmethod
+    def clean_name(cls, value):
+        clean = " ".join(value.split()) if value is not None else None
+        if clean is not None and any(ord(char) < 32 for char in clean):
+            raise ValueError("Names cannot contain control characters")
+        return clean or None
+
     @model_validator(mode="after")
     def passwords_match(self):
+        if not self.first_name or not self.last_name:
+            raise ValueError("First and last name are required")
         if self.password != self.confirm_password:
             raise ValueError("Passwords do not match")
         validate_password_policy(self.password)
@@ -94,6 +106,10 @@ class UserBase(BaseModel):
     username: str
     email: str
     full_name: str
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    profile_picture_url: Optional[str] = None
     role: UserRole
     department: Optional[str] = None
     course: Optional[str] = None
@@ -117,6 +133,34 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     department: Optional[str] = None
     contact_no: Optional[str] = None
+
+
+class SelfProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: str = Field(min_length=1, max_length=80)
+    middle_name: Optional[str] = Field(default=None, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    contact_no: Optional[str] = Field(default=None, max_length=30)
+
+    @field_validator("first_name", "middle_name", "last_name")
+    @classmethod
+    def clean_name(cls, value):
+        clean = " ".join(value.split()) if value is not None else None
+        return clean or None
+
+    @field_validator("contact_no")
+    @classmethod
+    def clean_contact(cls, value):
+        clean = value.strip() if value else None
+        if clean and (not re.fullmatch(r"\+?[0-9 ()-]{7,30}", clean) or sum(char.isdigit() for char in clean) < 7):
+            raise ValueError("Enter a valid contact number")
+        return clean
+
+    @model_validator(mode="after")
+    def required_names(self):
+        if not self.first_name or not self.last_name:
+            raise ValueError("First and last name are required")
+        return self
 
 
 class UserResponse(UserBase):
@@ -167,6 +211,7 @@ class BookBase(BaseModel):
     publisher: Optional[str] = None
     year_published: Optional[str] = None
     isbn: Optional[str] = None
+    cover_url: Optional[str] = None
     category: str  # Subject/Category
     call_number: Optional[str] = None
     location_rack: Optional[str] = "Rack A-1"
@@ -176,7 +221,8 @@ class BookBase(BaseModel):
 
 
 class BookCreate(BookBase):
-    pass
+    # Covers are stored through the validated multipart upload endpoint, not an arbitrary client URL.
+    cover_url: Optional[str] = Field(default=None, exclude=True)
 
 
 class BookUpdate(BaseModel):
@@ -202,6 +248,21 @@ class BookResponse(BookBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BookCopyResponse(BaseModel):
+    id: int
+    book_id: int
+    copy_number: int
+    accession_no: str
+    created_at: datetime
+    qr_printed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BookCopiesPrintedRequest(BaseModel):
+    copy_ids: List[int] = Field(min_length=1, max_length=500)
+
+
 # Borrow Record Schemas
 class BorrowRequestCreate(BaseModel):
     accession_no: str
@@ -212,6 +273,11 @@ class BorrowRequestCreate(BaseModel):
 
 class BorrowStatusUpdate(BaseModel):
     status: BorrowStatus
+
+
+class LoanExtensionRequest(BaseModel):
+    due_date: datetime
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class CirculationExecuteRequest(BaseModel):
@@ -235,6 +301,8 @@ class BorrowRecordResponse(BaseModel):
     user_name: Optional[str] = None
     book_title: Optional[str] = None
     accession_no: Optional[str] = None
+    copy_accession_no: Optional[str] = None
+    approval_email_status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -299,8 +367,13 @@ class FeedbackResponse(BaseModel):
 
 
 class SupportThreadCreate(BaseModel):
+    recipient_role: Literal["librarian", "admin"] = "librarian"
     subject: str = Field(min_length=3, max_length=160)
     message: str = Field(min_length=1, max_length=2000)
+
+
+class StaffThreadCreate(SupportThreadCreate):
+    recipient_username: str = Field(min_length=1, max_length=100)
 
 
 class SupportMessageCreate(BaseModel):
@@ -312,8 +385,15 @@ class AnnouncementCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
 
 
+class AssistantTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=500)
+
+
 class AssistantRequest(BaseModel):
+    language: str = Field(default="auto", min_length=2, max_length=40)
     message: str = Field(min_length=2, max_length=500)
+    history: List[AssistantTurn] = Field(default_factory=list, max_length=6)
 
 
 # Audit & Logs

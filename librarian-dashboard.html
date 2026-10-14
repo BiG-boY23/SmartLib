@@ -7,6 +7,8 @@
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/staff-chat.css">
+  <link rel="stylesheet" href="/static/staff-updates.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
@@ -345,6 +347,36 @@
 
   <div class="toast-container" id="toastBox"></div>
 
+  <div class="approval-loading" id="approvalLoading" role="status" aria-live="polite" aria-label="Approving request and sending email">
+    <div class="approval-loading-card">
+      <span class="approval-spinner" aria-hidden="true"></span>
+      <h2>Approving request</h2>
+      <p>Saving the approval and sending the borrower’s email. Please wait.</p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="circulationBorrowConfirmModal" role="dialog" aria-modal="true" aria-labelledby="circulationBorrowConfirmTitle">
+    <div class="settings-modal" style="max-width:560px;">
+      <div class="modal-header">
+        <h2 id="circulationBorrowConfirmTitle"><i class="fa-solid fa-clipboard-check" style="color:var(--evsu-gold);"></i> Confirm checkout</h2>
+        <button class="modal-close" type="button" onclick="closeBorrowConfirmation()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="card-body">
+        <p style="color:var(--text-muted);margin:0 0 14px;">Review the borrower and exact book copy. Nothing is saved until you press <strong>Confirm and save checkout</strong>.</p>
+        <div style="display:grid;gap:10px;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-main);">
+          <div><small style="color:var(--text-muted);">Borrower</small><div id="confirmBorrowPatron" style="font-weight:700;"></div></div>
+          <div><small style="color:var(--text-muted);">Book</small><div id="confirmBorrowBook" style="font-weight:700;"></div></div>
+          <div><small style="color:var(--text-muted);">Copy accession</small><div id="confirmBorrowAccession" style="font-weight:700;color:var(--evsu-gold);"></div></div>
+          <div><small style="color:var(--text-muted);">Loan period</small><div>24 hours from checkout</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
+          <button type="button" class="btn btn-outline" onclick="closeBorrowConfirmation()">Cancel / edit scan</button>
+          <button type="button" class="btn btn-maroon" id="btnCommitBorrow" onclick="executeBorrowDesk()"><i class="fa-solid fa-check"></i> Confirm and save checkout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ACCOUNT SETTINGS MODAL -->
   <div class="modal-overlay" id="accountSettingsModal">
     <div class="settings-modal">
@@ -486,7 +518,7 @@
       <div class="modal-header">
         <h2><i class="fa-solid fa-qrcode" style="color:var(--evsu-gold);"></i> <span id="qrModalTitle">Printable 2D QR Code Labels</span></h2>
         <div style="display:flex; align-items:center; gap:10px;">
-          <button class="btn btn-gold btn-sm" onclick="printQrBatchLabels()"><i class="fa-solid fa-print"></i> Print <span id="lblPrintCount">1</span> Label(s)</button>
+          <button class="btn btn-gold btn-sm" onclick="printQrBatchLabels()"><i class="fa-solid fa-print"></i> Print <span id="lblPrintCount">0</span> Label(s)</button>
           <button class="modal-close" onclick="closeQrBatchModal()"><i class="fa-solid fa-xmark"></i></button>
         </div>
       </div>
@@ -501,32 +533,11 @@
         </div>
       </div>
 
-      <!-- INTERACTIVE QUANTITY & COPY CONFIGURATION TOOLBAR -->
-      <div class="no-print" style="padding: 12px 24px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-          <label style="font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-sliders text-gold"></i> Number of Labels:
-          </label>
-          <div style="display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-input);">
-            <button type="button" class="btn btn-outline btn-sm" onclick="adjustQrQty(-1)" style="border:none; padding:6px 12px; border-radius:0; color:var(--text-main);">
-              <i class="fa-solid fa-minus"></i>
-            </button>
-            <input type="number" id="qrQtyInput" min="1" max="100" value="1" oninput="onQrQtyChange()" style="width: 58px; text-align: center; background: transparent; border: none; color: var(--text-main); font-weight: 700; font-size: 14px; outline: none;">
-            <button type="button" class="btn btn-outline btn-sm" onclick="adjustQrQty(1)" style="border:none; padding:6px 12px; border-radius:0; color:var(--text-main);">
-              <i class="fa-solid fa-plus"></i>
-            </button>
-          </div>
-          <div style="display: flex; gap: 6px;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="setQrQtyPreset('all')">All Copies (<span id="qrBtnAllCopies">0</span>)</button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="setQrQtyPreset(1)">Just 1 Label</button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="setQrQtyPreset(3)">3 Labels</button>
-          </div>
-        </div>
-
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <label style="font-size: 11.5px; font-weight: 600; color: var(--text-muted);">Start from Copy #:</label>
-          <input type="number" id="qrStartCopyInput" min="1" max="100" value="1" oninput="onQrQtyChange()" class="form-control" style="width: 65px; padding: 5px 8px; font-size: 12px; text-align: center;">
-        </div>
+      <div class="no-print" style="padding: 12px 24px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <span id="qrLifecycleNote" style="font-size:12px; color:var(--text-muted);">Loading persistent copy labels…</span>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnQrReprintAll" onclick="toggleQrLabelView()" style="display:none;">
+          <i class="fa-solid fa-rotate"></i> Reprint existing labels
+        </button>
       </div>
       <div class="card-body" style="overflow-y: auto; flex: 1; padding: 20px;" id="printQrArea">
         <div class="qr-batch-grid" id="qrBatchContainer">
@@ -567,6 +578,10 @@
       </button>
       <button class="nav-item-btn" id="navAcquisitions" onclick="switchNav('acquisitions')">
         <i class="fa-solid fa-cart-flatbed"></i> Book Acquisition Suggestions
+      </button>
+      <button class="nav-item-btn" id="navAnnouncements" onclick="switchNav('announcements')"><i class="fa-solid fa-bullhorn"></i> News &amp; Announcements</button>
+      <button class="nav-item-btn" id="navMessages" onclick="switchNav('messages')">
+        <i class="fa-solid fa-envelope"></i> Patron Messages
       </button>
     </div>
 
@@ -676,6 +691,12 @@
               <div class="form-group">
                 <label>Title of Book</label>
                 <input type="text" id="catTitle" class="form-control" placeholder="e.g. Cloud-Native Architecture & Microservices" required>
+              </div>
+
+              <div class="form-group">
+                <label for="catCoverInput">Front-page image <span style="color:var(--text-muted); font-weight:400;">(optional, JPG or PNG, up to 5 MB)</span></label>
+                <input type="file" id="catCoverInput" class="form-control" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onchange="previewBookCover(this, 'catCoverPreview')">
+                <img id="catCoverPreview" alt="Selected book front cover preview" style="display:none; max-width:140px; max-height:190px; object-fit:cover; border-radius:8px; margin-top:10px; border:1px solid var(--border);">
               </div>
 
               <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 14px;">
@@ -866,8 +887,8 @@
                   </div>
                 </div>
 
-                <button class="btn btn-maroon w-100" style="padding:12px; font-weight:700; margin-top:6px;" id="btnConfirmBorrow" onclick="executeBorrowDesk()">
-                  <i class="fa-solid fa-check"></i> Complete Checkout (1-Day Loan)
+                <button class="btn btn-maroon w-100" style="padding:12px; font-weight:700; margin-top:6px;" id="btnConfirmBorrow" onclick="openBorrowConfirmation()">
+                  <i class="fa-solid fa-clipboard-check"></i> Review checkout details
                 </button>
               </div>
             </div>
@@ -880,7 +901,7 @@
               </div>
               <div class="card-body">
                 <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:16px;">
-                  Slide the returned book under the stand-mounted scanner. The system immediately checks in the book, verifies the borrower, and calculates any overdue fines automatically.
+                  Scan the returned book. The system completes check-in only when an active loan exists and calculates any overdue fine.
                 </p>
                 <div class="form-group">
                   <label><i class="fa-solid fa-qrcode text-gold"></i> Scan Book 2D QR Code Label</label>
@@ -930,6 +951,7 @@
         <div class="card">
           <div class="card-head"><h3><i class="fa-solid fa-hand-holding-hand text-gold"></i> Online Borrowing Request Queue</h3></div>
           <div class="card-body" style="padding:0;">
+            <div style="padding:16px;display:flex;gap:12px;flex-wrap:wrap"><label>Status <select id="queueStatus" onchange="loadBorrowQueue(true)"><option value="">All statuses</option><option>PENDING</option><option>APPROVED</option><option>CHECKED_OUT</option><option>OVERDUE</option><option>RETURNED</option><option>REJECTED</option><option>CANCELLED</option></select></label><label>Sort <select id="queueSort" onchange="loadBorrowQueue(true)"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due">Due date</option><option value="patron">Patron name</option></select></label><label>Search <input id="queueSearch" type="search" placeholder="Patron, title, request ID" oninput="scheduleQueueSearch()"></label><span id="queueCount" aria-live="polite"></span><button id="queuePrevious" class="btn btn-outline btn-sm" onclick="queueOffset=Math.max(0,queueOffset-100);loadBorrowQueue()" disabled>Previous</button><button id="queueNext" class="btn btn-outline btn-sm" onclick="queueOffset+=100;loadBorrowQueue()">Next</button></div>
             <div class="table-responsive">
               <table id="borrowQueueTable">
                 <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
@@ -955,10 +977,15 @@
         </div>
       </div>
 
+      <div class="screen-panel" id="panelAnnouncements"><div class="card"><div class="card-head"><h3>Publish library news</h3></div><div class="card-body" style="padding:24px"><p style="margin-bottom:18px">Share events, collection news, and service updates. Active students and faculty receive an app notification and an email.</p><form id="announcementForm"><label for="announcementTitle">Title</label><input id="announcementTitle" required minlength="3" maxlength="160" style="display:block;width:100%;margin:8px 0 18px"><label for="announcementBody">Announcement details</label><textarea id="announcementBody" required maxlength="4000" rows="6" style="display:block;width:100%;margin:8px 0 18px"></textarea><button class="btn btn-maroon" type="submit">Publish announcement</button></form></div></div><div id="announcementList" style="margin-top:24px"></div></div>
+      <div class="screen-panel" id="panelMessages"><div id="staffChatRoot"></div></div>
+
     </div>
   </div>
 
   <script src="/static/staff-reports.js"></script>
+  <script src="/static/staff-chat.js"></script>
+  <script src="/static/staff-updates.js"></script>
   <script>
     // AUTH GUARD FOR LIBRARIAN PORTAL
     function getActiveToken() {
@@ -1077,6 +1104,7 @@
     let cachedInventoryBooks = [];
 
     async function switchNav(key) {
+      window.SmartLibChat.setActive(key === 'messages', getAuthHeaders, toast);
       document.querySelectorAll('.nav-item-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.screen-panel').forEach(p => p.classList.remove('active'));
 
@@ -1084,9 +1112,10 @@
         'dash': ['Operations Overview Dashboard', 'Eastern Visayas State University Library Staff Workspace'],
         'catalog': ['Catalog New Book & Assign Accession', 'Enter bibliographic metadata and specify total copy inventory'],
         'inventory': ['Book Catalog Records & QR Labels', 'Comprehensive library holdings, catalog search, and multi-copy 2D QR label printing'],
-        'circ': ['Circulation Desk (Borrow & Return Counter)', 'Scan student ID barcode/QR and book 2D QR tags for instant checkout and return'],
+        'circ': ['Circulation Desk (Borrow & Return Counter)', 'Verify both scans and confirm checkout; returns require an active loan'],
         'borrowreq': ['Borrow Requests Queue', 'Review student online borrowing reservations'],
-        'acquisitions': ['Book Acquisition Suggestions', 'Review student and faculty book collection recommendations']
+        'acquisitions': ['Book Acquisition Suggestions', 'Review student and faculty book collection recommendations'],
+        'messages': ['Patron Messages', 'Read and reply to student and faculty conversations']
       };
 
       if (map[key]) {
@@ -1118,6 +1147,15 @@
         document.getElementById('navAcquisitions').classList.add('active');
         document.getElementById('panelAcquisitions').classList.add('active');
         await loadAcquisitions();
+      } else if (key === 'announcements') {
+        document.getElementById('pageTitle').innerText = 'News & Announcements';
+        document.getElementById('pageSubTitle').innerText = 'Publish library updates for students and faculty';
+        document.getElementById('navAnnouncements').classList.add('active');
+        document.getElementById('panelAnnouncements').classList.add('active');
+        await window.SmartLibUpdates.load();
+      } else if (key === 'messages') {
+        document.getElementById('navMessages').classList.add('active');
+        document.getElementById('panelMessages').classList.add('active');
       }
     }
 
@@ -1375,6 +1413,50 @@
       renderInventoryTable(filtered);
     }
 
+    function previewBookCover(input, previewId) {
+      const file = input.files && input.files[0];
+      const preview = document.getElementById(previewId);
+      if (!file) { preview.style.display = 'none'; preview.removeAttribute('src'); return; }
+      const name = file.name.toLowerCase();
+      const supportedExtension = /\.(jpe?g|png)$/.test(name);
+      const supportedType = !file.type || ['image/jpeg', 'image/jpg', 'image/png'].includes(file.type);
+      if (!supportedExtension || !supportedType || file.size > 5 * 1024 * 1024) {
+        input.value = '';
+        preview.style.display = 'none';
+        preview.removeAttribute('src');
+        toast('Choose a JPG or PNG image no larger than 5 MB.', 'danger');
+        return;
+      }
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      preview.dataset.objectUrl = URL.createObjectURL(file);
+      preview.src = preview.dataset.objectUrl;
+      preview.style.display = 'block';
+    }
+
+    async function uploadBookCoverIfSelected(book, inputId) {
+      const input = document.getElementById(inputId);
+      const file = input.files && input.files[0];
+      if (!file) return book;
+      const headers = getAuthHeaders();
+      delete headers['Content-Type'];
+      const form = new FormData();
+      form.append('cover', file);
+      const response = await fetch(`${API_BASE}/admin/books/${book.id}/cover`, { method: 'PUT', headers, body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'The book was saved, but its cover image could not be uploaded.');
+      return data;
+    }
+
+    function clearBookCoverInput(inputId, previewId) {
+      const input = document.getElementById(inputId);
+      const preview = document.getElementById(previewId);
+      input.value = '';
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      delete preview.dataset.objectUrl;
+      preview.style.display = 'none';
+      preview.removeAttribute('src');
+    }
+
     async function handleCatalogSubmit(e) {
       e.preventDefault();
       const acc = document.getElementById('catAcc').value.trim();
@@ -1408,9 +1490,12 @@
         });
 
         if (res.ok) {
-          const savedBook = await res.json();
+          let savedBook = await res.json();
+          let coverWarning = '';
+          try { savedBook = await uploadBookCoverIfSelected(savedBook, 'catCoverInput'); }
+          catch (coverError) { coverWarning = ` Cover upload failed: ${coverError.message}`; }
           cachedInventoryBooks.unshift(savedBook);
-          toast(`Book ${acc} cataloged successfully with ${copies} copies!`, 'success');
+          toast(`Book ${acc} cataloged successfully with ${copies} copies.${coverWarning}`, coverWarning ? 'warning' : 'success');
           
           // Automatically open batch QR labels modal for the new book
           openBookQrSheet(acc);
@@ -1426,6 +1511,7 @@
           document.getElementById('catCallNum').value = '';
           document.getElementById('catCopies').value = '1';
           document.getElementById('catCondition').value = 'Good';
+          clearBookCoverInput('catCoverInput', 'catCoverPreview');
 
         } else {
           const err = await res.json();
@@ -1453,100 +1539,101 @@
     }
 
     let currentQrBook = null;
+    let currentQrCopies = [];
+    let showingAllQrCopies = false;
 
-    function generateAndShowQrBatch(book) {
+    async function generateAndShowQrBatch(book) {
       currentQrBook = book;
-      document.getElementById('qrModalTitle').innerText = `${book.title}`;
+      document.getElementById('qrModalTitle').innerText = book.title;
       document.getElementById('qrModalAcc').innerText = book.accession_no;
       document.getElementById('qrModalCallNum').innerText = book.call_number || 'General Collection';
-      document.getElementById('qrModalCopiesCount').innerText = `${book.total_copies} ${book.total_copies === 1 ? 'Copy' : 'Copies'}`;
-      document.getElementById('qrBtnAllCopies').innerText = book.total_copies || 1;
-
-      // Set default quantity to total_copies
-      const initialQty = book.total_copies || 1;
-      document.getElementById('qrQtyInput').value = initialQty;
-      document.getElementById('qrStartCopyInput').value = 1;
-
-      renderConfiguredQrLabels();
+      document.getElementById('qrModalCopiesCount').innerText = `${book.total_copies || 0} ${Number(book.total_copies) === 1 ? 'Copy' : 'Copies'}`;
       document.getElementById('qrBatchModal').classList.add('open');
-    }
-
-    function adjustQrQty(delta) {
-      const input = document.getElementById('qrQtyInput');
-      let val = (parseInt(input.value) || 1) + delta;
-      if (val < 1) val = 1;
-      if (val > 100) val = 100;
-      input.value = val;
-      renderConfiguredQrLabels();
-    }
-
-    function setQrQtyPreset(val) {
-      if (!currentQrBook) return;
-      if (val === 'all') {
-        document.getElementById('qrQtyInput').value = currentQrBook.total_copies || 1;
-        document.getElementById('qrStartCopyInput').value = 1;
-      } else {
-        document.getElementById('qrQtyInput').value = val;
+      document.getElementById('qrBatchContainer').innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:36px;">Loading assigned copy labels…</div>';
+      document.getElementById('qrLifecycleNote').textContent = 'Loading persistent copy labels…';
+      try {
+        await loadQrCopies(true);
+      } catch (error) {
+        document.getElementById('qrBatchContainer').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--danger); padding:36px;">${escapeHtml(error.message)}</div>`;
+        document.getElementById('qrLifecycleNote').textContent = 'Copy labels could not be loaded from the library server.';
+        document.getElementById('lblPrintCount').textContent = '0';
+        document.querySelector('#qrBatchModal .modal-header .btn-gold').disabled = true;
+        toast(error.message || 'Could not load copy labels.', 'danger');
       }
-      renderConfiguredQrLabels();
     }
 
-    function onQrQtyChange() {
-      renderConfiguredQrLabels();
-    }
-
-    function renderConfiguredQrLabels() {
+    async function loadQrCopies(unprintedOnly) {
       if (!currentQrBook) return;
-      const book = currentQrBook;
+      const response = await fetch(`${API_BASE}/admin/books/${currentQrBook.id}/copies?unprinted_only=${unprintedOnly}`, { headers: getAuthHeaders() });
+      const rows = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(rows.detail || 'Could not load persistent copy labels.');
+      currentQrCopies = rows;
+      showingAllQrCopies = !unprintedOnly;
+      renderPersistentQrLabels();
+    }
+
+    async function toggleQrLabelView() {
+      try {
+        await loadQrCopies(showingAllQrCopies);
+      } catch (error) {
+        toast(error.message || 'Could not load copy labels.', 'danger');
+      }
+    }
+
+    function renderPersistentQrLabels() {
       const container = document.getElementById('qrBatchContainer');
+      const printButton = document.querySelector('#qrBatchModal .modal-header .btn-gold');
+      const counter = document.getElementById('lblPrintCount');
+      const note = document.getElementById('qrLifecycleNote');
+      const toggle = document.getElementById('btnQrReprintAll');
       container.innerHTML = '';
+      counter.textContent = String(currentQrCopies.length);
+      printButton.disabled = currentQrCopies.length === 0;
+      toggle.style.display = 'inline-flex';
 
-      let qty = parseInt(document.getElementById('qrQtyInput').value) || 1;
-      if (qty < 1) qty = 1;
-      let start = parseInt(document.getElementById('qrStartCopyInput').value) || 1;
-      if (start < 1) start = 1;
+      if (!currentQrCopies.length) {
+        note.textContent = showingAllQrCopies
+          ? 'No copy records are available for this title.'
+          : 'All assigned labels have been printed. Existing copy IDs remain saved and will not be replaced.';
+        container.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:42px 20px;"><i class="fa-solid fa-circle-check" style="font-size:30px; color:var(--evsu-gold); margin-bottom:12px;"></i><div>${showingAllQrCopies ? 'No copy labels found.' : 'All copy labels have already been printed.'}</div></div>`;
+      } else {
+        note.textContent = showingAllQrCopies
+          ? `Viewing all ${currentQrCopies.length} saved labels. Printing these will reprint the same identifiers.`
+          : `${currentQrCopies.length} new copy label(s) are ready. Their identifiers are permanently assigned.`;
+        toggle.innerHTML = showingAllQrCopies
+          ? '<i class="fa-solid fa-list"></i> Show unprinted labels'
+          : '<i class="fa-solid fa-rotate"></i> View all labels for reprinting';
 
-      document.getElementById('lblPrintCount').innerText = qty;
-
-      for (let i = 0; i < qty; i++) {
-        const copyIndex = start + i;
-        const copySuffix = `${book.accession_no}-C${String(copyIndex).padStart(2, '0')}`;
-        const copyNumLabel = `Copy ${String(copyIndex).padStart(2, '0')} (Item #${i + 1} of ${qty})`;
-
-        const card = document.createElement('div');
-        card.className = 'qr-copy-card';
-        card.innerHTML = `
-          <div class="qr-copy-header">
-            <i class="fa-solid fa-university"></i> EVSU-OC SMARTLIB
-          </div>
-          <div class="qr-copy-title" title="${escapeHtml(book.title)}">${escapeHtml(book.title)}</div>
-          <div class="qr-copy-meta">${escapeHtml(book.call_number || book.category)}</div>
-          <div class="qr-canvas-holder" id="qrCanvas_${book.id}_${copyIndex}"></div>
-          <div class="qr-copy-code">${escapeHtml(copySuffix)}</div>
-          <div class="qr-copy-badge">${copyNumLabel}</div>
-        `;
-        container.appendChild(card);
-
-        // Render QR Code for this exact copy identifier
-        setTimeout(() => {
-          const holder = document.getElementById(`qrCanvas_${book.id}_${copyIndex}`);
-          if (holder) {
+        currentQrCopies.forEach((copy) => {
+          const code = copy.accession_no;
+          const cardId = `qrCopyCanvas_${copy.id}`;
+          const card = document.createElement('div');
+          card.className = 'qr-copy-card';
+          card.innerHTML = `
+            <div class="qr-copy-header"><i class="fa-solid fa-university"></i> EVSU-OC SMARTLIB</div>
+            <div class="qr-copy-title" title="${escapeHtml(currentQrBook.title)}">${escapeHtml(currentQrBook.title)}</div>
+            <div class="qr-copy-meta">${escapeHtml(currentQrBook.call_number || currentQrBook.category || 'General Collection')}</div>
+            <div class="qr-canvas-holder" id="${cardId}"></div>
+            <div class="qr-copy-code">${escapeHtml(code)}</div>
+            <div class="qr-copy-badge">Copy ${String(copy.copy_number).padStart(2, '0')} of ${String(currentQrBook.total_copies || currentQrCopies.length).padStart(2, '0')}</div>
+          `;
+          container.appendChild(card);
+          setTimeout(() => {
+            const holder = document.getElementById(cardId);
+            if (!holder) return;
             holder.innerHTML = '';
             if (window.QRCode) {
-              new QRCode(holder, {
-                text: copySuffix,
-                width: 95,
-                height: 95,
-                colorDark: "#000000",
-                colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.M
-              });
+              new QRCode(holder, { text: code, width: 95, height: 95, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
             } else {
-              holder.innerHTML = `<i class="fa-solid fa-qrcode" style="font-size:50px; color:#800000;"></i>`;
+              holder.innerHTML = '<i class="fa-solid fa-qrcode" style="font-size:50px; color:#800000;"></i>';
             }
-          }
-        }, 35 * (i + 1));
+          }, 35);
+        });
       }
+
+      if (!currentQrCopies.length) toggle.innerHTML = showingAllQrCopies
+        ? '<i class="fa-solid fa-list"></i> Show unprinted labels'
+        : '<i class="fa-solid fa-rotate"></i> Reprint existing labels';
     }
 
     function closeQrBatchModal() {
@@ -1554,9 +1641,29 @@
     }
 
     function printQrBatchLabels() {
+      if (!currentQrCopies.length) return;
+      const copyIdsToMark = showingAllQrCopies
+        ? []
+        : currentQrCopies.filter((copy) => !copy.qr_printed_at).map((copy) => copy.id);
+      if (copyIdsToMark.length) {
+        const markAfterPrint = async () => {
+          try {
+            const response = await fetch(`${API_BASE}/admin/books/${currentQrBook.id}/copies/mark-printed`, {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ copy_ids: copyIdsToMark })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || 'Labels could not be marked as printed.');
+            await loadQrCopies(true);
+          } catch (error) {
+            toast(error.message || 'Could not update printed-label status.', 'warning');
+          }
+        };
+        window.addEventListener('afterprint', markAfterPrint, { once: true });
+      }
       window.print();
     }
-
     // ── CIRCULATION DESK (HANDS-FREE SCANNER WORKFLOW) ─────────────
     let currentCircMode = 'borrow';
     let verifiedPatron = null;
@@ -1606,6 +1713,10 @@
 
       if (pInp && !pInp.dataset.bound) {
         pInp.dataset.bound = 'true';
+        pInp.addEventListener('input', () => {
+          verifiedPatron = null;
+          document.getElementById('circPatronBadge').style.display = 'none';
+        });
         pInp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
@@ -1616,6 +1727,10 @@
 
       if (bInp && !bInp.dataset.bound) {
         bInp.dataset.bound = 'true';
+        bInp.addEventListener('input', () => {
+          verifiedBook = null;
+          document.getElementById('circBookBadge').style.display = 'none';
+        });
         bInp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
@@ -1674,6 +1789,8 @@
       const input = document.getElementById('circBorrowPatron');
       const val = (input.value || '').trim();
       if (!val) return;
+      verifiedPatron = null;
+      document.getElementById('circPatronBadge').style.display = 'none';
 
       try {
         const res = await fetch(`${API_BASE}/admin/circulation/patron/${encodeURIComponent(val)}`, { headers: getAuthHeaders() });
@@ -1715,6 +1832,8 @@
       const input = document.getElementById('circBorrowBook');
       const val = (input.value || '').trim();
       if (!val) return;
+      verifiedBook = null;
+      document.getElementById('circBookBadge').style.display = 'none';
 
       try {
         const res = await fetch(`${API_BASE}/admin/circulation/book/${encodeURIComponent(val)}`, { headers: getAuthHeaders() });
@@ -1724,7 +1843,7 @@
         if (data.found) {
           verifiedBook = data;
           document.getElementById('bookBadgeTitle').innerText = `${data.title}`;
-          document.getElementById('bookBadgeMeta').innerText = `Acc: ${data.accession_no} • Call: ${data.call_number} • ${data.category}`;
+          document.getElementById('bookBadgeMeta').innerText = `Copy: ${data.checkout_copy_accession_no || data.accession_no} • Call: ${data.call_number} • ${data.category}`;
           
           const statusElem = document.getElementById('bookBadgeCopies');
           statusElem.innerText = `${data.available_copies}/${data.total_copies} Avail`;
@@ -1733,7 +1852,8 @@
 
           if (data.is_available) {
             if (verifiedPatron && verifiedPatron.can_borrow) {
-              await executeBorrowDesk();
+              playScannerBeep('success');
+              toast('Patron and book verified. Review the details, then confirm checkout.', 'info');
             } else {
               playScannerBeep('success');
               toast('Book verified! Please scan student ID.', 'info');
@@ -1741,7 +1861,7 @@
             }
           } else {
             playScannerBeep('warning');
-            toast('All copies of this book are currently on loan', 'warning');
+            toast(data.copy_status_message || 'All copies of this book are currently on loan', 'warning');
           }
         } else {
           verifiedBook = null;
@@ -1752,20 +1872,41 @@
       } catch (err) { console.error(err); }
     }
 
-    async function executeBorrowDesk() {
-      const patronId = verifiedPatron ? verifiedPatron.username : (document.getElementById('circBorrowPatron').value || '').trim();
-      const bookAcc = verifiedBook ? verifiedBook.accession_no : (document.getElementById('circBorrowBook').value || '').trim();
+    function openBorrowConfirmation() {
+      const patronId = verifiedPatron?.username;
+      const bookAcc = verifiedBook?.checkout_copy_accession_no || verifiedBook?.accession_no;
 
-      if (!patronId) {
-        toast('Please scan or enter student ID', 'warning');
+      if (!verifiedPatron || !patronId || !verifiedPatron.can_borrow) {
+        toast('Scan and verify an eligible patron before checkout.', 'warning');
         document.getElementById('circBorrowPatron').focus();
         return;
       }
-      if (!bookAcc) {
-        toast('Please scan book 2D QR code', 'warning');
+      if (!verifiedBook || !bookAcc || !verifiedBook.is_available) {
+        toast('Scan and verify an available book before checkout.', 'warning');
         document.getElementById('circBorrowBook').focus();
         return;
       }
+      document.getElementById('confirmBorrowPatron').textContent = `${verifiedPatron.full_name || patronId} (${patronId})`;
+      document.getElementById('confirmBorrowBook').textContent = verifiedBook.title || 'Book';
+      document.getElementById('confirmBorrowAccession').textContent = bookAcc;
+      document.getElementById('circulationBorrowConfirmModal').classList.add('open');
+    }
+
+    function closeBorrowConfirmation() {
+      document.getElementById('circulationBorrowConfirmModal').classList.remove('open');
+    }
+
+    async function executeBorrowDesk() {
+      const patronId = verifiedPatron?.username;
+      const bookAcc = verifiedBook?.checkout_copy_accession_no || verifiedBook?.accession_no;
+      if (!patronId || !verifiedPatron?.can_borrow || !bookAcc || !verifiedBook?.is_available) {
+        closeBorrowConfirmation();
+        toast('The scanned borrower or book is no longer verified. Scan them again before checkout.', 'warning');
+        return;
+      }
+      const commitButton = document.getElementById('btnCommitBorrow');
+      commitButton.disabled = true;
+      commitButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving checkout…';
 
       try {
         const res = await fetch(`${API_BASE}/admin/circulation/execute`, {
@@ -1777,6 +1918,7 @@
 
         const receipt = document.getElementById('circReceiptCard');
         if (data.status === 'success') {
+          closeBorrowConfirmation();
           playScannerBeep('success');
           receipt.className = 'scanner-terminal success';
           receipt.innerHTML = `
@@ -1790,7 +1932,7 @@
             <button class="btn btn-outline btn-sm" onclick="resetCircDesk()"><i class="fa-solid fa-plus"></i> Next Checkout</button>
           `;
           toast(`Issued to ${data.patron_name || patronId}!`, 'success');
-          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'in 7d'}`);
+          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'in 1 day'}`);
           
           document.getElementById('circBorrowPatron').value = '';
           document.getElementById('circBorrowBook').value = '';
@@ -1809,7 +1951,11 @@
           `;
           toast(data.message || 'Checkout failed', 'danger');
         }
-      } catch (err) { console.error(err); }
+      } catch (err) { console.error(err); toast('Checkout could not be saved. Please try again.', 'danger'); }
+      finally {
+        commitButton.disabled = false;
+        commitButton.innerHTML = '<i class="fa-solid fa-check"></i> Confirm and save checkout';
+      }
     }
 
     async function executeReturnDesk() {
@@ -1855,14 +2001,14 @@
               <span class="badge badge-warning" style="font-size:12px; margin-top:6px;">₱${Number(data.fine || 0).toFixed(2)} Fine Applied</span>
             </div>
           `;
-          toast(`Overdue return fine applied: ₱${(data.fine || 50).toFixed(2)}`, 'warning');
+          toast(`Overdue return fine applied: ₱${Number(data.fine || 0).toFixed(2)}`, 'warning');
           addCircSessionEntry('Late Return', data.book_title || bookAcc, data.patron_name || 'Patron', `Fine ₱${Number(data.fine || 0).toFixed(2)}`);
         } else {
           playScannerBeep('error');
           receipt.className = 'scanner-terminal error';
           receipt.innerHTML = `
             <i class="fa-solid fa-circle-xmark text-danger" style="font-size:46px; margin-bottom:10px;"></i>
-            <h3 style="color:var(--danger); font-size:17px; margin-bottom:4px;">Return Error</h3>
+            <h3 style="color:var(--danger); font-size:17px; margin-bottom:4px;">${data.message && data.message.toLowerCase().includes('no active checkout') ? 'No Active Checkout Found' : data.message && data.message.toLowerCase().includes('no return was recorded') ? 'Return Not Recorded' : 'Return Error'}</h3>
             <p style="font-size:12.5px; color:var(--text-muted); max-width:300px;">${escapeHtml(data.message)}</p>
           `;
           toast(data.message || 'Return failed', 'danger');
@@ -1918,11 +2064,32 @@
       focusActiveCircInput();
     }
 
-    async function loadBorrowQueue() {
+    let borrowQueueRows = [];
+    let queueOffset = 0;
+    let queueSearchTimer;
+    let queueLoadId = 0;
+    function scheduleQueueSearch() { clearTimeout(queueSearchTimer); queueSearchTimer = setTimeout(() => loadBorrowQueue(true), 250); }
+    async function loadBorrowQueue(reset = false) {
+      if (reset) queueOffset = 0;
+      const loadId = ++queueLoadId;
       try {
-        const res = await fetch(`${API_BASE}/admin/borrow-requests`, { headers: getAuthHeaders() });
-        if (!res.ok) return;
-        const reqs = await res.json();
+        const res = await fetch(`${API_BASE}/admin/borrow-requests?${new URLSearchParams({sort:document.getElementById('queueSort').value, search:document.getElementById('queueSearch').value.trim(), skip:queueOffset, limit:100, ...(document.getElementById('queueStatus').value ? {status_filter:document.getElementById('queueStatus').value} : {})})}`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Could not load borrowing requests.');
+        const rows = await res.json();
+        if (loadId !== queueLoadId) return;
+        borrowQueueRows = rows;
+        document.getElementById('queuePrevious').disabled = queueOffset === 0;
+        document.getElementById('queueNext').disabled = rows.length < 100;
+        renderBorrowQueue();
+      } catch (err) { toast('Could not load borrowing requests.', 'danger'); }
+    }
+    function renderBorrowQueue() {
+        const status = document.getElementById('queueStatus').value;
+        const search = document.getElementById('queueSearch').value.trim().toLowerCase();
+        const sort = document.getElementById('queueSort').value;
+        const reqs = borrowQueueRows.filter(r => (!status || r.status === status) && [r.req_id, r.user_name, r.book_title, r.accession_no].join(' ').toLowerCase().includes(search));
+        reqs.sort((a,b) => sort === 'patron' ? (a.user_name || '').localeCompare(b.user_name || '') : sort === 'due' ? (a.due_date || '9999').localeCompare(b.due_date || '9999') : sort === 'oldest' ? a.request_date.localeCompare(b.request_date) : b.request_date.localeCompare(a.request_date));
+        document.getElementById('queueCount').textContent = reqs.length ? `Showing ${queueOffset + 1}-${queueOffset + reqs.length}` : 'No matching requests';
         const tbody = document.getElementById('borrowQueueTable').getElementsByTagName('tbody')[0];
         tbody.innerHTML = '';
         reqs.forEach(r => {
@@ -1935,23 +2102,33 @@
             <td>${escapeHtml(r.request_date.substring(0, 10))}</td>
             <td><span class="badge ${r.status === 'APPROVED' ? 'badge-success' : r.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(r.status)}</span></td>
             <td>
+              ${['CHECKED_OUT', 'OVERDUE'].includes(r.status) ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(r.req_id)}" onclick="SmartLibUpdates.extend(this.dataset.requestId)">Extend loan</button>` : ''}
               ${r.status === 'PENDING' ? `
                 <button class="btn btn-maroon btn-sm" data-request-id="${escapeHtml(r.req_id)}" onclick="approveReq(this.dataset.requestId)"><i class="fa-solid fa-check"></i> Approve</button>
                 <button class="btn btn-danger btn-sm" data-request-id="${escapeHtml(r.req_id)}" onclick="rejectReq(this.dataset.requestId)"><i class="fa-solid fa-xmark"></i> Reject</button>
-              ` : `<span class="badge badge-outline">Processed</span>`}
+              ` : `${r.approval_email_status === 'failed' ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(r.req_id)}" onclick="retryApprovalEmail(this.dataset.requestId)">Retry email</button>` : `<span class="badge badge-outline">Processed</span>`}`}
             </td>
           `;
         });
-      } catch (err) { console.error(err); }
     }
 
     async function approveReq(reqId) {
+      const loading = document.getElementById('approvalLoading');
+      if (loading.classList.contains('visible')) return;
+      loading.classList.add('visible');
       try {
         const res = await fetch(`${API_BASE}/admin/borrow-requests/${reqId}/status`, {
           method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify({ status: 'APPROVED' })
         });
-        if (res.ok) { toast(`Request ${reqId} Approved!`, 'success'); await loadBorrowQueue(); }
-      } catch (err) { console.error(err); }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'The request could not be approved.');
+        }
+        const emailStatus = res.headers.get('X-Approval-Email-Status');
+        toast(emailStatus === 'sent' ? `Request ${reqId} approved. Email sent.` : `Request ${reqId} approved. The email could not be sent; staff can retry delivery.`, emailStatus === 'sent' ? 'success' : 'info');
+        await loadBorrowQueue();
+      } catch (err) { toast(err.message || 'Unable to approve request.', 'danger'); }
+      finally { loading.classList.remove('visible'); }
     }
 
     async function rejectReq(reqId) {
@@ -1961,6 +2138,20 @@
         });
         if (res.ok) { toast(`Request ${reqId} Rejected!`, 'danger'); await loadBorrowQueue(); }
       } catch (err) { console.error(err); }
+    }
+
+    async function retryApprovalEmail(reqId) {
+      const loading = document.getElementById('approvalLoading');
+      if (loading.classList.contains('visible')) return;
+      loading.classList.add('visible');
+      try {
+        const res = await fetch(`${API_BASE}/admin/borrow-requests/${encodeURIComponent(reqId)}/approval-email/retry`, { method: 'POST', headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Email retry failed.');
+        toast(data.status === 'sent' ? 'Approval email sent.' : 'Email could not be sent. Please check SMTP logs.', data.status === 'sent' ? 'success' : 'danger');
+        await loadBorrowQueue();
+      } catch (err) { toast(err.message || 'Email retry failed.', 'danger'); }
+      finally { loading.classList.remove('visible'); }
     }
 
     async function loadAcquisitions() {
@@ -1981,8 +2172,8 @@
             <td>${escapeHtml(a.created_at.substring(0, 10))}</td>
             <td><span class="badge ${isApprove ? 'badge-success' : a.status === 'Declined' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(a.status)}</span></td>
             <td>
-              <button class="btn btn-gold btn-sm" data-acq-id="${escapeHtml(a.acq_id)}" onclick="updateAcq(this.dataset.acqId, 'Approved for Purchase')">Approve</button>
-              <button class="btn btn-danger btn-sm" data-acq-id="${escapeHtml(a.acq_id)}" onclick="updateAcq(this.dataset.acqId, 'Declined')">Decline</button>
+              ${a.status === 'Under Review' ? `<button class="btn btn-gold btn-sm" data-acq-id="${escapeHtml(a.acq_id)}" onclick="updateAcq(this.dataset.acqId, 'Approved for Purchase')">Approve</button>
+              <button class="btn btn-danger btn-sm" data-acq-id="${escapeHtml(a.acq_id)}" onclick="updateAcq(this.dataset.acqId, 'Declined')">Decline</button>` : '<span class="badge badge-outline">Reviewed</span>'}
             </td>
           `;
         });
@@ -1994,8 +2185,10 @@
         const res = await fetch(`${API_BASE}/admin/acquisitions/${id}/status`, {
           method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify({ status: status })
         });
-        if (res.ok) { toast(`Acquisition ${id} updated!`, 'success'); await loadAcquisitions(); }
-      } catch (err) { console.error(err); }
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.detail || 'Review failed.');
+        toast('Suggestion reviewed. Reader notifications queued.', 'success'); await loadAcquisitions();
+      } catch (err) { toast(err.message, 'danger'); }
     }
 
     function initChart() {

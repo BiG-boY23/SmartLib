@@ -133,15 +133,24 @@ def test_one_day_loan_and_published_overdue_fine_policy(api):
     session_generator = client.app.dependency_overrides[get_db]()
     session = next(session_generator)
     try:
+        # Isolate this loan from the fixture's older checkouts, which have no
+        # physical copy tags and correctly block new allocations.
+        isolated = Book(accession_no='LIB-LOAN-TEST', title='Loan policy test', author='Library', category='Reference', total_copies=1, available_copies=1)
+        session.add(isolated)
+        session.flush()
+        session.query(BorrowRecord).filter_by(req_id='R6').one().book_id = isolated.id
+        session.commit()
+        crud.ensure_book_copies(session)
         approved, message = crud.update_borrow_status(session, 'R6', BorrowStatus.APPROVED)
         assert message == 'Success' and approved.issue_date is None and approved.due_date is None
-        record, message = crud.update_borrow_status(session, 'R1', BorrowStatus.CHECKED_OUT)
+        record, message = crud.update_borrow_status(session, 'R6', BorrowStatus.CHECKED_OUT)
         assert message == 'Success'
         assert round((record.due_date - record.issue_date).total_seconds()) == 86400
-        late_record = session.query(BorrowRecord).filter_by(req_id='R1').one()
+        copy_tag = record.copy_accession_no
+        late_record = session.query(BorrowRecord).filter_by(req_id='R6').one()
         # Use a due date well beyond the daily cap so this assertion is not
         # sensitive to test runtime or timing at the hour boundary.
-        late_record.due_date = datetime.utcnow() - timedelta(days=2)
+        late_record.due_date = datetime.utcnow() - timedelta(hours=49)
         session.commit()
     finally:
         session.close()
@@ -152,6 +161,6 @@ def test_one_day_loan_and_published_overdue_fine_policy(api):
     assert crud.calculate_overdue_fine(due, due + timedelta(hours=7)) == 10.0
     assert crud.calculate_overdue_fine(due, due + timedelta(hours=25)) == 20.0
     returned = client.post('/admin/circulation/execute', json={
-        'mode':'return', 'patron_id':'A', 'accession_no':'LIB-REPORT'}, headers=tokens['staff'])
+        'mode':'return', 'patron_id':'A', 'accession_no':copy_tag}, headers=tokens['staff'])
     assert returned.status_code == 200 and returned.json()['fine'] == 30.0
     assert client.get('/admin/dashboard/stats', headers=tokens['admin']).json()['uncollected_fines'] == 30.0

@@ -1,0 +1,8 @@
+#panelAnnouncements input,#panelAnnouncements textarea,#extensionDialog input,#extensionDialog textarea,#panelBorrowReq select,#panelBorrowReq input{font:inherit;background:var(--bg-input);color:var(--text-main);border:1px solid var(--border);border-radius:8px;padding:10px 12px;outline:none}
+#panelAnnouncements input:focus,#panelAnnouncements textarea:focus,#extensionDialog input:focus,#extensionDialog textarea:focus,#panelBorrowReq select:focus,#panelBorrowReq input:focus{border-color:var(--evsu-gold);box-shadow:0 0 0 2px var(--border-gold)}
+#panelAnnouncements label,#extensionDialog label{font-size:13px;font-weight:600}
+#panelAnnouncements textarea,#extensionDialog textarea{resize:vertical;min-height:100px}
+#panelBorrowReq label{display:flex;align-items:center;gap:8px;font-size:12px}
+#queueCount{align-self:center;color:var(--text-muted);font-size:12px}
+#extensionDialog{color:var(--text-main);line-height:1.6}
+#extensionDialog::backdrop{background:#0009;backdrop-filter:blur(3px)}

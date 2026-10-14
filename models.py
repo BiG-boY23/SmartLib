@@ -42,6 +42,10 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
+    first_name = Column(String(80), nullable=True)
+    middle_name = Column(String(80), nullable=True)
+    last_name = Column(String(80), nullable=True)
+    profile_picture_url = Column(String, nullable=True)
     role = Column(Enum(UserRole), default=UserRole.LIBRARIAN, nullable=False)
     department = Column(String, nullable=True)
     course = Column(String, nullable=True)
@@ -87,6 +91,9 @@ class PendingRegistration(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
+    first_name = Column(String(80), nullable=True)
+    middle_name = Column(String(80), nullable=True)
+    last_name = Column(String(80), nullable=True)
     role = Column(Enum(UserRole), nullable=False)
     department = Column(String, nullable=True)
     course = Column(String, nullable=True)
@@ -119,6 +126,7 @@ class Book(Base):
     publisher = Column(String, nullable=True)
     year_published = Column(String, nullable=True)
     isbn = Column(String, nullable=True)
+    cover_url = Column(String, nullable=True)
     category = Column(String, index=True, nullable=False)  # Subject/Category
     call_number = Column(String, nullable=True)
     location_rack = Column(String, default="Rack A-1", nullable=True)
@@ -129,6 +137,23 @@ class Book(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     borrow_records = relationship("BorrowRecord", back_populates="book")
+    copies = relationship("BookCopy", back_populates="book", cascade="all, delete-orphan")
+
+
+class BookCopy(Base):
+    __tablename__ = "book_copies"
+    __table_args__ = (
+        UniqueConstraint("book_id", "copy_number", name="uq_book_copy_number"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    book_id = Column(Integer, ForeignKey("books.id"), nullable=False, index=True)
+    copy_number = Column(Integer, nullable=False)
+    accession_no = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    qr_printed_at = Column(DateTime, nullable=True)
+
+    book = relationship("Book", back_populates="copies")
 
 
 class BorrowRecord(Base):
@@ -138,6 +163,9 @@ class BorrowRecord(Base):
     req_id = Column(String, unique=True, index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
+    # Physical copy QR (for example LIB-QR-1001-C06). Nullable for older
+    # requests and circulation records created before copy-level tracking.
+    copy_accession_no = Column(String, nullable=True, index=True)
     status = Column(Enum(BorrowStatus), default=BorrowStatus.PENDING, nullable=False)
     request_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     pickup_date = Column(String, nullable=True)
@@ -150,6 +178,19 @@ class BorrowRecord(Base):
     user = relationship("User", back_populates="borrow_records")
     book = relationship("Book", back_populates="borrow_records")
     fines = relationship("Fine", back_populates="borrow_record")
+
+
+class BorrowApprovalEmail(Base):
+    __tablename__ = "borrow_approval_emails"
+
+    id = Column(Integer, primary_key=True)
+    borrow_record_id = Column(Integer, ForeignKey("borrow_records.id"), unique=True, nullable=False, index=True)
+    status = Column(String(16), default="pending", nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    last_attempt_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    sent_at = Column(DateTime, nullable=True)
 
 
 class Fine(Base):
@@ -222,6 +263,7 @@ class SupportThread(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    recipient_role = Column(String(20), default="librarian", server_default="librarian", nullable=False, index=True)
     subject = Column(String(160), nullable=False)
     is_closed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -260,3 +302,16 @@ class SmtpLog(Base):
     event_type = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     status = Column(String, default="Delivered (200 OK)", nullable=False)
+
+
+class LibraryEmail(Base):
+    __tablename__ = "library_emails"
+    id = Column(Integer, primary_key=True)
+    event_key = Column(String, unique=True, nullable=False)
+    recipient = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    status = Column(String, default="pending", nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    next_attempt_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_error = Column(String, nullable=True)

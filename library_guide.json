@@ -1,0 +1,122 @@
+[
+  {
+    "keywords": [
+      "hour",
+      "open",
+      "close",
+      "schedule",
+      "time",
+      "noon break",
+      "saturday"
+    ],
+    "answer": "🏛️  Library Hours:  • Monday to Friday:  7:00 AM – 6:00 PM  (NO NOON BREAK) • All checkouts are due  24 hours after checkout ."
+  },
+  {
+    "keywords": [
+      "borrow",
+      "limit",
+      "how many",
+      "privilege",
+      "quota",
+      "entitled",
+      "faculty"
+    ],
+    "answer": "📚  Loan Privileges:  •  Students:  Up to  3 books  of different titles. •  Faculty:  Up to  5 books  of different titles. • All checkouts are due  24 hours after checkout . •  Note:  Books marked \"NOT FOR HOME USE\" & General Reference are strictly for room-use only."
+  },
+  {
+    "keywords": [
+      "return",
+      "due",
+      "deadline",
+      "when to return",
+      "morning",
+      "9:00",
+      "9 am"
+    ],
+    "answer": "⏳  Returning Policy:  All checked-out books are due  24 hours after checkout . Returns are accepted during the library's 7:00 AM – 6:00 PM operating hours."
+  },
+  {
+    "keywords": [
+      "fine",
+      "overdue",
+      "late",
+      "penalty",
+      "rate",
+      "cost",
+      "fee",
+      "charge"
+    ],
+    "answer": "💰  Overdue Fines:  •  ₱1.50 per started overdue hour , capped at  ₱10.00 per started 24-hour overdue period . • ⚠️ Borrowers with unpaid fines cannot borrow additional materials until their account is settled."
+  },
+  {
+    "keywords": [
+      "lost",
+      "missing",
+      "replace",
+      "damage"
+    ],
+    "answer": "🔍  Lost Book Policy:  1. Report the lost book immediately to the Circulation Librarian. 2. Overdue fines will  freeze  as of the date reported. 3. You are granted a grace period of  2 weeks  to locate or replace the item. 4. If not replaced within 2 weeks, overdue fines will resume until settled."
+  },
+  {
+    "keywords": [
+      "staff",
+      "personnel",
+      "librarian",
+      "who is",
+      "jereza",
+      "fevidal",
+      "becamon",
+      "duero",
+      "mas",
+      "assistant"
+    ],
+    "answer": "👥  EVSU Library Personnel:  •  Romulo Joseph M. Jereza, IV, RL, MLIS  — Supervising Librarian •  Neña Divina D. Fevidal, RL, MLIS  — Librarian Designate •  Ivan Jarvis C. Becamon  — Library Assistant •  Jacqueline P. Duero  — Library Assistant •  Ronel P. Mas  — Library Assistant"
+  },
+  {
+    "keywords": [
+      "suspension",
+      "offense",
+      "sanction",
+      "discipline",
+      "violation",
+      "punishment"
+    ],
+    "answer": "⚖️  Disciplinary Sanctions:  •  1st Offense:  1-week suspension of library privileges •  2nd Offense:  1-month suspension of library privileges •  3rd Offense:  1 semester / trimester suspension"
+  },
+  {
+    "keywords": [
+      "mission",
+      "vision",
+      "goal",
+      "quality mission",
+      "objective"
+    ],
+    "answer": "🎯  EVSU Library Quality Mission:   \"Complementing the teaching-learning process by providing effective and efficient library resources services to the students, faculty and staff of the University in support of its philosophy, goals and objectives.\" "
+  },
+  {
+    "keywords": [
+      "section",
+      "services",
+      "area",
+      "reference",
+      "periodical",
+      "reserve",
+      "circulation",
+      "e-section",
+      "opac",
+      "internet"
+    ],
+    "answer": "🏛️  Library Sections & Services:  •  6 Sections:  General Reference, Periodicals, Reserved, Circulation, New Books Display, E-Section. •  6 Services:  Lending, Reference/Information, Current Awareness, Referral, Library Orientation, and Internet/OPAC Services."
+  },
+  {
+    "keywords": [
+      "card",
+      "id",
+      "requirement",
+      "register",
+      "membership",
+      "borrower card"
+    ],
+    "answer": "🪪  Library ID & Requirements:  A validated EVSU School ID / Library ID must be presented upon entering and during every borrowing transaction at the Circulation counter. Library IDs are non-transferable."
+  }
+]

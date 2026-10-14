@@ -2,8 +2,11 @@ from datetime import datetime, timedelta
 import hashlib
 import logging
 import secrets
+from io import BytesIO
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -27,7 +30,7 @@ from schemas import (
     RegisterRequest,
     Token,
     UserResponse,
-    UserUpdate,
+    SelfProfileUpdate,
     validate_password_policy,
 )
 import crud
@@ -232,7 +235,10 @@ def request_registration_otp(req: RegisterRequest, request: Request, db: Session
         username=username,
         email=email,
         hashed_password=get_password_hash(req.password),
-        full_name=f"{req.first_name.strip()} {req.last_name.strip()}".strip(),
+        full_name=" ".join(part for part in (req.first_name, req.middle_name, req.last_name) if part),
+        first_name=req.first_name,
+        middle_name=req.middle_name,
+        last_name=req.last_name,
         role=req.account_type,
         department=department.name,
         course=course.name,
@@ -276,6 +282,9 @@ def verify_registration_otp(req: RegistrationOtpRequest, request: Request, db: S
         email=pending.email,
         hashed_password=pending.hashed_password,
         full_name=pending.full_name,
+        first_name=pending.first_name,
+        middle_name=pending.middle_name,
+        last_name=pending.last_name,
         role=pending.role,
         department=pending.department,
         course=pending.course,
@@ -457,12 +466,53 @@ def read_current_user_profile(current_user: User = Depends(get_current_user)):
 
 @router.put("/profile", response_model=UserResponse)
 def update_profile(
-    update_data: UserUpdate,
+    update_data: SelfProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    updated_user = crud.update_user(db, current_user.id, update_data)
-    return updated_user
+    current_user.first_name = update_data.first_name
+    current_user.middle_name = update_data.middle_name
+    current_user.last_name = update_data.last_name
+    current_user.full_name = " ".join(part for part in (update_data.first_name, update_data.middle_name, update_data.last_name) if part)
+    current_user.contact_no = update_data.contact_no
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/profile-photo", response_model=UserResponse)
+async def upload_profile_photo(
+    photo: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    content = await photo.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Profile picture must be 5 MB or smaller.")
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+        with Image.open(BytesIO(content)) as image:
+            image_format = image.format
+            width, height = image.size
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=400, detail="Upload a valid JPG or PNG image.")
+    if image_format not in {"JPEG", "PNG"} or width > 4096 or height > 4096:
+        raise HTTPException(status_code=400, detail="Upload a JPG or PNG image up to 4096 pixels per side.")
+    extension = "jpg" if image_format == "JPEG" else "png"
+    filename = f"{secrets.token_hex(20)}.{extension}"
+    destination = Path(__file__).resolve().parent.parent / "uploads" / "profile-photos"
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / filename).write_bytes(content)
+    current_user.profile_picture_url = f"/profile-photos/{filename}"
+    try:
+        db.commit()
+        db.refresh(current_user)
+    except Exception:
+        db.rollback()
+        (destination / filename).unlink(missing_ok=True)
+        raise
+    return current_user
 
 
 @router.post("/change-password")

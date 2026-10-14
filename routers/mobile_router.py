@@ -1,4 +1,5 @@
 from typing import List, Optional
+import string
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -20,6 +21,8 @@ from schemas import (
     AssistantRequest,
 )
 import crud
+from ai_service import answer_library_question
+from assistant_local import catalog_terms, conversational_reply
 from rate_limits import enforce_rate_limit
 from security import require_roles, get_current_user
 
@@ -66,7 +69,7 @@ def request_borrow_mobile(
     db.commit()
     record.user_name = current_user.full_name
     record.book_title = record.book.title if record.book else "Unknown"
-    record.accession_no = record.book.accession_no if record.book else "Unknown"
+    record.accession_no = record.copy_accession_no or (record.book.accession_no if record.book else "Unknown")
     return record
 
 
@@ -179,7 +182,7 @@ def _thread_summary(db: Session, thread: SupportThread, staff_view: bool = False
     latest = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.desc()).first()
     owner = db.query(User).filter(User.id == thread.user_id).first() if staff_view else None
     return {
-        "id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed,
+        "id": thread.id, "recipient_role": thread.recipient_role, "subject": thread.subject, "is_closed": thread.is_closed,
         "updated_at": thread.updated_at,
         "last_message": latest.body if latest else "",
         "unread_count": db.query(SupportMessage).filter(
@@ -200,13 +203,15 @@ def list_user_message_threads(db: Session = Depends(get_db), current_user: User 
 
 @router.post("/messages", status_code=status.HTTP_201_CREATED)
 def start_message_thread(req: SupportThreadCreate, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    if len(req.subject.strip()) < 3 or not req.message.strip():
+        raise HTTPException(status_code=422, detail="Enter a subject and message.")
     enforce_rate_limit(f"support-thread:{current_user.id}", 5, 60 * 60)
     now = datetime.utcnow()
-    thread = SupportThread(user_id=current_user.id, subject=req.subject.strip(), created_at=now, updated_at=now)
+    thread = SupportThread(user_id=current_user.id, recipient_role=req.recipient_role, subject=req.subject.strip(), created_at=now, updated_at=now)
     db.add(thread)
     db.flush()
     db.add(SupportMessage(thread_id=thread.id, sender_id=current_user.id, is_staff=False, body=req.message.strip()))
-    staff = db.query(User).filter(User.role.in_([UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.LIBRARIAN]), User.is_active.is_(True)).all()
+    staff = db.query(User).filter(User.role.in_([UserRole.LIBRARIAN] if thread.recipient_role == "librarian" else [UserRole.ADMIN, UserRole.SUPERADMIN]), User.is_active.is_(True)).all()
     for person in staff:
         db.add(Notification(user_id=person.id, title="New library message", body=f"{current_user.full_name}: {req.subject.strip()}", kind="message"))
     db.commit()
@@ -221,11 +226,14 @@ def read_user_message_thread(thread_id: int, db: Session = Depends(get_db), curr
     db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(True)).update({SupportMessage.read_by_user: True}, synchronize_session=False)
     db.commit()
     messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.asc()).all()
-    return {"thread": _thread_summary(db, thread), "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "created_at": m.created_at} for m in messages]}
+    senders = {user.id: user.full_name for user in db.query(User).filter(User.id.in_([m.sender_id for m in messages])).all()} if messages else {}
+    return {"thread": _thread_summary(db, thread), "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "sender_id": m.sender_id, "sender_name": senders.get(m.sender_id, "Library staff" if m.is_staff else "Patron"), "created_at": m.created_at} for m in messages]}
 
 
 @router.post("/messages/{thread_id}/reply", status_code=status.HTTP_201_CREATED)
 def reply_to_staff_thread(thread_id: int, req: SupportMessageCreate, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    if not req.message.strip():
+        raise HTTPException(status_code=422, detail="Enter a message.")
     enforce_rate_limit(f"support-reply:{current_user.id}", 20, 60 * 60)
     thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.user_id == current_user.id).first()
     if not thread:
@@ -234,7 +242,7 @@ def reply_to_staff_thread(thread_id: int, req: SupportMessageCreate, db: Session
         raise HTTPException(status_code=400, detail="This conversation is closed")
     thread.updated_at = datetime.utcnow()
     db.add(SupportMessage(thread_id=thread.id, sender_id=current_user.id, is_staff=False, body=req.message.strip()))
-    staff = db.query(User).filter(User.role.in_([UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.LIBRARIAN]), User.is_active.is_(True)).all()
+    staff = db.query(User).filter(User.role.in_([UserRole.LIBRARIAN] if thread.recipient_role == "librarian" else [UserRole.ADMIN, UserRole.SUPERADMIN]), User.is_active.is_(True)).all()
     for person in staff:
         db.add(Notification(user_id=person.id, title="New library message", body=f"Reply from {current_user.full_name}: {thread.subject}", kind="message"))
     db.commit()
@@ -246,23 +254,47 @@ def ask_library_assistant(req: AssistantRequest, db: Session = Depends(get_db), 
     enforce_rate_limit(f"library-assistant:{current_user.id}", 30, 60 * 60)
     question = req.message.strip()
     lower = question.casefold()
-    if any(word in lower for word in ("borrow", "loan", "request", "my book", "return")):
-        rows = crud.get_borrow_records(db, user_id=current_user.id)
-        summary = "; ".join(f"{row.book_title or 'Book'}: {row.status.value if hasattr(row.status, 'value') else row.status}" for row in rows[:5])
-        answer = f"Here is your recent library activity: {summary}." if summary else "You don’t have any borrowing requests yet. Browse the catalog and tap ‘Request a copy’ to start one."
-        return {"reply": answer, "books": []}
-    if any(word in lower for word in ("open", "hours", "schedule", "when")):
-        return {"reply": "Library hours can change during holidays and campus events. Check the latest Library Updates or message the librarian for today’s schedule.", "books": []}
-    if any(word in lower for word in ("contact", "librarian", "admin", "help", "inquiry")):
-        return {"reply": "I can help with common library questions. For a librarian’s help, open Messages and start a conversation; replies will appear in your notifications.", "books": []}
-    ignore = {"find", "search", "book", "books", "about", "recommend", "recommendation", "please", "show", "want", "need", "have", "what", "where", "which", "the", "for", "with"}
-    words = [word.strip(".,?!:;()[]{}\"'") for word in lower.split()]
-    terms = [word for word in words if len(word) >= 3 and word not in ignore][:5]
+    terms = catalog_terms(question)
     found = {}
     for term in terms:
         for book in crud.get_books(db, search=term, skip=0, limit=5):
             found[book.id] = book
     matches = list(found.values())[:5]
-    if matches:
-        return {"reply": f"I found {len(matches)} matching title(s) in the library catalog. Tap Explore to view availability or request a copy.", "books": [{"id": b.id, "title": b.title, "author": b.author, "category": b.category, "available_copies": b.available_copies} for b in matches]}
-    return {"reply": "I couldn’t find a matching title in the catalog. Try a shorter title, author name, or subject. You can also message the librarian for help.", "books": []}
+    books = [
+        {"id": book.id, "title": book.title, "author": book.author,
+         "category": book.category, "available_copies": book.available_copies}
+        for book in matches
+    ]
+    rows = crud.get_borrow_records(db, user_id=current_user.id, limit=5)
+    activity = [
+        {"request_reference": row.req_id, "title": row.book_title, "status": row.status.value,
+         "pickup_schedule": row.pickup_date if row.status in {BorrowStatus.PENDING, BorrowStatus.APPROVED} else None,
+         "due_date": row.due_date.isoformat() if row.due_date else None}
+        for row in rows
+    ]
+    model_reply = answer_library_question(
+        question,
+        [turn.model_dump() for turn in req.history],
+        {"matching_books": books, "recent_borrowing": activity},
+        language=req.language,
+    )
+    if model_reply:
+        return {"reply": model_reply, "books": books, "source": "model"}
+
+    conversation = conversational_reply(question, [turn.model_dump() for turn in req.history], req.language, books)
+    if conversation:
+        answer = conversation
+    elif any(word in lower for word in ("borrow", "loan", "request", "my book", "return")):
+        summary = "; ".join(f"{item['title']}: {item['status']}" for item in activity)
+        answer = f"Here is your recent library activity: {summary}." if summary else "You don't have any borrowing requests yet. Browse the catalog and tap 'Request a copy' to start one."
+    elif any(word in lower for word in ("fine", "overdue", "late", "penalty")):
+        answer = "Loans are due 24 hours after checkout. Late returns accrue PHP 1.50 per started hour, capped at PHP 10 per started 24-hour overdue period. Contact the library for your current balance."
+    elif any(word in lower for word in ("open", "hours", "schedule", "when")):
+        answer = "Library hours can change during holidays and campus events. Check the latest Library Updates or message the librarian for today's schedule."
+    elif any(word in lower for word in ("contact", "librarian", "admin", "help", "inquiry")):
+        answer = "Open Messages to start a conversation with the library team. Staff replies will appear in the same conversation."
+    elif matches:
+        answer = f"I found {len(matches)} matching title(s) in the library catalog. Tap Explore to view availability or request a copy."
+    else:
+        answer = "I can help with books, borrowing, and library services. What would you like to know?"
+    return {"reply": answer, "books": books, "source": "local"}

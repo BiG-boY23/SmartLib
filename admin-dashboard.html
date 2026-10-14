@@ -7,6 +7,8 @@
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/staff-chat.css">
+  <link rel="stylesheet" href="/static/staff-updates.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
@@ -345,6 +347,28 @@
 
   <div class="toast-container" id="toastBox"></div>
 
+  <div class="modal-overlay" id="circulationBorrowConfirmModal" role="dialog" aria-modal="true" aria-labelledby="circulationBorrowConfirmTitle">
+    <div class="settings-modal" style="max-width:560px;">
+      <div class="modal-header">
+        <h2 id="circulationBorrowConfirmTitle"><i class="fa-solid fa-clipboard-check" style="color:var(--evsu-gold);"></i> Confirm checkout</h2>
+        <button class="modal-close" type="button" onclick="closeBorrowConfirmation()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="card-body">
+        <p style="color:var(--text-muted);margin:0 0 14px;">Review the borrower and exact book copy. Nothing is saved until you press <strong>Confirm and save checkout</strong>.</p>
+        <div style="display:grid;gap:10px;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-main);">
+          <div><small style="color:var(--text-muted);">Borrower</small><div id="confirmBorrowPatron" style="font-weight:700;"></div></div>
+          <div><small style="color:var(--text-muted);">Book</small><div id="confirmBorrowBook" style="font-weight:700;"></div></div>
+          <div><small style="color:var(--text-muted);">Copy accession</small><div id="confirmBorrowAccession" style="font-weight:700;color:var(--evsu-gold);"></div></div>
+          <div><small style="color:var(--text-muted);">Loan period</small><div>24 hours from checkout</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
+          <button type="button" class="btn btn-outline" onclick="closeBorrowConfirmation()">Cancel / edit scan</button>
+          <button type="button" class="btn btn-maroon" id="btnCommitBorrow" onclick="executeBorrowDesk()"><i class="fa-solid fa-check"></i> Confirm and save checkout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="signupOptionEditModal">
     <div class="settings-modal" style="max-width:560px;">
       <div class="modal-header">
@@ -507,7 +531,7 @@
         <h2><i class="fa-solid fa-qrcode" style="color:var(--evsu-gold);"></i> <span id="qrModalTitle">Printable 2D QR Code Labels</span></h2>
         <div style="display:flex; align-items:center; gap:10px;">
           <button class="btn btn-gold btn-sm" onclick="printQrBatchLabels()">
-            <i class="fa-solid fa-print"></i> Print <span id="lblAdminPrintCount">1</span> Label(s)
+            <i class="fa-solid fa-print"></i> Print <span id="lblPrintCount">0</span> Label(s)
           </button>
           <button class="modal-close" onclick="closeQrBatchModal()"><i class="fa-solid fa-xmark"></i></button>
         </div>
@@ -523,28 +547,11 @@
           <i class="fa-solid fa-circle-info text-gold"></i> Each copy has a unique QR barcode suffix (-C01, -C02...)
         </div>
       </div>
-      <!-- Quantity configuration toolbar (no-print) -->
-      <div class="no-print" style="padding: 12px 24px; background: rgba(212,175,55,0.05); border-bottom: 1px solid var(--border); display: flex; align-items: center; flex-wrap: wrap; gap: 14px;">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;"><i class="fa-solid fa-hashtag" style="color:var(--evsu-gold);"></i> Number of Labels:</label>
-          <button class="btn btn-sm" style="padding:2px 8px; font-size:15px; background:var(--bg-card); border:1px solid var(--border);" onclick="adjustAdminQrQty(-1)">−</button>
-          <input type="number" id="adminQrQtyInput" min="1" max="999" value="1"
-            style="width:60px; text-align:center; background:var(--bg-card); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:3px 6px; font-size:13px;"
-            oninput="onAdminQrQtyChange()">
-          <button class="btn btn-sm" style="padding:2px 8px; font-size:15px; background:var(--bg-card); border:1px solid var(--border);" onclick="adjustAdminQrQty(1)">+</button>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-          <span style="font-size:11px; color:var(--text-muted);">Presets:</span>
-          <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border);" onclick="setAdminQrQtyPreset('all')">All Copies (<span id="adminPresetAllLabel">1</span>)</button>
-          <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border);" onclick="setAdminQrQtyPreset(1)">Just 1</button>
-          <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border);" onclick="setAdminQrQtyPreset(3)">3 Labels</button>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px; margin-left:auto;">
-          <label style="font-size:12px; color:var(--text-muted); white-space:nowrap;">Start from Copy #:</label>
-          <input type="number" id="adminQrStartCopy" min="1" max="999" value="1"
-            style="width:55px; text-align:center; background:var(--bg-card); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:3px 6px; font-size:13px;"
-            oninput="onAdminQrQtyChange()">
-        </div>
+      <div class="no-print" style="padding: 12px 24px; background: rgba(212,175,55,0.05); border-bottom: 1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <span id="qrLifecycleNote" style="font-size:12px; color:var(--text-muted);">Loading persistent copy labels…</span>
+        <button type="button" class="btn btn-sm" id="btnQrReprintAll" onclick="toggleQrLabelView()" style="display:none; background:var(--bg-card); border:1px solid var(--border);">
+          <i class="fa-solid fa-rotate"></i> Reprint existing labels
+        </button>
       </div>
       <div class="card-body" style="overflow-y: auto; flex: 1; padding: 20px;" id="printQrArea">
         <div class="qr-batch-grid" id="qrBatchContainer">
@@ -585,6 +592,10 @@
       </button>
       <button class="nav-item-btn" id="navFeedback" onclick="switchNav('feedback')">
         <i class="fa-solid fa-comments"></i> Visitor Suggestions
+      </button>
+      <button class="nav-item-btn" id="navAnnouncements" onclick="switchNav('announcements')"><i class="fa-solid fa-bullhorn"></i> News &amp; Announcements</button>
+      <button class="nav-item-btn" id="navMessages" onclick="switchNav('messages')">
+        <i class="fa-solid fa-envelope"></i> Patron Messages
       </button>
     </div>
 
@@ -754,6 +765,12 @@
                 <div class="form-group">
                   <label>Title of Book</label>
                   <input type="text" id="bookTitle" class="form-control" placeholder="e.g. Modern Operating Systems" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="bookCoverInput">Front-page image <span style="color:var(--text-muted); font-weight:400;">(optional, JPG or PNG, up to 5 MB)</span></label>
+                  <input type="file" id="bookCoverInput" class="form-control" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onchange="previewBookCover(this, 'bookCoverPreview')">
+                  <img id="bookCoverPreview" alt="Selected book front cover preview" style="display:none; max-width:140px; max-height:190px; object-fit:cover; border-radius:8px; margin-top:10px; border:1px solid var(--border);">
                 </div>
 
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -935,8 +952,8 @@
                   </div>
                 </div>
 
-                <button class="btn btn-maroon w-100" style="padding:12px; font-weight:700; margin-top:6px;" id="btnConfirmBorrow" onclick="executeBorrowDesk()">
-                  <i class="fa-solid fa-check"></i> Complete Checkout (1-Day Loan)
+                <button class="btn btn-maroon w-100" style="padding:12px; font-weight:700; margin-top:6px;" id="btnConfirmBorrow" onclick="openBorrowConfirmation()">
+                  <i class="fa-solid fa-clipboard-check"></i> Review checkout details
                 </button>
               </div>
             </div>
@@ -949,7 +966,7 @@
               </div>
               <div class="card-body">
                 <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:16px;">
-                  Slide the returned book under the stand-mounted scanner. The system immediately checks in the book, verifies the borrower, and calculates any overdue fines automatically.
+                  Scan the returned book. The system completes check-in only when an active loan exists and calculates any overdue fine.
                 </p>
                 <div class="form-group">
                   <label><i class="fa-solid fa-qrcode text-gold"></i> Scan Book 2D QR Code Label</label>
@@ -1038,10 +1055,15 @@
         </div>
       </div>
 
+      <div class="screen-panel" id="panelAnnouncements"><div class="card"><div class="card-head"><h3>Publish library news</h3></div><div class="card-body" style="padding:24px"><p style="margin-bottom:18px">Share events, collection news, and service updates. Active students and faculty receive an app notification and an email.</p><form id="announcementForm"><label for="announcementTitle">Title</label><input id="announcementTitle" required minlength="3" maxlength="160" style="display:block;width:100%;margin:8px 0 18px"><label for="announcementBody">Announcement details</label><textarea id="announcementBody" required maxlength="4000" rows="6" style="display:block;width:100%;margin:8px 0 18px"></textarea><button class="btn btn-maroon" type="submit">Publish announcement</button></form></div></div><div id="announcementList" style="margin-top:24px"></div></div>
+      <div class="screen-panel" id="panelMessages"><div id="staffChatRoot"></div></div>
+
     </div>
   </div>
 
   <script src="/static/staff-reports.js"></script>
+  <script src="/static/staff-chat.js"></script>
+  <script src="/static/staff-updates.js"></script>
   <script>
     // AUTH GUARD FOR ADMIN PORTAL
     function getActiveToken() {
@@ -1165,6 +1187,7 @@
     }
 
     async function switchNav(key) {
+      window.SmartLibChat.setActive(key === 'messages', getAuthHeaders, toast);
       document.querySelectorAll('.nav-item-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.screen-panel').forEach(p => p.classList.remove('active'));
 
@@ -1172,9 +1195,10 @@
         'dash': ['Executive Analytics Dashboard', 'Eastern Visayas State University Administrator Control Center'],
         'users': ['User Management & Provisioning', 'Manage EVSU patrons and provision official staff credentials'],
         'books': ['Book Inventory & Cataloging', 'Add catalog holdings and view location rack numbers'],
-        'circ': ['Circulation Desk (Borrow & Return Counter)', 'Scan student ID barcode/QR and book 2D QR tags for instant checkout and return'],
+        'circ': ['Circulation Desk (Borrow & Return Counter)', 'Verify both scans and confirm checkout; returns require an active loan'],
         'logs': ['Security Audit & Email Logs', 'Full security events trail and automated SMTP dispatch logs'],
-        'feedback': ['Visitor Feedback & Inquiries', 'Submissions received from the public landing page suggestion box']
+        'feedback': ['Visitor Feedback & Inquiries', 'Submissions received from the public landing page suggestion box'],
+        'messages': ['Patron Messages', 'Read and reply to student and faculty conversations']
       };
 
       if (map[key]) {
@@ -1208,6 +1232,15 @@
         document.getElementById('navFeedback').classList.add('active');
         document.getElementById('panelFeedback').classList.add('active');
         await loadFeedbacks();
+      } else if (key === 'announcements') {
+        document.getElementById('pageTitle').innerText = 'News & Announcements';
+        document.getElementById('pageSubTitle').innerText = 'Publish library updates for students and faculty';
+        document.getElementById('navAnnouncements').classList.add('active');
+        document.getElementById('panelAnnouncements').classList.add('active');
+        await window.SmartLibUpdates.load();
+      } else if (key === 'messages') {
+        document.getElementById('navMessages').classList.add('active');
+        document.getElementById('panelMessages').classList.add('active');
       }
     }
 
@@ -1448,6 +1481,50 @@
       });
     }
 
+    function previewBookCover(input, previewId) {
+      const file = input.files && input.files[0];
+      const preview = document.getElementById(previewId);
+      if (!file) { preview.style.display = 'none'; preview.removeAttribute('src'); return; }
+      const name = file.name.toLowerCase();
+      const supportedExtension = /\.(jpe?g|png)$/.test(name);
+      const supportedType = !file.type || ['image/jpeg', 'image/jpg', 'image/png'].includes(file.type);
+      if (!supportedExtension || !supportedType || file.size > 5 * 1024 * 1024) {
+        input.value = '';
+        preview.style.display = 'none';
+        preview.removeAttribute('src');
+        toast('Choose a JPG or PNG image no larger than 5 MB.', 'danger');
+        return;
+      }
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      preview.dataset.objectUrl = URL.createObjectURL(file);
+      preview.src = preview.dataset.objectUrl;
+      preview.style.display = 'block';
+    }
+
+    async function uploadBookCoverIfSelected(book, inputId) {
+      const input = document.getElementById(inputId);
+      const file = input.files && input.files[0];
+      if (!file) return book;
+      const headers = getAuthHeaders();
+      delete headers['Content-Type'];
+      const form = new FormData();
+      form.append('cover', file);
+      const response = await fetch(`${API_BASE}/admin/books/${book.id}/cover`, { method: 'PUT', headers, body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'The book was saved, but its cover image could not be uploaded.');
+      return data;
+    }
+
+    function clearBookCoverInput(inputId, previewId) {
+      const input = document.getElementById(inputId);
+      const preview = document.getElementById(previewId);
+      input.value = '';
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      delete preview.dataset.objectUrl;
+      preview.style.display = 'none';
+      preview.removeAttribute('src');
+    }
+
     async function handleCreateBook(e) {
       e.preventDefault();
       const acc = document.getElementById('bookAcc').value.trim();
@@ -1480,9 +1557,12 @@
           })
         });
         if (res.ok) {
-          const savedBook = await res.json();
+          let savedBook = await res.json();
+          let coverWarning = '';
+          try { savedBook = await uploadBookCoverIfSelected(savedBook, 'bookCoverInput'); }
+          catch (coverError) { coverWarning = ` Cover upload failed: ${coverError.message}`; }
           cachedAdminBooks.unshift(savedBook);
-          toast(`Book ${acc} cataloged successfully with ${copies} copies!`, 'success');
+          toast(`Book ${acc} cataloged successfully with ${copies} copies.${coverWarning}`, coverWarning ? 'warning' : 'success');
           
           // Open batch QR sheet immediately
           openBookQrSheet(acc);
@@ -1497,6 +1577,7 @@
           document.getElementById('bookCallNum').value = '';
           document.getElementById('bookCopies').value = '1';
           document.getElementById('bookCondition').value = 'Good';
+          clearBookCoverInput('bookCoverInput', 'bookCoverPreview');
           await loadBooks();
         } else {
           const err = await res.json();
@@ -1682,100 +1763,101 @@
     }
 
     let currentQrBook = null;
+    let currentQrCopies = [];
+    let showingAllQrCopies = false;
 
-    function generateAndShowQrBatch(book) {
+    async function generateAndShowQrBatch(book) {
       currentQrBook = book;
-      const total = book.total_copies || 1;
-
       document.getElementById('qrModalTitle').innerText = book.title;
       document.getElementById('qrModalAcc').innerText = book.accession_no;
       document.getElementById('qrModalCallNum').innerText = book.call_number || 'General Collection';
-      document.getElementById('qrModalCopiesCount').innerText = `${total} ${total === 1 ? 'Copy' : 'Copies'}`;
-
-      // Reset quantity controls
-      document.getElementById('adminQrQtyInput').value = total;
-      document.getElementById('adminQrStartCopy').value = 1;
-      document.getElementById('adminPresetAllLabel').innerText = total;
-
-      renderAdminConfiguredQrLabels();
+      document.getElementById('qrModalCopiesCount').innerText = `${book.total_copies || 0} ${Number(book.total_copies) === 1 ? 'Copy' : 'Copies'}`;
       document.getElementById('qrBatchModal').classList.add('open');
+      document.getElementById('qrBatchContainer').innerHTML = '<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:36px;">Loading assigned copy labels…</div>';
+      document.getElementById('qrLifecycleNote').textContent = 'Loading persistent copy labels…';
+      try {
+        await loadQrCopies(true);
+      } catch (error) {
+        document.getElementById('qrBatchContainer').innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--danger); padding:36px;">${escapeHtml(error.message)}</div>`;
+        document.getElementById('qrLifecycleNote').textContent = 'Copy labels could not be loaded from the library server.';
+        document.getElementById('lblPrintCount').textContent = '0';
+        document.querySelector('#qrBatchModal .modal-header .btn-gold').disabled = true;
+        toast(error.message || 'Could not load copy labels.', 'danger');
+      }
     }
 
-    function adjustAdminQrQty(delta) {
-      const inp = document.getElementById('adminQrQtyInput');
-      let val = parseInt(inp.value) || 1;
-      val = Math.max(1, Math.min(999, val + delta));
-      inp.value = val;
-      onAdminQrQtyChange();
-    }
-
-    function setAdminQrQtyPreset(val) {
-      const total = currentQrBook ? (currentQrBook.total_copies || 1) : 1;
-      document.getElementById('adminQrQtyInput').value = (val === 'all') ? total : Math.min(val, total);
-      document.getElementById('adminQrStartCopy').value = 1;
-      onAdminQrQtyChange();
-    }
-
-    function onAdminQrQtyChange() {
-      renderAdminConfiguredQrLabels();
-    }
-
-    function renderAdminConfiguredQrLabels() {
+    async function loadQrCopies(unprintedOnly) {
       if (!currentQrBook) return;
-      const book = currentQrBook;
-      const total = book.total_copies || 1;
+      const response = await fetch(`${API_BASE}/admin/books/${currentQrBook.id}/copies?unprinted_only=${unprintedOnly}`, { headers: getAuthHeaders() });
+      const rows = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(rows.detail || 'Could not load persistent copy labels.');
+      currentQrCopies = rows;
+      showingAllQrCopies = !unprintedOnly;
+      renderPersistentQrLabels();
+    }
 
-      let qty = Math.max(1, parseInt(document.getElementById('adminQrQtyInput').value) || 1);
-      let startCopy = Math.max(1, parseInt(document.getElementById('adminQrStartCopy').value) || 1);
-      // Clamp so we don't go past total_copies
-      if (startCopy > total) startCopy = total;
-      if (startCopy + qty - 1 > total) qty = total - startCopy + 1;
+    async function toggleQrLabelView() {
+      try {
+        await loadQrCopies(showingAllQrCopies);
+      } catch (error) {
+        toast(error.message || 'Could not load copy labels.', 'danger');
+      }
+    }
 
-      // Update print button counter
-      document.getElementById('lblAdminPrintCount').innerText = qty;
-
+    function renderPersistentQrLabels() {
       const container = document.getElementById('qrBatchContainer');
+      const printButton = document.querySelector('#qrBatchModal .modal-header .btn-gold');
+      const counter = document.getElementById('lblPrintCount');
+      const note = document.getElementById('qrLifecycleNote');
+      const toggle = document.getElementById('btnQrReprintAll');
       container.innerHTML = '';
+      counter.textContent = String(currentQrCopies.length);
+      printButton.disabled = currentQrCopies.length === 0;
+      toggle.style.display = 'inline-flex';
 
-      for (let i = 0; i < qty; i++) {
-        const copyIdx = startCopy + i;
-        const copySuffix = total === 1 ? book.accession_no : `${book.accession_no}-C${String(copyIdx).padStart(2, '0')}`;
-        const copyNumLabel = `Copy ${String(copyIdx).padStart(2, '0')} of ${String(total).padStart(2, '0')}`;
-        const cardId = `qrAdminCanvas_${book.id}_${copyIdx}`;
+      if (!currentQrCopies.length) {
+        note.textContent = showingAllQrCopies
+          ? 'No copy records are available for this title.'
+          : 'All assigned labels have been printed. Existing copy IDs remain saved and will not be replaced.';
+        container.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:42px 20px;"><i class="fa-solid fa-circle-check" style="font-size:30px; color:var(--evsu-gold); margin-bottom:12px;"></i><div>${showingAllQrCopies ? 'No copy labels found.' : 'All copy labels have already been printed.'}</div></div>`;
+      } else {
+        note.textContent = showingAllQrCopies
+          ? `Viewing all ${currentQrCopies.length} saved labels. Printing these will reprint the same identifiers.`
+          : `${currentQrCopies.length} new copy label(s) are ready. Their identifiers are permanently assigned.`;
+        toggle.innerHTML = showingAllQrCopies
+          ? '<i class="fa-solid fa-list"></i> Show unprinted labels'
+          : '<i class="fa-solid fa-rotate"></i> View all labels for reprinting';
 
-        const card = document.createElement('div');
-        card.className = 'qr-copy-card';
-        card.innerHTML = `
-          <div class="qr-copy-header">
-            <i class="fa-solid fa-university"></i> EVSU-OC SMARTLIB
-          </div>
-          <div class="qr-copy-title" title="${escapeHtml(book.title)}">${escapeHtml(book.title)}</div>
-          <div class="qr-copy-meta">${escapeHtml(book.call_number || book.category)}</div>
-          <div class="qr-canvas-holder" id="${cardId}"></div>
-          <div class="qr-copy-code">${escapeHtml(copySuffix)}</div>
-          <div class="qr-copy-badge">${copyNumLabel}</div>
-        `;
-        container.appendChild(card);
-
-        setTimeout(() => {
-          const holder = document.getElementById(cardId);
-          if (holder) {
+        currentQrCopies.forEach((copy) => {
+          const code = copy.accession_no;
+          const cardId = `qrCopyCanvas_${copy.id}`;
+          const card = document.createElement('div');
+          card.className = 'qr-copy-card';
+          card.innerHTML = `
+            <div class="qr-copy-header"><i class="fa-solid fa-university"></i> EVSU-OC SMARTLIB</div>
+            <div class="qr-copy-title" title="${escapeHtml(currentQrBook.title)}">${escapeHtml(currentQrBook.title)}</div>
+            <div class="qr-copy-meta">${escapeHtml(currentQrBook.call_number || currentQrBook.category || 'General Collection')}</div>
+            <div class="qr-canvas-holder" id="${cardId}"></div>
+            <div class="qr-copy-code">${escapeHtml(code)}</div>
+            <div class="qr-copy-badge">Copy ${String(copy.copy_number).padStart(2, '0')} of ${String(currentQrBook.total_copies || currentQrCopies.length).padStart(2, '0')}</div>
+          `;
+          container.appendChild(card);
+          setTimeout(() => {
+            const holder = document.getElementById(cardId);
+            if (!holder) return;
             holder.innerHTML = '';
             if (window.QRCode) {
-              new QRCode(holder, {
-                text: copySuffix,
-                width: 95,
-                height: 95,
-                colorDark: "#000000",
-                colorLight: "#ffffff",
-                correctLevel: QRCode.CorrectLevel.M
-              });
+              new QRCode(holder, { text: code, width: 95, height: 95, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
             } else {
-              holder.innerHTML = `<i class="fa-solid fa-qrcode" style="font-size:50px; color:#800000;"></i>`;
+              holder.innerHTML = '<i class="fa-solid fa-qrcode" style="font-size:50px; color:#800000;"></i>';
             }
-          }
-        }, 40 * (i + 1));
+          }, 35);
+        });
       }
+
+      if (!currentQrCopies.length) toggle.innerHTML = showingAllQrCopies
+        ? '<i class="fa-solid fa-list"></i> Show unprinted labels'
+        : '<i class="fa-solid fa-rotate"></i> Reprint existing labels';
     }
 
     function closeQrBatchModal() {
@@ -1783,9 +1865,29 @@
     }
 
     function printQrBatchLabels() {
+      if (!currentQrCopies.length) return;
+      const copyIdsToMark = showingAllQrCopies
+        ? []
+        : currentQrCopies.filter((copy) => !copy.qr_printed_at).map((copy) => copy.id);
+      if (copyIdsToMark.length) {
+        const markAfterPrint = async () => {
+          try {
+            const response = await fetch(`${API_BASE}/admin/books/${currentQrBook.id}/copies/mark-printed`, {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ copy_ids: copyIdsToMark })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || 'Labels could not be marked as printed.');
+            await loadQrCopies(true);
+          } catch (error) {
+            toast(error.message || 'Could not update printed-label status.', 'warning');
+          }
+        };
+        window.addEventListener('afterprint', markAfterPrint, { once: true });
+      }
       window.print();
     }
-
     // ── CIRCULATION DESK (HANDS-FREE SCANNER WORKFLOW) ─────────────
     let currentCircMode = 'borrow';
     let verifiedPatron = null;
@@ -1835,6 +1937,10 @@
 
       if (pInp && !pInp.dataset.bound) {
         pInp.dataset.bound = 'true';
+        pInp.addEventListener('input', () => {
+          verifiedPatron = null;
+          document.getElementById('circPatronBadge').style.display = 'none';
+        });
         pInp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
@@ -1845,6 +1951,10 @@
 
       if (bInp && !bInp.dataset.bound) {
         bInp.dataset.bound = 'true';
+        bInp.addEventListener('input', () => {
+          verifiedBook = null;
+          document.getElementById('circBookBadge').style.display = 'none';
+        });
         bInp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
@@ -1903,6 +2013,8 @@
       const input = document.getElementById('circBorrowPatron');
       const val = (input.value || '').trim();
       if (!val) return;
+      verifiedPatron = null;
+      document.getElementById('circPatronBadge').style.display = 'none';
 
       try {
         const res = await fetch(`${API_BASE}/admin/circulation/patron/${encodeURIComponent(val)}`, { headers: getAuthHeaders() });
@@ -1951,6 +2063,8 @@
       const input = document.getElementById('circBorrowBook');
       const val = (input.value || '').trim();
       if (!val) return;
+      verifiedBook = null;
+      document.getElementById('circBookBadge').style.display = 'none';
 
       try {
         const res = await fetch(`${API_BASE}/admin/circulation/book/${encodeURIComponent(val)}`, { headers: getAuthHeaders() });
@@ -1960,7 +2074,7 @@
         if (data.found) {
           verifiedBook = data;
           document.getElementById('bookBadgeTitle').innerText = `${data.title}`;
-          document.getElementById('bookBadgeMeta').innerText = `Acc: ${data.accession_no} • Call: ${data.call_number} • ${data.category}`;
+          document.getElementById('bookBadgeMeta').innerText = `Copy: ${data.checkout_copy_accession_no || data.accession_no} • Call: ${data.call_number} • ${data.category}`;
           
           const statusElem = document.getElementById('bookBadgeCopies');
           statusElem.innerText = `${data.available_copies}/${data.total_copies} Avail`;
@@ -1969,7 +2083,8 @@
 
           if (data.is_available) {
             if (verifiedPatron && verifiedPatron.can_borrow) {
-              await executeBorrowDesk();
+              playScannerBeep('success');
+              toast('Patron and book verified. Review the details, then confirm checkout.', 'info');
             } else {
               playScannerBeep('success');
               toast('Book verified! Please scan student ID.', 'info');
@@ -1977,7 +2092,7 @@
             }
           } else {
             playScannerBeep('warning');
-            toast('All copies of this book are currently on loan', 'warning');
+            toast(data.copy_status_message || 'All copies of this book are currently on loan', 'warning');
           }
         } else {
           verifiedBook = null;
@@ -1988,20 +2103,41 @@
       } catch (err) { console.error(err); }
     }
 
-    async function executeBorrowDesk() {
-      const patronId = verifiedPatron ? verifiedPatron.username : (document.getElementById('circBorrowPatron').value || '').trim();
-      const bookAcc = verifiedBook ? verifiedBook.accession_no : (document.getElementById('circBorrowBook').value || '').trim();
+    function openBorrowConfirmation() {
+      const patronId = verifiedPatron?.username;
+      const bookAcc = verifiedBook?.checkout_copy_accession_no || verifiedBook?.accession_no;
 
-      if (!patronId) {
-        toast('Please scan or enter student ID', 'warning');
+      if (!verifiedPatron || !patronId || !verifiedPatron.can_borrow) {
+        toast('Scan and verify an eligible patron before checkout.', 'warning');
         document.getElementById('circBorrowPatron').focus();
         return;
       }
-      if (!bookAcc) {
-        toast('Please scan book 2D QR code', 'warning');
+      if (!verifiedBook || !bookAcc || !verifiedBook.is_available) {
+        toast('Scan and verify an available book before checkout.', 'warning');
         document.getElementById('circBorrowBook').focus();
         return;
       }
+      document.getElementById('confirmBorrowPatron').textContent = `${verifiedPatron.full_name || patronId} (${patronId})`;
+      document.getElementById('confirmBorrowBook').textContent = verifiedBook.title || 'Book';
+      document.getElementById('confirmBorrowAccession').textContent = bookAcc;
+      document.getElementById('circulationBorrowConfirmModal').classList.add('open');
+    }
+
+    function closeBorrowConfirmation() {
+      document.getElementById('circulationBorrowConfirmModal').classList.remove('open');
+    }
+
+    async function executeBorrowDesk() {
+      const patronId = verifiedPatron?.username;
+      const bookAcc = verifiedBook?.checkout_copy_accession_no || verifiedBook?.accession_no;
+      if (!patronId || !verifiedPatron?.can_borrow || !bookAcc || !verifiedBook?.is_available) {
+        closeBorrowConfirmation();
+        toast('The scanned borrower or book is no longer verified. Scan them again before checkout.', 'warning');
+        return;
+      }
+      const commitButton = document.getElementById('btnCommitBorrow');
+      commitButton.disabled = true;
+      commitButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving checkout…';
 
       try {
         const res = await fetch(`${API_BASE}/admin/circulation/execute`, {
@@ -2013,6 +2149,7 @@
 
         const receipt = document.getElementById('circReceiptCard');
         if (data.status === 'success') {
+          closeBorrowConfirmation();
           playScannerBeep('success');
           receipt.className = 'scanner-terminal success';
           receipt.innerHTML = `
@@ -2026,7 +2163,7 @@
             <button class="btn btn-outline btn-sm" onclick="resetCircDesk()"><i class="fa-solid fa-plus"></i> Next Checkout</button>
           `;
           toast(`Issued to ${data.patron_name || patronId}!`, 'success');
-          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'in 7d'}`);
+          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'in 1 day'}`);
           
           document.getElementById('circBorrowPatron').value = '';
           document.getElementById('circBorrowBook').value = '';
@@ -2045,7 +2182,11 @@
           `;
           toast(data.message || 'Checkout failed', 'danger');
         }
-      } catch (err) { console.error(err); }
+      } catch (err) { console.error(err); toast('Checkout could not be saved. Please try again.', 'danger'); }
+      finally {
+        commitButton.disabled = false;
+        commitButton.innerHTML = '<i class="fa-solid fa-check"></i> Confirm and save checkout';
+      }
     }
 
     async function executeReturnDesk() {
@@ -2091,14 +2232,14 @@
               <span class="badge badge-warning" style="font-size:12px; margin-top:6px;">₱${Number(data.fine || 0).toFixed(2)} Fine Applied</span>
             </div>
           `;
-          toast(`Overdue return fine applied: ₱${(data.fine || 50).toFixed(2)}`, 'warning');
+          toast(`Overdue return fine applied: ₱${Number(data.fine || 0).toFixed(2)}`, 'warning');
           addCircSessionEntry('Late Return', data.book_title || bookAcc, data.patron_name || 'Patron', `Fine ₱${Number(data.fine || 0).toFixed(2)}`);
         } else {
           playScannerBeep('error');
           receipt.className = 'scanner-terminal error';
           receipt.innerHTML = `
             <i class="fa-solid fa-circle-xmark text-danger" style="font-size:46px; margin-bottom:10px;"></i>
-            <h3 style="color:var(--danger); font-size:17px; margin-bottom:4px;">Return Error</h3>
+            <h3 style="color:var(--danger); font-size:17px; margin-bottom:4px;">${data.message && data.message.toLowerCase().includes('no active checkout') ? 'No Active Checkout Found' : data.message && data.message.toLowerCase().includes('no return was recorded') ? 'Return Not Recorded' : 'Return Error'}</h3>
             <p style="font-size:12.5px; color:var(--text-muted); max-width:300px;">${escapeHtml(data.message)}</p>
           `;
           toast(data.message || 'Return failed', 'danger');

@@ -21,10 +21,12 @@ from schemas import (
     AssistantRequest,
 )
 import crud
+from staff_activity import notify_borrow_activity
 from ai_service import answer_library_question
 from assistant_local import catalog_terms, conversational_reply
 from rate_limits import enforce_rate_limit
 from security import require_roles, get_current_user
+from archive_service import archive_keys, cancel_support_emails, claim_support_thread, retain_support, snapshot_time
 
 router = APIRouter(prefix="/mobile", tags=["Mobile Client App (Student & Faculty)"])
 
@@ -49,7 +51,7 @@ def get_book_detail_mobile(
     current_user: User = Depends(patron_roles),
 ):
     book = crud.get_book(db, book_id)
-    if not book:
+    if not book or book.is_archived:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
         )
@@ -96,7 +98,14 @@ def cancel_my_borrow_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Borrow request not found")
     if record.status != BorrowStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only pending requests can be cancelled. Contact the library if the request has already been approved.")
-    record.status = BorrowStatus.CANCELLED
+    changed = db.query(BorrowRecord).filter(
+        BorrowRecord.id == record.id, BorrowRecord.status == BorrowStatus.PENDING
+    ).update({BorrowRecord.status: BorrowStatus.CANCELLED}, synchronize_session=False)
+    if not changed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The request has changed. Refresh your borrowing list.")
+    db.refresh(record)
+    notify_borrow_activity(db, record)
     db.add(Notification(user_id=current_user.id, title="Borrow request cancelled", body=f"Your request for {record.book.title if record.book else 'a book'} was cancelled.", kind="borrowing"))
     db.commit()
     db.refresh(record)
@@ -154,8 +163,9 @@ def download_library_id(current_user: User = Depends(patron_roles)):
 
 @router.get("/announcements")
 def list_announcements(db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    keys = archive_keys(db, "announcements")
     posts = db.query(Announcement).filter(Announcement.is_active.is_(True)).order_by(Announcement.created_at.desc()).limit(30).all()
-    return [{"id": p.id, "title": p.title, "body": p.body, "created_at": p.created_at} for p in posts]
+    return [{"id": p.id, "title": p.title, "body": p.body, "created_at": p.created_at} for p in posts if str(p.id) not in keys]
 
 
 @router.get("/notifications")
@@ -183,7 +193,7 @@ def _thread_summary(db: Session, thread: SupportThread, staff_view: bool = False
     owner = db.query(User).filter(User.id == thread.user_id).first() if staff_view else None
     return {
         "id": thread.id, "recipient_role": thread.recipient_role, "subject": thread.subject, "is_closed": thread.is_closed,
-        "updated_at": thread.updated_at,
+        "created_at": thread.created_at, "updated_at": thread.updated_at,
         "last_message": latest.body if latest else "",
         "unread_count": db.query(SupportMessage).filter(
             SupportMessage.thread_id == thread.id,
@@ -197,8 +207,16 @@ def _thread_summary(db: Session, thread: SupportThread, staff_view: bool = False
 
 @router.get("/messages")
 def list_user_message_threads(db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    keys = archive_keys(db, "messages")
     threads = db.query(SupportThread).filter(SupportThread.user_id == current_user.id).order_by(SupportThread.updated_at.desc()).all()
-    return [_thread_summary(db, thread) for thread in threads]
+    return [_thread_summary(db, thread) for thread in threads if str(thread.id) not in keys]
+
+
+def _patron_support_thread(db, thread_id, current_user):
+    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.user_id == current_user.id).first()
+    if not thread or str(thread.id) in archive_keys(db, "messages"):
+        raise HTTPException(404, "Conversation not found")
+    return thread
 
 
 @router.post("/messages", status_code=status.HTTP_201_CREATED)
@@ -220,9 +238,7 @@ def start_message_thread(req: SupportThreadCreate, db: Session = Depends(get_db)
 
 @router.get("/messages/{thread_id}")
 def read_user_message_thread(thread_id: int, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
-    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.user_id == current_user.id).first()
-    if not thread:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    thread = _patron_support_thread(db, thread_id, current_user)
     db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(True)).update({SupportMessage.read_by_user: True}, synchronize_session=False)
     db.commit()
     messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.asc()).all()
@@ -235,9 +251,7 @@ def reply_to_staff_thread(thread_id: int, req: SupportMessageCreate, db: Session
     if not req.message.strip():
         raise HTTPException(status_code=422, detail="Enter a message.")
     enforce_rate_limit(f"support-reply:{current_user.id}", 20, 60 * 60)
-    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.user_id == current_user.id).first()
-    if not thread:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    thread = _patron_support_thread(db, thread_id, current_user)
     if thread.is_closed:
         raise HTTPException(status_code=400, detail="This conversation is closed")
     thread.updated_at = datetime.utcnow()
@@ -247,6 +261,63 @@ def reply_to_staff_thread(thread_id: int, req: SupportMessageCreate, db: Session
         db.add(Notification(user_id=person.id, title="New library message", body=f"Reply from {current_user.full_name}: {thread.subject}", kind="message"))
     db.commit()
     return {"message": "Your message was sent."}
+
+
+@router.delete("/messages/{thread_id}/messages/{message_id}")
+def delete_user_message(thread_id: int, message_id: int,
+    expected_created_at: Optional[datetime] = None, expected_thread_created_at: Optional[datetime] = None,
+    db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    from models import AuditLog
+    thread = _patron_support_thread(db, thread_id, current_user)
+    claim_support_thread(db, thread, expected_thread_created_at)
+    message = db.query(SupportMessage).filter(SupportMessage.id == message_id,
+        SupportMessage.thread_id == thread.id, SupportMessage.sender_id == current_user.id,
+        SupportMessage.is_staff.is_(False)).first()
+    if not message:
+        db.rollback()
+        raise HTTPException(404, "Your message was not found.")
+    if expected_created_at is not None and message.created_at != snapshot_time(expected_created_at):
+        db.rollback()
+        raise HTTPException(409, "This message has changed. Refresh the conversation before deleting it.")
+    retain_support(db, thread, [message], current_user, "mobile", "delete_message")
+    cancel_support_emails(db, [message.id])
+    db.delete(message)
+    db.add(AuditLog(user_name=current_user.username,
+        event=f"Deleted own message {message_id} from conversation {thread.id}; retained in SuperAdmin archive", status="Archived"))
+    db.commit()
+    return {"message": "Message moved to the SuperAdmin archive.", "deleted_messages": 1, "archived": True}
+
+
+def _remove_user_conversation(db, thread, user, keep_thread):
+    from models import AuditLog
+    messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at, SupportMessage.id).all()
+    if messages or not keep_thread:
+        retain_support(db, thread, messages, user, "mobile", "clear_messages" if keep_thread else "delete_conversation")
+    cancel_support_emails(db, [message.id for message in messages])
+    db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).delete(synchronize_session=False)
+    db.add(AuditLog(user_name=user.username,
+        event=f"{'Cleared messages in' if keep_thread else 'Deleted'} own conversation {thread.id}; {len(messages)} messages retained in SuperAdmin archive", status="Archived"))
+    if not keep_thread:
+        db.delete(thread)
+    db.commit()
+    return {"message": "Messages moved to the SuperAdmin archive." if keep_thread else "Conversation moved to the SuperAdmin archive.",
+        "deleted_messages": len(messages), "archived": True}
+
+
+@router.delete("/messages/{thread_id}/messages")
+def clear_user_conversation(thread_id: int, expected_created_at: Optional[datetime] = None,
+    expected_updated_at: Optional[datetime] = None, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    thread = _patron_support_thread(db, thread_id, current_user)
+    claim_support_thread(db, thread, expected_created_at, expected_updated_at)
+    return _remove_user_conversation(db, thread, current_user, True)
+
+
+@router.delete("/messages/{thread_id}")
+def delete_user_conversation(thread_id: int, expected_created_at: Optional[datetime] = None,
+    expected_updated_at: Optional[datetime] = None, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    thread = _patron_support_thread(db, thread_id, current_user)
+    claim_support_thread(db, thread, expected_created_at, expected_updated_at)
+    return _remove_user_conversation(db, thread, current_user, False)
 
 
 @router.post("/assistant")

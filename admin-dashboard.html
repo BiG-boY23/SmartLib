@@ -7,7 +7,9 @@
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="/static/staff-chat.css">
+  <link rel="stylesheet" href="/static/staff-chat.css?v=20261020-activity-archive">
+  <link rel="stylesheet" href="/static/staff-notifications.css?v=20261020-activity-archive">
+  <link rel="stylesheet" href="/static/staff-archives.css?v=20261020-activity-archive">
   <link rel="stylesheet" href="/static/staff-updates.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -347,6 +349,14 @@
 
   <div class="toast-container" id="toastBox"></div>
 
+  <div class="approval-loading" id="approvalLoading" role="status" aria-live="polite" aria-label="Saving request approval">
+    <div class="approval-loading-card">
+      <span class="approval-spinner" aria-hidden="true"></span>
+      <h2>Saving request approval</h2>
+      <p>Saving the request and sending the borrower’s email. Please wait.</p>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="circulationBorrowConfirmModal" role="dialog" aria-modal="true" aria-labelledby="circulationBorrowConfirmTitle">
     <div class="settings-modal" style="max-width:560px;">
       <div class="modal-header">
@@ -584,6 +594,9 @@
       </button>
       <button class="nav-item-btn" id="navCirc" onclick="switchNav('circ')">
         <i class="fa-solid fa-arrow-right-arrow-left"></i> Circulation Desk
+      </button>
+      <button class="nav-item-btn" id="navBorrowReq" onclick="switchNav('borrowreq')">
+        <i class="fa-solid fa-hand-holding-hand"></i> Borrow Requests Queue
       </button>
 
       <div class="menu-label">Audit &amp; Public</div>
@@ -848,7 +861,7 @@
           </div>
 
           <!-- ARCHIVED BOOKS SHELF -->
-          <div class="card" style="margin-top:8px;">
+          <div class="card" style="margin-top:8px;display:none;">
             <div class="card-head" style="cursor:pointer; user-select:none;" onclick="toggleArchivedShelf()">
               <h3><i class="fa-solid fa-box-archive" style="color:#8888aa;"></i> Archived Books
                 <span id="archivedShelfToggle" style="font-size:11px; color:var(--text-muted); margin-left:8px;">(click to expand)</span>
@@ -1012,6 +1025,26 @@
       </div>
 
       <!-- PANEL 5: LOGS -->
+      <div class="screen-panel" id="panelBorrowReq">
+        <div class="card">
+          <div class="card-head"><h3><i class="fa-solid fa-hand-holding-hand"></i> Online Borrowing Request Queue</h3></div>
+          <div class="card-body" style="padding:0;">
+            <div style="padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+              <label>Status <select id="queueStatus" onchange="loadBorrowQueue(true)"><option value="">All statuses</option><option>PENDING</option><option>APPROVED</option><option>CHECKED_OUT</option><option>OVERDUE</option><option>RETURNED</option><option>REJECTED</option><option>CANCELLED</option></select></label>
+              <label>Sort <select id="queueSort" onchange="loadBorrowQueue(true)"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due">Due date</option><option value="patron">Patron name</option></select></label>
+              <label>Search <input id="queueSearch" type="search" placeholder="Patron, title, request ID" oninput="scheduleQueueSearch()"></label>
+              <span id="queueCount" aria-live="polite"></span>
+              <button id="queuePrevious" class="btn btn-outline btn-sm" onclick="queueOffset=Math.max(0,queueOffset-100);loadBorrowQueue()" disabled>Previous</button>
+              <button id="queueNext" class="btn btn-outline btn-sm" onclick="queueOffset+=100;loadBorrowQueue()">Next</button>
+            </div>
+            <div class="table-responsive"><table id="borrowQueueTable">
+              <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
       <div class="screen-panel" id="panelLogs">
         <div class="grid-2">
           <div class="card">
@@ -1061,9 +1094,12 @@
     </div>
   </div>
 
-  <script src="/static/staff-reports.js"></script>
-  <script src="/static/staff-chat.js"></script>
-  <script src="/static/staff-updates.js"></script>
+  <script src="/static/staff-reports.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-chat.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-updates.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-records.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-archives.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-notifications.js?v=20261020-activity-archive"></script>
   <script>
     // AUTH GUARD FOR ADMIN PORTAL
     function getActiveToken() {
@@ -1196,6 +1232,7 @@
         'users': ['User Management & Provisioning', 'Manage EVSU patrons and provision official staff credentials'],
         'books': ['Book Inventory & Cataloging', 'Add catalog holdings and view location rack numbers'],
         'circ': ['Circulation Desk (Borrow & Return Counter)', 'Verify both scans and confirm checkout; returns require an active loan'],
+        'borrowreq': ['Online Borrow Requests Queue', 'Review requests, manage active loans, and export queue records'],
         'logs': ['Security Audit & Email Logs', 'Full security events trail and automated SMTP dispatch logs'],
         'feedback': ['Visitor Feedback & Inquiries', 'Submissions received from the public landing page suggestion box'],
         'messages': ['Patron Messages', 'Read and reply to student and faculty conversations']
@@ -1224,6 +1261,10 @@
         document.getElementById('navCirc').classList.add('active');
         document.getElementById('panelCirc').classList.add('active');
         initCirculationDesk();
+      } else if (key === 'borrowreq') {
+        document.getElementById('navBorrowReq').classList.add('active');
+        document.getElementById('panelBorrowReq').classList.add('active');
+        await loadBorrowQueue(true);
       } else if (key === 'logs') {
         document.getElementById('navLogs').classList.add('active');
         document.getElementById('panelLogs').classList.add('active');
@@ -1473,9 +1514,6 @@
             <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#5a6a7a; color:#fff; margin-bottom:3px;" onclick="confirmArchiveBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)" title="Archive (hide from active catalog)">
               <i class="fa-solid fa-box-archive"></i> Archive
             </button>
-            <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#c0392b; color:#fff;" onclick="confirmDeleteBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)" title="Permanently delete this record">
-              <i class="fa-solid fa-trash"></i> Delete
-            </button>
           </td>
         `;
       });
@@ -1662,7 +1700,7 @@
     function confirmArchiveBook(bookId, accNo, title) {
       document.getElementById('deleteBookMsg').innerHTML =
         `Archive <strong>${escapeHtml(title)}</strong> (${escapeHtml(accNo)})?<br>
-        <span style="font-size:12px;">This hides the book from the active catalog. You can restore it later from the Archived shelf.</span>`;
+        <span style="font-size:12px;">This hides the book from the active catalog. Only the SuperAdmin can view and restore it from the archive.</span>`;
       document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-box-archive"></i> Archive';
       document.getElementById('deleteBookConfirmBtn').style.background = '#5a6a7a';
       document.getElementById('deleteBookConfirmBtn').onclick = async () => {
@@ -1683,14 +1721,14 @@
     function confirmDeleteBook(bookId, accNo, title) {
       document.getElementById('deleteBookMsg').innerHTML =
         `<span style="color:#e55; font-weight:700;">⚠ Permanently delete</span> <strong>${escapeHtml(title)}</strong> (${escapeHtml(accNo)})?<br>
-        <span style="font-size:12px;">This action cannot be undone. All borrow records linked to this book will also be removed.</span>`;
-      document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-trash"></i> Delete Permanently';
+        <span style="font-size:12px;">The record is retained in the SuperAdmin-only archive. Borrowing history is preserved.</span>`;
+      document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-trash"></i> Move to archive';
       document.getElementById('deleteBookConfirmBtn').style.background = '#c0392b';
       document.getElementById('deleteBookConfirmBtn').onclick = async () => {
         try {
           const res = await fetch(`${API_BASE}/admin/books/${bookId}`, { method: 'DELETE', headers: getAuthHeaders() });
           if (res.ok) {
-            toast(`"${title}" permanently deleted.`, 'danger');
+            toast(`"${title}" moved to the SuperAdmin archive.`, 'danger');
             closeDeleteModal();
             await loadBooks();
           } else { toast('Delete failed', 'danger'); }
@@ -1705,6 +1743,7 @@
 
     // ── ARCHIVED BOOKS SHELF ───────────────────────────────────────
     async function loadArchivedBooks() {
+      if (!window.StaffRecords?.isSuperAdmin()) return;
       try {
         const res = await fetch(`${API_BASE}/admin/books/archived`, { headers: getAuthHeaders() });
         if (!res.ok) return;
@@ -1727,9 +1766,6 @@
               <button class="btn btn-sm" data-title="${escapeHtml(b.title)}" style="background:#2a7a4b; color:#fff;" onclick="restoreBook(${Number(b.id)}, this.dataset.title)">
                 <i class="fa-solid fa-rotate-left"></i> Restore
               </button>
-              <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#c0392b; color:#fff; margin-left:4px;" onclick="confirmDeleteBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)">
-                <i class="fa-solid fa-trash"></i> Delete
-              </button>
             </td>
           `;
         });
@@ -1737,6 +1773,7 @@
     }
 
     async function restoreBook(bookId, title) {
+      if (!window.StaffRecords?.isSuperAdmin()) return;
       try {
         const res = await fetch(`${API_BASE}/admin/books/${bookId}/restore`, { method: 'PATCH', headers: getAuthHeaders() });
         if (res.ok) {
@@ -1749,6 +1786,7 @@
 
     let archivedShelfOpen = false;
     function toggleArchivedShelf() {
+      if (!window.StaffRecords?.isSuperAdmin()) return;
       archivedShelfOpen = !archivedShelfOpen;
       const body = document.getElementById('archivedShelfBody');
       const lbl = document.getElementById('archivedShelfToggle');
@@ -2293,6 +2331,79 @@
         </p>
       `;
       focusActiveCircInput();
+    }
+
+    let borrowQueueRows = [];
+    let queueOffset = 0;
+    let queueSearchTimer;
+    let queueLoadId = 0;
+    function scheduleQueueSearch() { clearTimeout(queueSearchTimer); queueSearchTimer = setTimeout(() => loadBorrowQueue(true), 250); }
+    async function loadBorrowQueue(reset = false) {
+      if (reset) queueOffset = 0;
+      const loadId = ++queueLoadId;
+      try {
+        const res = await fetch(`${API_BASE}/admin/borrow-requests?${new URLSearchParams({sort:document.getElementById('queueSort').value, search:document.getElementById('queueSearch').value.trim(), skip:queueOffset, limit:100, ...(document.getElementById('queueStatus').value ? {status_filter:document.getElementById('queueStatus').value} : {})})}`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Could not load borrowing requests.');
+        const rows = await res.json();
+        if (loadId !== queueLoadId) return;
+        borrowQueueRows = rows;
+        document.getElementById('queuePrevious').disabled = queueOffset === 0;
+        document.getElementById('queueNext').disabled = rows.length < 100;
+        renderBorrowQueue();
+      } catch (err) { toast('Could not load borrowing requests.', 'danger'); }
+    }
+    function renderBorrowQueue() {
+      const status = document.getElementById('queueStatus').value;
+      const search = document.getElementById('queueSearch').value.trim().toLowerCase();
+      const sort = document.getElementById('queueSort').value;
+      const requests = borrowQueueRows.filter(r => (!status || r.status === status) && [r.req_id, r.user_name, r.book_title, r.accession_no].join(' ').toLowerCase().includes(search));
+      requests.sort((a,b) => sort === 'patron' ? (a.user_name || '').localeCompare(b.user_name || '') : sort === 'due' ? (a.due_date || '9999').localeCompare(b.due_date || '9999') : sort === 'oldest' ? a.request_date.localeCompare(b.request_date) : b.request_date.localeCompare(a.request_date));
+      document.getElementById('queueCount').textContent = requests.length ? `Showing ${queueOffset + 1}-${queueOffset + requests.length}` : 'No matching requests';
+      const body = document.getElementById('borrowQueueTable').getElementsByTagName('tbody')[0];
+      body.innerHTML = '';
+      if (!requests.length) body.innerHTML = '<tr><td colspan="7">No requests match the selected filters.</td></tr>';
+      requests.forEach(request => {
+        const row = body.insertRow();
+        row.innerHTML = `<td><strong>${escapeHtml(request.req_id)}</strong></td><td>${escapeHtml(request.user_name || 'Patron')}</td>
+          <td>${escapeHtml(request.accession_no)}<br><small>${escapeHtml(request.book_title || '')}</small></td>
+          <td>${escapeHtml(request.pickup_date || 'N/A')}</td><td>${escapeHtml(request.request_date.substring(0,10))}</td>
+          <td><span class="badge ${request.status === 'APPROVED' ? 'badge-success' : request.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(request.status)}</span></td>
+          <td>${['CHECKED_OUT','OVERDUE'].includes(request.status) ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="SmartLibUpdates.extend(this.dataset.requestId)">Extend loan</button> ` : ''}
+          ${request.status === 'PENDING' ? `<button class="btn btn-maroon btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="approveReq(this.dataset.requestId)">Approve</button> <button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="rejectReq(this.dataset.requestId)">Reject</button>` : request.approval_email_status === 'failed' ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="retryApprovalEmail(this.dataset.requestId)">Retry email</button>` : '<span class="badge badge-secondary">Processed</span>'}</td>`;
+      });
+    }
+    async function approveReq(reqId) {
+      const loading = document.getElementById('approvalLoading');
+      if (loading.classList.contains('visible')) return;
+      loading.classList.add('visible');
+      try {
+        const response = await fetch(`${API_BASE}/admin/borrow-requests/${encodeURIComponent(reqId)}/status`, {method:'PUT',headers:getAuthHeaders(),body:JSON.stringify({status:'APPROVED'})});
+        if (!response.ok) {const error=await response.json().catch(()=>({}));throw new Error(error.detail || 'The request could not be approved.');}
+        const sent=response.headers.get('X-Approval-Email-Status')==='sent';
+        toast(sent ? 'Request approved. Email sent.' : 'Request approved. The email could not be sent; staff can retry delivery.',sent?'success':'info');
+        await loadBorrowQueue();
+      } catch(error) {toast(error.message,'danger');}
+      finally {loading.classList.remove('visible');}
+    }
+    async function rejectReq(reqId) {
+      try {
+        const response = await fetch(`${API_BASE}/admin/borrow-requests/${encodeURIComponent(reqId)}/status`, {method:'PUT',headers:getAuthHeaders(),body:JSON.stringify({status:'REJECTED'})});
+        if (!response.ok) {const error=await response.json().catch(()=>({}));throw new Error(error.detail || 'The request could not be rejected.');}
+        toast('Request rejected.','success');await loadBorrowQueue();
+      } catch(error) {toast(error.message,'danger');}
+    }
+    async function retryApprovalEmail(reqId) {
+      const loading=document.getElementById('approvalLoading');
+      if(loading.classList.contains('visible'))return;
+      loading.classList.add('visible');
+      try {
+        const response=await fetch(`${API_BASE}/admin/borrow-requests/${encodeURIComponent(reqId)}/approval-email/retry`,{method:'POST',headers:getAuthHeaders()});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.detail || 'Email retry failed.');
+        toast(data.status==='sent'?'Approval email sent.':'Email could not be sent. Check SMTP logs.',data.status==='sent'?'success':'danger');
+        await loadBorrowQueue();
+      } catch(error) {toast(error.message,'danger');}
+      finally {loading.classList.remove('visible');}
     }
 
     async function loadLogs() {

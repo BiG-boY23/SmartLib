@@ -72,9 +72,10 @@ def test_extension_validates_updates_due_and_reschedules_reminder(records):
     assert loan.due_date == new_due.replace(tzinfo=None)
     assert db.query(AuditLog).one().status == 'Extended'
     queue_due_reminders(db, now)
-    assert db.query(Notification).count() == 2
+    assert db.query(Notification).filter(Notification.user_id == reader.id).count() == 2
+    assert db.query(Notification).filter(Notification.user_id == staff.id, Notification.title == 'Loan period extended').count() == 1
     queue_due_reminders(db, loan.due_date - timedelta(hours=12))
-    assert db.query(Notification).count() == 3
+    assert db.query(Notification).filter(Notification.user_id == reader.id).count() == 3
     with pytest.raises(HTTPException) as error:
         admin_router.extend_loan(loan.req_id, LoanExtensionRequest(due_date=new_due, reason='Another request'), db, staff)
     assert error.value.status_code == 422

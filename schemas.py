@@ -330,6 +330,7 @@ class AcquisitionCreate(BaseModel):
 
 class AcquisitionStatusUpdate(BaseModel):
     status: str
+    reason: Optional[str] = None
 
 
 class AcquisitionResponse(BaseModel):

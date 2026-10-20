@@ -9,13 +9,16 @@
   }
   const today = () => new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
   const offsetDay = (day,n) => { const d=new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
-  const charts=new Map(); let reportOptions={departments:[],courses:[]}; let revision=0;
+  const exportFormats=['xlsx','csv','pdf','docx'];
+  const exportLabel=format=>({xlsx:'Excel (.xlsx)',csv:'CSV',pdf:'PDF',docx:'Word'}[format]);
+  const exportPaper=format=>['pdf','docx'].includes(format)?{paper:document.getElementById('reportPaper').value||'long'}:{};
+  const charts=new Map(); let reportOptions={departments:[],courses:[]}; let revision=0; let trendRevision=0; let extensionRevision=0; let periodBooks=[]; let activityRows=[];
   function plot(canvas, daily, people=true) {
     charts.get(canvas)?.destroy();
     if(typeof Chart==='undefined') return;
-    charts.set(canvas,new Chart(document.getElementById(canvas),{type:'line',data:{labels:daily.map(d=>d.date),datasets:[
-      {label:people?'People borrowing':'Items borrowed',data:daily.map(d=>d[people?'borrowers':'borrowed_items']),borderColor:'#e1b842',backgroundColor:'#e1b84222',tension:0,pointRadius:3},
-      {label:people?'People returning':'Items returned',data:daily.map(d=>d[people?'returners':'returned_items']),borderColor:'#36bf9a',tension:0,pointRadius:3}
+    charts.set(canvas,new Chart(document.getElementById(canvas),{type:'bar',data:{labels:daily.map(d=>d.date),datasets:[
+      {label:people?'People borrowing':'Items borrowed',data:daily.map(d=>d[people?'borrowers':'borrowed_items']),borderColor:'#e1b842',backgroundColor:'#e1b842bb',tension:0,pointRadius:3},
+      {label:people?'People returning':'Items returned',data:daily.map(d=>d[people?'returners':'returned_items']),borderColor:'#36bf9a',backgroundColor:'#36bf9abb',tension:0,pointRadius:3}
     ]},options:{
       responsive:true,maintainAspectRatio:false,
       plugins:{legend:{labels:{color:'#cdd3de'}}},
@@ -44,7 +47,7 @@
   }
   function params(format='json') {
     const values={start:'reportStart',end:'reportEnd',department:'reportDepartment',course:'reportCourse',role:'reportRole',sort:'reportSort',direction:'reportDirection'};
-    const p=new URLSearchParams({format});Object.entries(values).forEach(([k,id])=>{const value=document.getElementById(id).value;if(value)p.set(k,value)});return p;
+    const p=new URLSearchParams({format,...exportPaper(format)});Object.entries(values).forEach(([k,id])=>{const value=document.getElementById(id).value;if(value)p.set(k,value)});return p;
   }
   async function openReports() {
     show('panelReports','navReports','Circulation reports','Recorded borrowing and returns · Ormoc City Campus · Philippine time');
@@ -56,44 +59,120 @@
     document.getElementById('reportOutput').innerHTML='';
     try {
       const data=await (await api('/admin/reports/circulation?'+params())).json(); if(current!==revision)return;
-      const s=data.summary;
+      const s=data.summary; periodBooks=data.books || []; activityRows=data.rows;
       document.getElementById('reportOutput').innerHTML=`<div class="report-metrics">${[['People borrowing',s.unique_borrowers],['People returning',s.unique_returners],['Items borrowed',s.borrowed_items],['Items returned',s.returned_items]].map(([label,n])=>`<div class="card" style="padding:18px"><strong style="font-size:25px">${n}</strong><div>${label}</div></div>`).join('')}</div>
-        <div class="card" style="padding:18px;margin-top:18px"><h3>Daily borrowing and returns</h3><div style="height:300px"><canvas id="reportChart"></canvas></div><p class="report-note">People are counted once per day per activity. Period totals count each person once across the selected dates. Pending reservations and approvals are excluded.</p></div>
+        <div class="card" style="padding:18px;margin-top:18px"><h3>Daily borrowing and returns</h3><div style="height:300px"><canvas id="reportChart"></canvas></div><p class="report-note">People are counted once per day per activity. Period totals count each person once across the selected dates. Borrowing and returning are shown side by side, including when their counts match. Pending reservations and approvals are excluded.</p></div>
         <div class="card" style="margin-top:18px;padding:18px"><h3>Daily totals</h3><div class="table-responsive"><table><thead><tr><th>Date</th><th>Borrowers</th><th>Returners</th><th>Items borrowed</th><th>Items returned</th></tr></thead><tbody>${data.daily.map(d=>`<tr><td>${d.date}</td><td>${d.borrowers}</td><td>${d.returners}</td><td>${d.borrowed_items}</td><td>${d.returned_items}</td></tr>`).join('')}</tbody></table></div></div>
-        <div class="card" style="margin-top:18px;padding:18px"><h3>Activity details</h3><p class="report-note">${data.rows.length} recorded activities. ${data.rows.length>200?'Showing the first 200; exports include every matching record.':''}</p><div class="table-responsive"><table><thead><tr><th>Date / time</th><th>Name / ID</th><th>Department</th><th>Course</th><th>Book</th><th>Activity</th></tr></thead><tbody>${data.rows.slice(0,200).map(r=>`<tr><td>${esc(r.date)} ${esc(r.time)}</td><td>${esc(r.name)}<br>${esc(r.institutional_id)}</td><td>${esc(r.department)}</td><td>${esc(r.course)}</td><td>${esc(r.book)}</td><td>${esc(r.action)}</td></tr>`).join('')||'<tr><td colspan="6">No recorded activity matches the selected filters.</td></tr>'}</tbody></table></div></div>`;
+        <div class="card" style="margin-top:18px;padding:18px"><div class="report-section-heading"><h3>Books borrowed and returned</h3><label for="reportBookActivity">Show <select id="reportBookActivity" class="form-select"><option value="all">All activity</option><option value="borrowed">Borrowed books</option><option value="returned">Returned books</option></select></label></div><p class="report-note">Item transactions per catalog title within the selected report dates. A returned item counts on its return date.</p><div id="reportBookTable"></div></div>
+        <div class="card" style="margin-top:18px;padding:18px"><div class="report-section-heading"><h3>Activity details</h3><label for="reportActivity">Show <select id="reportActivity" class="form-select"><option value="all">All activity</option><option value="Borrowed">Borrowing</option><option value="Returned">Returns</option></select></label></div><div id="reportActivityTable"></div></div>`;
+      document.getElementById('reportBookActivity').onchange=renderBooks;
+      document.getElementById('reportActivity').onchange=renderActivities;
+      renderBooks();renderActivities();loadTrends();loadExtensions();
       plot('reportChart',data.daily);status.textContent=`Report generated for ${data.start} to ${data.end}. All dates use Philippine time.`;
     }catch(error){if(current===revision)status.textContent=error.message;}
   }
+  function renderBooks() {
+    const activity=document.getElementById('reportBookActivity').value;
+    const books=periodBooks.filter(b=>activity==='all'||b[activity==='borrowed'?'borrowed_items':'returned_items']>0);
+    document.getElementById('reportBookTable').innerHTML=bookTable(books);
+  }
+  function bookTable(books, weekly=false) {
+    const change=n=>n>0?`+${n}`:String(n);
+    return `<div class="table-responsive"><table><thead><tr>${weekly?'<th>Rank</th>':''}<th>Book / author</th><th>Accession</th><th>Borrowed</th><th>Returned</th>${weekly?'<th>Borrowing change</th><th>Return change</th>':''}</tr></thead><tbody>${books.map(b=>`<tr>${weekly?`<td>${b.rank ?? 'Unranked'}</td>`:''}<td>${esc(b.title)}<br><small>${esc(b.author)}</small></td><td>${esc(b.accession_no)}</td><td>${b.borrowed_items}</td><td>${b.returned_items}</td>${weekly?`<td>${change(b.borrowed_change)} <small>(was ${b.previous_borrowed_items})</small></td><td>${change(b.returned_change)} <small>(was ${b.previous_returned_items})</small></td>`:''}</tr>`).join('')||`<tr><td colspan="${weekly?7:4}">No book activity matches this view.</td></tr>`}</tbody></table></div>`;
+  }
+  function renderActivities() {
+    const activity=document.getElementById('reportActivity').value;
+    const rows=activityRows.filter(r=>activity==='all'||r.action===activity);
+    document.getElementById('reportActivityTable').innerHTML=`<p class="report-note">${rows.length} recorded activities. ${rows.length>200?'Showing the first 200; exports include every matching record.':''}</p><div class="table-responsive"><table><thead><tr><th>Date / time</th><th>Name / ID</th><th>Department</th><th>Course</th><th>Book</th><th>Activity</th></tr></thead><tbody>${rows.slice(0,200).map(r=>`<tr><td>${esc(r.date)} ${esc(r.time)}</td><td>${esc(r.name)}<br>${esc(r.institutional_id)}</td><td>${esc(r.department)}</td><td>${esc(r.course)}</td><td>${esc(r.book)}<br><small>${esc(r.copy_accession_no || r.accession_no || "")}</small></td><td>${esc(r.action)}</td></tr>`).join('')||'<tr><td colspan="6">No recorded activity matches this view.</td></tr>'}</tbody></table></div>`;
+  }
+  function trendParams(format='json') {
+    const query=new URLSearchParams({week:document.getElementById('reportWeek').value,format,...exportPaper(format)});
+    for(const [key,id] of Object.entries({role:'reportRole',department:'reportDepartment',course:'reportCourse'})){
+      const value=document.getElementById(id).value;if(value)query.set(key,value);
+    }
+    return query;
+  }
+  async function downloadTrends(format) {
+    const status=document.getElementById('reportTrendStatus');
+    if(!document.getElementById('reportWeek').value){status.textContent='Choose a date in the week to export.';return;}
+    status.textContent=`Preparing weekly ${exportLabel(format)} report...`;
+    try {
+      const response=await api('/admin/reports/book-trends?'+trendParams(format));
+      const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');
+      a.href=url;a.download=`SmartLib-weekly-books-${document.getElementById('reportWeek').value}.${format}`;
+      a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Weekly report downloaded using the current audience and week filters.';
+    }catch(error){status.textContent=error.message;}
+  }
+  async function loadTrends() {
+    const current=++trendRevision;
+    const content=document.getElementById('reportTrendOutput');content.textContent='Loading weekly book activity...';
+    const week=document.getElementById('reportWeek').value;
+    if(!week){content.textContent='Choose a date in the week to view.';return;}
+    const query=trendParams();
+    try {
+      const data=await (await api('/admin/reports/book-trends?'+query)).json();
+      if(current!==trendRevision)return;
+      document.getElementById('reportWeek').value=data.week_start;
+      content.innerHTML=`<p class="report-note">${esc(data.week_start)} to ${esc(data.week_end)} compared with ${esc(data.previous_week_start)} to ${esc(data.previous_week_end)}. Monday to Sunday, Philippine time. ${data.week_start<=today()&&today()<=data.week_end?'Current week is in progress. ':''}Ranked by checkout count, with returns shown separately. Includes books with activity in either week. Refreshes when you open reports or generate a report.</p>${bookTable(data.books,true)}`;
+    }catch(error){if(current===trendRevision)content.textContent=error.message;}
+  }
   async function download(format) {
-    const status=document.getElementById('reportStatus');status.textContent=`Preparing ${format.toUpperCase()} export…`;
+    const status=document.getElementById('reportStatus');status.textContent=`Preparing ${exportLabel(format)} export…`;
     try { const response=await api('/admin/reports/circulation?'+params(format));const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.download=`SmartLib-circulation-${document.getElementById('reportStart').value}-${document.getElementById('reportEnd').value}.${format}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Export downloaded using the selected filters.'; }
     catch(error){status.textContent=error.message;}
+  }
+  async function loadExtensions() {
+    const current=++extensionRevision;
+    const content=document.getElementById('reportExtensionOutput');content.textContent='Loading approved loan extensions...';
+    try {
+      const data=await (await api('/admin/reports/loan-extensions?'+params())).json();
+      if(current!==extensionRevision)return;
+      const rows=data.rows||[];
+      content.innerHTML=`<p class="report-note">${Number(data.summary.approved_extensions)||0} approved extensions for ${Number(data.summary.unique_patrons)||0} patrons. Approval dates use Philippine time. Patron, book, and staff details reflect the approval record. ${esc(data.history_note)}</p><div class="table-responsive"><table><thead><tr><th>Approved / loan</th><th>Patron / book</th><th>Previous due</th><th>New due</th><th>Approved by</th><th>Reason</th></tr></thead><tbody>${rows.slice(0,200).map(row=>`<tr><td>${esc(row.date)} ${esc(row.time)}<br><small>${esc(row.reference)}</small></td><td>${esc(row.name)}<br><small>${esc(row.institutional_id)} · ${esc(row.department)} / ${esc(row.course)}</small><br>${esc(row.book)}<br><small>${esc(row.copy_accession_no||row.accession_no)}</small></td><td>${esc(row.old_due_date)}</td><td>${esc(row.new_due_date)}</td><td>${esc(row.actor_name)}<br><small>${esc(row.actor_username)} · ${esc(row.actor_role)}</small></td><td style="white-space:pre-wrap;overflow-wrap:anywhere;max-width:380px">${esc(row.reason)}</td></tr>`).join('')||'<tr><td colspan="6">No approved loan extensions match these dates and filters.</td></tr>'}</tbody></table></div>${rows.length>200?'<p class="report-note">Showing the first 200 approvals. Downloads include every matching approval.</p>':''}`;
+    }catch(error){if(current===extensionRevision)content.textContent=error.message;}
+  }
+  async function downloadExtensions(format) {
+    const status=document.getElementById('reportExtensionStatus');status.textContent=`Preparing extension ${exportLabel(format)} report...`;
+    try {
+      const response=await api('/admin/reports/loan-extensions?'+params(format));
+      const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');
+      a.href=url;a.download=`SmartLib-loan-extensions-${document.getElementById('reportStart').value}-${document.getElementById('reportEnd').value}.${format}`;
+      a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent='Loan extension history downloaded using the selected dates and audience filters.';
+    }catch(error){status.textContent=error.message;}
   }
   async function openInbox() {
     show('panelStaffSuggestions','navStaffSuggestions','Suggestions & inquiries','Public feedback and book recommendations received by the library');
     const content=document.getElementById('staffSuggestionContent');content.textContent='Loading suggestions…';
     try {
-      const [feedback,books]=await Promise.all([api('/admin/feedbacks').then(r=>r.json()),api('/admin/acquisitions').then(r=>r.json())]);
+      const [feedback,books]=await Promise.all([api('/admin/feedbacks').then(r=>r.json()),api(StaffRecords.viewUrl('/admin/acquisitions','acquisitions')).then(r=>r.json())]);
       content.innerHTML=`<h3>Public suggestions & inquiries</h3><div class="table-responsive"><table><thead><tr><th>Date</th><th>Sender</th><th>Email</th><th>Category</th><th>Message</th></tr></thead><tbody>${feedback.map(f=>`<tr><td>${esc(f.created_at.slice(0,10))}</td><td>${esc(f.name)}</td><td>${esc(f.email)}</td><td>${esc(f.category)}</td><td style="white-space:pre-wrap;max-width:450px;overflow-wrap:anywhere">${esc(f.message)}</td></tr>`).join('')||'<tr><td colspan="5">No public suggestions have been submitted yet.</td></tr>'}</tbody></table></div>
-      <h3 style="margin-top:28px">Book recommendations</h3><div class="table-responsive"><table><thead><tr><th>Requested by</th><th>Title / author</th><th>Reason</th><th>Status</th><th>Review</th></tr></thead><tbody>${books.map(b=>`<tr><td>${esc(b.requester_name)}</td><td>${esc(b.title)}<br>${esc(b.author)}</td><td style="white-space:pre-wrap;max-width:350px">${esc(b.justification)}</td><td>${esc(b.status)}</td><td><button class="btn btn-outline btn-sm" data-id="${esc(b.acq_id)}" data-state="Approved for Purchase">Approve</button> <button class="btn btn-outline btn-sm" data-id="${esc(b.acq_id)}" data-state="Declined">Decline</button></td></tr>`).join('')||'<tr><td colspan="5">No book recommendations yet.</td></tr>'}</tbody></table></div>`;
-      content.querySelectorAll('[data-id]').forEach(button=>button.addEventListener('click',async()=>{button.disabled=true;try{await api(`/admin/acquisitions/${encodeURIComponent(button.dataset.id)}/status`,{method:'PUT',body:JSON.stringify({status:button.dataset.state})});await openInbox();}catch(error){window.toast?.(error.message,'danger');button.disabled=false;}}));
+      <h3 style="margin-top:28px">Book recommendations</h3><div id="staffBookRecommendations"></div>`;
+      await StaffRecords.mountAcquisitions(document.getElementById('staffBookRecommendations'),books,openInbox);
     }catch(error){content.textContent=error.message;}
   }
   function install() {
-    const style=document.createElement('style');style.textContent='.report-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px}.report-filters label{display:block;margin-bottom:6px}.report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}.report-note{font-size:12px;color:var(--text-muted);margin:10px 0}.report-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}';document.head.appendChild(style);
+    const style=document.createElement('style');style.textContent='.report-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px}.report-filters label{display:block;margin-bottom:6px}.report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}.report-note{font-size:12px;color:var(--text-muted);margin:10px 0}.report-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.report-section-heading label{display:flex;align-items:center;gap:8px}.report-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}';document.head.appendChild(style);
     const menu=document.querySelector('.sidebar-menu');
     const button=document.createElement('button');button.id='navReports';button.className='nav-item-btn';button.innerHTML='<i class="fa-solid fa-file-lines"></i> Circulation Reports';button.onclick=openReports;menu.appendChild(button);
     const suggestions=document.getElementById('navFeedback')||document.createElement('button');suggestions.id='navStaffSuggestions';suggestions.className='nav-item-btn';suggestions.removeAttribute('onclick');suggestions.innerHTML='<i class="fa-solid fa-comments"></i> Suggestions & inquiries';suggestions.onclick=openInbox;if(!suggestions.parentElement)menu.appendChild(suggestions);
     document.querySelector('.content-container').insertAdjacentHTML('beforeend',`<div class="screen-panel" id="panelReports"><div class="card" style="padding:22px"><h3>Build a circulation report</h3><p class="report-note">For a single date, set both dates to the same day. Filters apply to preview and downloads. Department and course use the member's recorded profile.</p><form id="reportForm"><div class="report-filters">
       <div><label>From date</label><input type="date" id="reportStart" class="form-control" required></div><div><label>To date</label><input type="date" id="reportEnd" class="form-control" required></div>
       <div><label>Department</label><select id="reportDepartment" class="form-select"><option value="">All departments</option></select></div><div><label>Course</label><select id="reportCourse" class="form-select"><option value="">All courses</option></select></div>
-      <div><label>Audience</label><select id="reportRole" class="form-select"><option value="student">Students</option><option value="faculty">Faculty</option><option value="all">All members</option></select></div>
-      <div><label>Sort details by</label><select id="reportSort" class="form-select"><option value="date">Date</option><option value="department">Department</option><option value="course">Course</option></select></div><div><label>Order</label><select id="reportDirection" class="form-select"><option value="asc">Ascending</option><option value="desc">Descending</option></select></div></div>
-      <div class="report-actions"><button class="btn btn-gold" type="submit">Generate report</button><button class="btn btn-outline" type="button" id="reportToday">Today</button>${['csv','pdf','docx'].map(f=>`<button class="btn btn-outline" type="button" data-export="${f}">Export ${f==='docx'?'Word':f.toUpperCase()}</button>`).join('')}</div></form><p id="reportStatus" role="status" class="report-note"></p></div><div id="reportOutput" style="margin-top:18px"></div></div>
+      <div><label>Audience</label><select id="reportRole" class="form-select"><option value="all">All members</option><option value="student">Students</option><option value="faculty">Faculty</option></select></div>
+      <div><label>Sort details by</label><select id="reportSort" class="form-select"><option value="date">Date</option><option value="department">Department</option><option value="course">Course</option></select></div><div><label>Order</label><select id="reportDirection" class="form-select"><option value="asc">Ascending</option><option value="desc">Descending</option></select></div><div><label for="reportPaper">PDF / Word paper</label><select id="reportPaper" class="form-select"><option value="long">Long bond (8.5 × 13 in)</option><option value="a4">A4</option></select></div></div>
+      <div class="report-actions"><button class="btn btn-gold" type="submit">Generate report</button><button class="btn btn-outline" type="button" id="reportToday">Today</button>${exportFormats.map(f=>`<button class="btn btn-outline" type="button" data-export="${f}">Export ${exportLabel(f)}</button>`).join('')}</div></form><p class="report-note">A4 scales the full letterhead to fit; long bond preserves original size. For wrapped text and fitted rows, choose Excel. CSV has no cell formatting.</p><p id="reportStatus" role="status" class="report-note"></p></div><div class="card" style="margin-top:18px;padding:18px"><div class="report-section-heading"><h3>Weekly most borrowed books</h3><div class="report-actions" style="margin:0"><label for="reportWeek">Week containing</label><input type="date" id="reportWeek" class="form-control" style="width:auto;max-width:100%"><button type="button" class="btn btn-outline btn-sm" id="reportWeekPrevious">Previous week</button><button type="button" class="btn btn-outline btn-sm" id="reportWeekCurrent">This week</button><button type="button" class="btn btn-outline btn-sm" id="reportWeekRefresh">Refresh</button></div></div><p class="report-note">Uses the audience, department, and course filters above. This weekly view has its own dates and uses the PDF / Word paper setting above.</p><div class="report-actions">${exportFormats.map(f=>`<button type="button" class="btn btn-outline btn-sm" data-trend-export="${f}">Export weekly ${exportLabel(f)}</button>`).join('')}</div><p id="reportTrendStatus" class="report-note" role="status"></p><div id="reportTrendOutput" role="status"></div></div><div class="card" style="margin-top:18px;padding:18px"><div class="report-section-heading"><h3>Loan extension history</h3><button type="button" class="btn btn-outline btn-sm" id="reportExtensionRefresh">Refresh extensions</button></div><p class="report-note">Uses the dates, audience, department, and course above. Each approved extension includes the previous and new due dates, approving staff member, and reason. Extensions do not increase borrowing or return totals.</p><div class="report-actions">${exportFormats.map(f=>`<button type="button" class="btn btn-outline btn-sm" data-extension-export="${f}">Export extensions ${exportLabel(f)}</button>`).join('')}</div><p id="reportExtensionStatus" class="report-note" role="status"></p><div id="reportExtensionOutput" role="status"></div></div><div id="reportOutput" style="margin-top:18px"></div></div>
       <div class="screen-panel" id="panelStaffSuggestions"><div class="card" style="padding:22px"><button class="btn btn-outline btn-sm" id="refreshSuggestions" style="float:right">Refresh</button><div id="staffSuggestionContent"></div></div></div>`);
+    document.getElementById('reportWeek').value=today();
+    document.getElementById('reportWeek').onchange=loadTrends;
+    document.getElementById('reportWeekPrevious').onclick=()=>{document.getElementById('reportWeek').value=offsetDay(document.getElementById('reportWeek').value||today(),-7);loadTrends();};
+    document.getElementById('reportWeekCurrent').onclick=()=>{document.getElementById('reportWeek').value=today();loadTrends();};
+    document.getElementById('reportWeekRefresh').onclick=loadTrends;
     document.getElementById('reportEnd').value=today();document.getElementById('reportStart').value=offsetDay(today(),-29);
     document.getElementById('reportDepartment').onchange=refreshCourses;document.getElementById('reportForm').onsubmit=e=>{e.preventDefault();generate()};
     document.getElementById('reportToday').onclick=()=>{document.getElementById('reportStart').value=today();document.getElementById('reportEnd').value=today();generate()};
+    document.getElementById('reportExtensionRefresh').onclick=loadExtensions;
+    document.querySelectorAll('[data-extension-export]').forEach(b=>b.onclick=()=>downloadExtensions(b.dataset.extensionExport));
+    document.querySelectorAll('[data-trend-export]').forEach(b=>b.onclick=()=>downloadTrends(b.dataset.trendExport));
     document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>download(b.dataset.export));document.getElementById('refreshSuggestions').onclick=openInbox;
   }
   window.SmartLibStaff={loadDashboardChart,openReports,openInbox};

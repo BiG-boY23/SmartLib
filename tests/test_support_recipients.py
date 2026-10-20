@@ -26,16 +26,16 @@ def test_recipient_isolation_and_greeting():
                 result = mobile_router.start_message_thread(SupportThreadCreate(subject='Question', message='Help', recipient_role=recipient), db, patron)
                 tid = result['id']
                 assert result['recipient_role'] == recipient
-                assert tid in [t['id'] for t in admin_router.list_support_inbox(db, allowed)]
-                assert tid not in [t['id'] for t in admin_router.list_support_inbox(db, denied)]
-                for call in [lambda: admin_router.read_support_thread(tid, db, denied),
+                assert tid in [t['id'] for t in admin_router.list_support_inbox(db=db, current_user=allowed)]
+                assert tid not in [t['id'] for t in admin_router.list_support_inbox(db=db, current_user=denied)]
+                for call in [lambda: admin_router.read_support_thread(tid, db=db, current_user=denied),
                              lambda: admin_router.reply_to_support_thread(tid, SupportMessageCreate(message='Reply'), db, denied)]:
                     with pytest.raises(HTTPException) as error:
                         call()
                     assert error.value.status_code == 404
-                admin_router.read_support_thread(tid, db, allowed)
+                admin_router.read_support_thread(tid, db=db, current_user=allowed)
                 mobile_router.reply_to_staff_thread(tid, SupportMessageCreate(message='Follow up'), db, patron)
-            assert len(admin_router.list_support_inbox(db, superadmin)) == 1
+            assert len(admin_router.list_support_inbox(db=db, current_user=superadmin)) == 1
             assert db.query(Notification).filter_by(user_id=librarian.id).count() == 2
             assert db.query(Notification).filter_by(user_id=admin.id).count() == 2
             with patch.object(mobile_router, 'answer_library_question', return_value=None):

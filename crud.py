@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
+from staff_activity import notify_borrow_activity, notify_staff_activity
 
 from models import (
     User,
@@ -377,7 +378,7 @@ def create_borrow_request(
     db: Session, user: User, request_data: BorrowRequestCreate
 ):
     book = get_book_by_accession(db, request_data.accession_no)
-    if not book:
+    if not book or book.is_archived:
         return None, "Book not found"
     if book.available_copies <= 0:
         return None, "Book is currently unavailable"
@@ -398,6 +399,8 @@ def create_borrow_request(
         notes=request_data.notes,
     )
     db.add(borrow_rec)
+    db.flush()
+    notify_borrow_activity(db, borrow_rec)
     db.commit()
     db.refresh(borrow_rec)
 
@@ -486,6 +489,7 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, per
     else:
         return None, f"Status {new_status.value} cannot be set through this action."
 
+    notify_borrow_activity(db, record)
     if persist:
         db.commit()
         db.refresh(record)
@@ -724,6 +728,8 @@ def execute_circulation(
             notes=f"Issued via Circulation Desk ({loan_label}) to {patron.username}",
         )
         db.add(rec)
+        db.flush()
+        notify_borrow_activity(db, rec)
         db.commit()
 
         log_audit(db, patron.username, f"Issued Copy {copy_tag} ({book.title})", "Approved")
@@ -820,6 +826,7 @@ def execute_circulation(
             db.add(fine)
             is_overdue = True
 
+        notify_borrow_activity(db, active_rec)
         db.commit()
 
         if is_overdue:
@@ -871,6 +878,8 @@ def execute_circulation(
             due_date=datetime.utcnow() + timedelta(days=LOAN_PERIOD_DAYS),
         )
         db.add(record)
+        db.flush()
+        notify_borrow_activity(db, record)
         db.commit()
 
         log_audit(db, patron.username, f"Borrowed {book.accession_no}", "Approved")
@@ -915,6 +924,10 @@ def create_acquisition(
         status="Under Review",
     )
     db.add(acq)
+    db.flush()
+    notify_staff_activity(db, "New book suggestion",
+        f"{user.full_name or user.username} suggested {acq.title} by {acq.author} ({acq.acq_id}).",
+        "suggestion", event_key=f"acquisition:{acq.id}:submitted")
     db.commit()
     db.refresh(acq)
 

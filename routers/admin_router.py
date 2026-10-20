@@ -9,8 +9,8 @@ from sqlalchemy import and_, func, or_
 
 from database import get_db
 from models import (
-    User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion, SignupOption,
-    AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread, BorrowApprovalEmail, LibraryEmail,
+    StaffArchive, User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion, SignupOption,
+    AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread, BorrowApprovalEmail, LibraryEmail, LoanExtensionEvent,
 )
 from schemas import (
     BookCreate,
@@ -41,6 +41,7 @@ import crud
 from email_service import send_email
 from library_notifications import queue_email
 from security import require_roles, get_current_user
+from archive_service import archive_keys, require_archive_view, record_content, retain_deleted, retain_support
 
 router = APIRouter(prefix="/admin", tags=["Web Dashboard (Admin & Librarian)"])
 logger = logging.getLogger(__name__)
@@ -78,10 +79,12 @@ def list_books(
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
+    archive_view: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    return crud.get_books(db, search=search, skip=skip, limit=limit)
+    require_archive_view(current_user, archive_view)
+    return crud.get_books(db, search=search, skip=skip, limit=limit, archived_only=archive_view)
 
 
 @router.put("/books/{book_id}", response_model=BookResponse)
@@ -91,6 +94,13 @@ def update_book_inventory(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
+    book = crud.get_book(db, book_id)
+    if book and book.is_archived and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(404, "Book not found")
+    if book and book_update.is_archived is True and not book.is_archived:
+        retain_deleted(db, kind="books", record_id=book.id, title=book.title, actor=current_user,
+            origin="staff", action="archive", content={"book": record_content(book),
+                "copies": [record_content(copy) for copy in book.copies]})
     try:
         updated = crud.update_book(db, book_id, book_update)
     except ValueError as exc:
@@ -110,7 +120,7 @@ async def upload_book_cover(
     current_user: User = Depends(admin_or_staff),
 ):
     book = crud.get_book(db, book_id)
-    if not book:
+    if not book or (book.is_archived and current_user.role != UserRole.SUPERADMIN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
 
     filename = os.path.basename(cover.filename or "")
@@ -148,7 +158,8 @@ def list_book_copy_qr_records(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    if not crud.get_book(db, book_id):
+    book = crud.get_book(db, book_id)
+    if not book or (book.is_archived and current_user.role != UserRole.SUPERADMIN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
     return crud.get_book_copies(db, book_id, unprinted_only=unprinted_only)
 
@@ -160,7 +171,8 @@ def mark_book_copy_qr_labels_printed(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    if not crud.get_book(db, book_id):
+    book = crud.get_book(db, book_id)
+    if not book or (book.is_archived and current_user.role != UserRole.SUPERADMIN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
     return crud.mark_book_copies_printed(db, book_id, request_data.copy_ids)
 
@@ -171,12 +183,20 @@ def delete_book_inventory(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    success = crud.delete_book(db, book_id)
-    if not success:
+    book = crud.get_book(db, book_id)
+    if not book or book.is_archived:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
         )
-    return {"message": f"Book ID {book_id} deleted successfully"}
+    retain_deleted(db, kind="books", record_id=book.id, title=book.title, actor=current_user,
+        origin="staff", action="delete", content={"book": record_content(book),
+            "copies": [record_content(copy) for copy in book.copies]})
+    # Retain the original row as well, so historical circulation and copy foreign
+    # keys remain valid. Archived books are excluded from active catalog queries.
+    book.is_archived = True
+    db.add(AuditLog(user_name=current_user.username, event=f"Deleted book {book.accession_no}; retained in SuperAdmin archive", status="Archived"))
+    db.commit()
+    return {"message": f"Book ID {book_id} moved to the SuperAdmin archive.", "archived": True}
 
 
 @router.patch("/books/{book_id}/archive", response_model=BookResponse)
@@ -186,9 +206,16 @@ def archive_book(
     current_user: User = Depends(admin_or_staff),
 ):
     """Soft-delete: marks book as archived (hidden from active inventory)."""
-    updated = crud.update_book(db, book_id, __import__("schemas").BookUpdate(is_archived=True))
-    if not updated:
+    updated = crud.get_book(db, book_id)
+    if not updated or updated.is_archived:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    retain_deleted(db, kind="books", record_id=updated.id, title=updated.title, actor=current_user,
+        origin="staff", action="archive", content={"book": record_content(updated),
+            "copies": [record_content(copy) for copy in updated.copies]})
+    updated.is_archived = True
+    db.add(AuditLog(user_name=current_user.username, event=f"Archived book {updated.accession_no}", status="Archived"))
+    db.commit()
+    db.refresh(updated)
     return updated
 
 
@@ -196,7 +223,7 @@ def archive_book(
 def restore_book(
     book_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_or_staff),
+    current_user: User = Depends(superadmin_only),
 ):
     """Restore an archived book back to active inventory."""
     updated = crud.update_book(db, book_id, __import__("schemas").BookUpdate(is_archived=False))
@@ -208,7 +235,7 @@ def restore_book(
 @router.get("/books/archived", response_model=List[BookResponse])
 def list_archived_books(
     db: Session = Depends(get_db),
-    current_user: User = Depends(admin_or_staff),
+    current_user: User = Depends(superadmin_only),
 ):
     """Returns only archived (soft-deleted) books."""
     return crud.get_books(db, archived_only=True)
@@ -369,9 +396,16 @@ def retry_approval_email(req_id: str, db: Session = Depends(get_db), current_use
 # Acquisition Suggestions Management
 @router.get("/acquisitions", response_model=List[AcquisitionResponse])
 def get_all_acquisitions(
+    archive_view: bool = False,
     db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)
 ):
-    return crud.get_acquisitions(db)
+    require_archive_view(current_user, archive_view)
+    keys = archive_keys(db, "acquisitions")
+    records = db.query(AcquisitionSuggestion).order_by(AcquisitionSuggestion.created_at.desc()).all()
+    records = [record for record in records if (record.acq_id in keys) == archive_view]
+    for record in records:
+        record.requester_name = record.user.full_name if record.user else "Patron"
+    return records
 
 
 @router.put("/acquisitions/{acq_id}/status", response_model=AcquisitionResponse)
@@ -384,6 +418,8 @@ def update_acquisition(
     if status_update.status not in {"Approved for Purchase", "Declined"}:
         raise HTTPException(status_code=422, detail="Choose Approved for Purchase or Declined.")
     updated = db.query(AcquisitionSuggestion).filter(AcquisitionSuggestion.acq_id == acq_id).first()
+    if updated and acq_id in archive_keys(db, "acquisitions") and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(404, "Acquisition not found")
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Acquisition not found"
@@ -395,10 +431,12 @@ def update_acquisition(
         raise HTTPException(status_code=409, detail="This suggestion has already been reviewed.")
     db.refresh(updated)
     body = f"Your suggestion for '{updated.title}' is now {updated.status}. Approval for purchase does not mean the book is available yet."
+    if status_update.reason:
+        body += f" Reason: {status_update.reason.strip()[:500]}"
     db.add(Notification(user_id=updated.user_id, title="Book suggestion updated", body=body, kind="suggestion"))
     patron = db.query(User).filter(User.id == updated.user_id).first()
     queue_email(db, f"acquisition:{updated.id}:{updated.status}", patron, "Book suggestion reviewed", body)
-    db.add(AuditLog(user_name=current_user.username, event=f"Reviewed acquisition {acq_id}", status=updated.status))
+    db.add(AuditLog(user_name=current_user.username, event=f"Reviewed acquisition {acq_id}; reason: {(status_update.reason or '').strip()[:500]}", status=updated.status))
     db.commit()
     return updated
 
@@ -428,14 +466,35 @@ def extend_loan(req_id: str, req: LoanExtensionRequest, db: Session = Depends(ge
     body = f"The loan for {record.book.title} ({req_id}) has been extended to {due:%B %d, %Y at %H:%M UTC}."
     db.add(Notification(user_id=record.user_id, title="Loan extension approved", body=body, kind="borrowing"))
     queue_email(db, f"extension:{record.id}:{due.isoformat()}", record.user, "Loan extension approved", body)
-    db.add(AuditLog(user_name=current_user.username, event=f"Extended {req_id}: {old_due.isoformat()} to {due.isoformat()}; reason: {req.reason.strip()}", status="Extended"))
+    approved_at = datetime.utcnow()
+    reason = req.reason.strip()
+    db.add(LoanExtensionEvent(
+        borrow_record_id=record.id, patron_id=record.user_id, book_id=record.book_id, actor_id=current_user.id,
+        reference=req_id, patron_name=record.user.full_name, institutional_id=record.user.username,
+        patron_role=record.user.role.value, department=record.user.department or "Not recorded",
+        course=record.user.course or "Not recorded", book_title=record.book.title,
+        accession_no=record.book.accession_no, copy_accession_no=record.copy_accession_no,
+        actor_name=current_user.full_name, actor_username=current_user.username, actor_role=current_user.role.value,
+        old_due_date=old_due, new_due_date=due, reason=reason, approved_at=approved_at))
+    db.add(AuditLog(timestamp=approved_at, user_name=current_user.username,
+        event=f"Extended {req_id}; patron: {record.user.full_name} ({record.user.username}); "
+              f"book: {record.book.title} ({record.copy_accession_no or record.book.accession_no}); "
+              f"due UTC: {old_due.isoformat()} to {due.isoformat()}; reason: {reason}", status="Extended"))
+    from staff_activity import notify_staff_activity
+    notify_staff_activity(db, "Loan period extended",
+        f"{record.user.full_name}'s loan for {record.book.title} ({req_id}) was extended by {current_user.full_name} "
+        f"from {old_due.isoformat()} UTC to {due.isoformat()} UTC. Reason: {reason}", kind="borrowing",
+        event_key=f"loan-extension:{record.id}:{due.isoformat()}")
     db.commit()
     return record
 
 
 @router.get("/announcements")
-def list_library_announcements(db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    return db.query(Announcement).order_by(Announcement.created_at.desc()).limit(50).all()
+def list_library_announcements(archive_view: bool = False, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    require_archive_view(current_user, archive_view)
+    keys = archive_keys(db, "announcements")
+    return [post for post in db.query(Announcement).order_by(Announcement.created_at.desc()).all()
+            if ((str(post.id) in keys) or not post.is_active) == archive_view]
 
 
 @router.post("/announcements", status_code=status.HTTP_201_CREATED)
@@ -458,15 +517,73 @@ def _support_recipient_role(user: User) -> str:
     return "librarian" if user.role == UserRole.LIBRARIAN else "admin"
 
 
+def _staff_support_thread(db: Session, thread_id: int, current_user: User, archive_view: bool = False) -> SupportThread:
+    require_archive_view(current_user, archive_view)
+    query = db.query(SupportThread).filter(SupportThread.id == thread_id)
+    if not archive_view:
+        query = query.filter(SupportThread.recipient_role == _support_recipient_role(current_user))
+    thread = query.first()
+    if thread and ((str(thread.id) in archive_keys(db, "messages")) != archive_view):
+        thread = None
+    if not thread:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return thread
+
+
+def _support_snapshot_time(value: datetime) -> datetime:
+    return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+
+
+def _claim_support_thread(
+    db: Session, thread: SupportThread,
+    expected_created_at: Optional[datetime] = None, expected_updated_at: Optional[datetime] = None,
+) -> None:
+    query = db.query(SupportThread).filter(
+        SupportThread.id == thread.id,
+        SupportThread.recipient_role == thread.recipient_role,
+        SupportThread.created_at == thread.created_at,
+    )
+    if expected_created_at is not None:
+        query = query.filter(SupportThread.created_at == _support_snapshot_time(expected_created_at))
+    if expected_updated_at is not None:
+        query = query.filter(SupportThread.updated_at == _support_snapshot_time(expected_updated_at))
+    # Claim a write before clearing history, so a simultaneous reply cannot be
+    # committed between checking the displayed snapshot and removing messages.
+    if not query.update({SupportThread.updated_at: datetime.utcnow()}, synchronize_session=False):
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This conversation has changed. Refresh it before deleting messages.")
+    db.refresh(thread)
+
+
+def _cancel_unsent_support_emails(db: Session, message_ids: List[int]) -> None:
+    # Keep delivery metadata, but stop queued copies of deleted message content.
+    # Batch conditions to stay below SQLite's parameter/expression limits.
+    for offset in range(0, len(message_ids), 200):
+        batch = message_ids[offset:offset + 200]
+        db.query(LibraryEmail).filter(
+            LibraryEmail.status.in_(["pending", "failed"]),
+            or_(
+                LibraryEmail.event_key.in_([f"reply:{message_id}" for message_id in batch]),
+                *(LibraryEmail.event_key.startswith(f"reply:{message_id}:") for message_id in batch),
+            ),
+        ).update({LibraryEmail.status: "cancelled", LibraryEmail.body: ""}, synchronize_session=False)
+
+
 @router.get("/messages")
-def list_support_inbox(db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    threads = db.query(SupportThread).filter(SupportThread.recipient_role == _support_recipient_role(current_user)).order_by(SupportThread.updated_at.desc()).all()
+def list_support_inbox(archive_view: bool = False, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    require_archive_view(current_user, archive_view)
+    keys = archive_keys(db, "messages")
+    query = db.query(SupportThread)
+    if not archive_view:
+        query = query.filter(SupportThread.recipient_role == _support_recipient_role(current_user))
+    threads = [thread for thread in query.order_by(SupportThread.updated_at.desc()).all()
+               if (str(thread.id) in keys) == archive_view]
     result = []
     for thread in threads:
         patron = db.query(User).filter(User.id == thread.user_id).first()
         latest = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.desc()).first()
         unread = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(False), SupportMessage.read_by_staff.is_(False)).count()
-        result.append({"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "updated_at": thread.updated_at, "last_message": latest.body if latest else "", "unread_count": unread, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""})
+        result.append({"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "created_at": thread.created_at, "updated_at": thread.updated_at, "last_message": latest.body if latest else "", "unread_count": unread, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""})
     return result
 
 
@@ -492,25 +609,91 @@ def start_staff_conversation(req: StaffThreadCreate, db: Session = Depends(get_d
 
 
 @router.get("/messages/{thread_id}")
-def read_support_thread(thread_id: int, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
-    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.recipient_role == _support_recipient_role(current_user)).first()
-    if not thread:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+def read_support_thread(thread_id: int, archive_view: bool = False, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    thread = _staff_support_thread(db, thread_id, current_user, archive_view)
     db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id, SupportMessage.is_staff.is_(False)).update({SupportMessage.read_by_staff: True}, synchronize_session=False)
     db.commit()
     patron = db.query(User).filter(User.id == thread.user_id).first()
     messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at.asc()).all()
     senders = {user.id: user.full_name for user in db.query(User).filter(User.id.in_([m.sender_id for m in messages])).all()} if messages else {}
-    return {"thread": {"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "updated_at": thread.updated_at, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""}, "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "sender_id": m.sender_id, "sender_name": senders.get(m.sender_id, "Library staff" if m.is_staff else "Patron"), "created_at": m.created_at} for m in messages]}
+    return {"thread": {"id": thread.id, "subject": thread.subject, "is_closed": thread.is_closed, "created_at": thread.created_at, "updated_at": thread.updated_at, "patron_name": patron.full_name if patron else "Unknown", "patron_email": patron.email if patron else ""}, "messages": [{"id": m.id, "message": m.body, "is_staff": m.is_staff, "sender_id": m.sender_id, "sender_name": senders.get(m.sender_id, "Library staff" if m.is_staff else "Patron"), "created_at": m.created_at} for m in messages]}
+
+
+@router.delete("/messages/{thread_id}/messages/{message_id}")
+def delete_support_message(
+    thread_id: int, message_id: int,
+    expected_created_at: Optional[datetime] = None, expected_thread_created_at: Optional[datetime] = None,
+    db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff),
+):
+    """Remove a message from active history while retaining its protected snapshot."""
+    thread = _staff_support_thread(db, thread_id, current_user)
+    _claim_support_thread(db, thread, expected_thread_created_at)
+    message = db.query(SupportMessage).filter(
+        SupportMessage.id == message_id, SupportMessage.thread_id == thread.id,
+    ).first()
+    if not message:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Message not found")
+    if expected_created_at is not None and message.created_at != _support_snapshot_time(expected_created_at):
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This message has changed. Refresh the conversation before deleting it.")
+    _cancel_unsent_support_emails(db, [message.id])
+    retain_support(db, thread, [message], current_user, "staff", "delete_message")
+    db.delete(message)
+    db.add(AuditLog(user_name=current_user.username,
+        event=f"Deleted message {message_id} from {thread.recipient_role} conversation {thread.id}", status="Deleted"))
+    db.commit()
+    return {"message": "Message moved to the SuperAdmin archive.", "deleted_messages": 1, "archived": True}
+
+
+@router.delete("/messages/{thread_id}/messages")
+def clear_support_conversation(
+    thread_id: int, expected_created_at: Optional[datetime] = None, expected_updated_at: Optional[datetime] = None,
+    db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff),
+):
+    """Clear the shared message history while retaining the conversation."""
+    thread = _staff_support_thread(db, thread_id, current_user)
+    _claim_support_thread(db, thread, expected_created_at, expected_updated_at)
+    messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at, SupportMessage.id).all()
+    message_ids = [message.id for message in messages]
+    if messages:
+        retain_support(db, thread, messages, current_user, "staff", "clear_messages")
+    _cancel_unsent_support_emails(db, message_ids)
+    db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).delete(synchronize_session=False)
+    db.add(AuditLog(user_name=current_user.username,
+        event=f"Cleared {len(message_ids)} messages from {thread.recipient_role} conversation {thread.id}", status="Cleared"))
+    db.commit()
+    return {"message": "Messages moved to the SuperAdmin archive.", "deleted_messages": len(message_ids), "archived": True}
+
+
+@router.delete("/messages/{thread_id}")
+def delete_support_conversation(
+    thread_id: int, expected_created_at: Optional[datetime] = None, expected_updated_at: Optional[datetime] = None,
+    db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff),
+):
+    """Remove the active conversation and retain its complete protected snapshot."""
+    thread = _staff_support_thread(db, thread_id, current_user)
+    _claim_support_thread(db, thread, expected_created_at, expected_updated_at)
+    messages = db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).order_by(SupportMessage.created_at, SupportMessage.id).all()
+    message_ids = [message.id for message in messages]
+    retain_support(db, thread, messages, current_user, "staff", "delete_conversation")
+    _cancel_unsent_support_emails(db, message_ids)
+    db.query(SupportMessage).filter(SupportMessage.thread_id == thread.id).delete(synchronize_session=False)
+    archive = db.get(StaffArchive, f"messages:{thread.id}")
+    if archive:
+        db.delete(archive)
+    db.add(AuditLog(user_name=current_user.username,
+        event=f"Deleted {thread.recipient_role} conversation {thread.id} and {len(message_ids)} messages", status="Deleted"))
+    db.delete(thread)
+    db.commit()
+    return {"message": "Conversation moved to the SuperAdmin archive.", "deleted_messages": len(message_ids), "archived": True}
 
 
 @router.post("/messages/{thread_id}/reply", status_code=status.HTTP_201_CREATED)
 def reply_to_support_thread(thread_id: int, req: SupportMessageCreate, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
     if not req.message.strip():
         raise HTTPException(status_code=422, detail="Enter a message.")
-    thread = db.query(SupportThread).filter(SupportThread.id == thread_id, SupportThread.recipient_role == _support_recipient_role(current_user)).first()
-    if not thread:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    thread = _staff_support_thread(db, thread_id, current_user)
     if thread.is_closed:
         raise HTTPException(status_code=400, detail="This conversation is closed")
     thread.updated_at = datetime.utcnow()
@@ -518,7 +701,7 @@ def reply_to_support_thread(thread_id: int, req: SupportMessageCreate, db: Sessi
     db.add(reply)
     db.flush()
     patron = db.query(User).filter(User.id == thread.user_id).first()
-    queue_email(db, f"reply:{reply.id}", patron, f"Library reply: {thread.subject}",
+    queue_email(db, f"reply:{reply.id}:{uuid.uuid4().hex}", patron, f"Library reply: {thread.subject}",
                 f"{current_user.full_name or 'Library staff'} replied:\n\n{reply.body}\n\nOpen Messages in SmartLib to continue this conversation.")
     db.add(Notification(user_id=thread.user_id, title="Reply from the library", body=f"A library staff member replied to ‘{thread.subject}’.", kind="message"))
     db.commit()
@@ -635,6 +818,14 @@ def deactivate_signup_option(
     if not option:
         raise HTTPException(status_code=404, detail="Signup option not found.")
     if option.kind == "department":
+        courses = db.query(SignupOption).filter(SignupOption.kind == "course", SignupOption.department_id == option.id, SignupOption.is_active.is_(True)).all()
+    else:
+        courses = []
+    if option.is_active or courses:
+        retain_deleted(db, kind="signup-options", record_id=option.id, title=option.name,
+            actor=current_user, origin="staff", action="delete", content={"option": record_content(option),
+                "courses": [record_content(course) for course in courses]})
+    if option.kind == "department":
         db.query(SignupOption).filter(
             SignupOption.kind == "course", SignupOption.department_id == option.id
         ).update({SignupOption.is_active: False}, synchronize_session=False)
@@ -726,3 +917,73 @@ def get_public_feedbacks(
 ):
     return crud.get_feedbacks(db)
 
+
+
+@router.get("/archives")
+def staff_archives(db: Session = Depends(get_db), current_user: User = Depends(superadmin_only)):
+    return db.query(StaffArchive).order_by(StaffArchive.created_at.desc()).all()
+
+
+@router.put("/archives/{kind}/{record_id}")
+def archive_staff_record(kind: Literal["acquisitions", "announcements", "messages"], record_id: str,
+    archived: bool = True, reason: str = Query("", max_length=500),
+    db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    if not archived and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(403, "Only SuperAdmin can restore archived records.")
+    model = {"acquisitions": AcquisitionSuggestion, "announcements": Announcement, "messages": SupportThread}[kind]
+    column = AcquisitionSuggestion.acq_id if kind == "acquisitions" else model.id
+    record = db.query(model).filter(column == record_id).first()
+    if not record or (kind == "messages" and record.recipient_role != _support_recipient_role(current_user) and current_user.role != UserRole.SUPERADMIN):
+        raise HTTPException(404, "Record not found.")
+    if archived and len(reason.strip()) < 3:
+        raise HTTPException(422, "Enter an archive reason of at least 3 characters.")
+    key = f"{kind}:{record_id}"
+    entry = db.get(StaffArchive, key)
+    if archived and not entry:
+        if kind == "messages":
+            messages = db.query(SupportMessage).filter(SupportMessage.thread_id == record.id).order_by(SupportMessage.created_at, SupportMessage.id).all()
+            retain_support(db, record, messages, current_user, "staff", "archive_conversation", reason=reason.strip())
+        else:
+            retain_deleted(db, kind=kind, record_id=record_id, title=record.title,
+                actor=current_user, origin="staff", action="archive", content={"record": record_content(record), "reason": reason.strip()})
+        db.add(StaffArchive(key=key, reason=reason.strip(), archived_by=current_user.username))
+    elif not archived and entry:
+        db.delete(entry)
+    if kind == "announcements":
+        record.is_active = not archived
+    db.add(AuditLog(user_name=current_user.username, event=f"{'Archived' if archived else 'Restored'} {key}; {reason.strip()}", status="Success"))
+    db.commit()
+    return {"archived": archived}
+
+
+def _deleted_archive_summary(entry):
+    return {field: getattr(entry, field) for field in (
+        "id", "kind", "record_id", "title", "action", "origin", "deleted_by", "deleted_at")}
+
+
+@router.get("/deleted-archives")
+def list_deleted_archives(response: Response, q: str = Query("", max_length=200), kind: str = Query("", max_length=32),
+    skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db), current_user: User = Depends(superadmin_only)):
+    from models import DeletedArchive
+    response.headers["Cache-Control"] = "no-store"
+    query = db.query(DeletedArchive)
+    if kind:
+        query = query.filter(DeletedArchive.kind == kind)
+    if q.strip():
+        term = f"%{q.strip()}%"
+        query = query.filter(or_(DeletedArchive.title.ilike(term), DeletedArchive.record_id.ilike(term), DeletedArchive.deleted_by.ilike(term)))
+    total = query.count()
+    entries = query.order_by(DeletedArchive.deleted_at.desc(), DeletedArchive.id).offset(skip).limit(limit).all()
+    return {"items": [_deleted_archive_summary(entry) for entry in entries], "total": total, "skip": skip, "limit": limit}
+
+
+@router.get("/deleted-archives/{archive_id}")
+def read_deleted_archive(archive_id: str, response: Response, db: Session = Depends(get_db), current_user: User = Depends(superadmin_only)):
+    import json
+    from models import DeletedArchive
+    response.headers["Cache-Control"] = "no-store"
+    entry = db.get(DeletedArchive, archive_id)
+    if not entry:
+        raise HTTPException(404, "Archived record not found.")
+    return dict(_deleted_archive_summary(entry), content=json.loads(entry.content_json))

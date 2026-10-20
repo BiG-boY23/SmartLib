@@ -7,7 +7,9 @@
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="/static/staff-chat.css">
+  <link rel="stylesheet" href="/static/staff-chat.css?v=20261020-activity-archive">
+  <link rel="stylesheet" href="/static/staff-notifications.css?v=20261020-activity-archive">
+  <link rel="stylesheet" href="/static/staff-archives.css?v=20261020-activity-archive">
   <link rel="stylesheet" href="/static/staff-updates.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -983,9 +985,12 @@
     </div>
   </div>
 
-  <script src="/static/staff-reports.js"></script>
-  <script src="/static/staff-chat.js"></script>
-  <script src="/static/staff-updates.js"></script>
+  <script src="/static/staff-reports.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-chat.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-updates.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-records.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-archives.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-notifications.js?v=20261020-activity-archive"></script>
   <script>
     // AUTH GUARD FOR LIBRARIAN PORTAL
     function getActiveToken() {
@@ -1227,9 +1232,6 @@
             <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#5a6a7a; color:#fff; margin-bottom:3px;" onclick="confirmArchiveBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)" title="Archive (hide from active catalog)">
               <i class="fa-solid fa-box-archive"></i> Archive
             </button>
-            <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#c0392b; color:#fff;" onclick="confirmDeleteBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)" title="Permanently delete this record">
-              <i class="fa-solid fa-trash"></i> Delete
-            </button>
           </td>
         `;
       });
@@ -1293,7 +1295,7 @@
     function confirmArchiveBook(bookId, accNo, title) {
       document.getElementById('deleteBookMsg').innerHTML =
         `Archive <strong>${escapeHtml(title)}</strong> (${escapeHtml(accNo)})?<br>
-        <span style="font-size:12px;">This hides the book from the active catalog. You can restore it later from the Archived shelf.</span>`;
+        <span style="font-size:12px;">This hides the book from the active catalog. Only the SuperAdmin can view and restore it from the archive.</span>`;
       document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-box-archive"></i> Archive';
       document.getElementById('deleteBookConfirmBtn').style.background = '#5a6a7a';
       document.getElementById('deleteBookConfirmBtn').onclick = async () => {
@@ -1315,13 +1317,13 @@
       document.getElementById('deleteBookMsg').innerHTML =
         `<span style="color:#e55; font-weight:700;">⚠ Permanently delete</span> <strong>${escapeHtml(title)}</strong> (${escapeHtml(accNo)})?<br>
         <span style="font-size:12px;">This action cannot be undone.</span>`;
-      document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-trash"></i> Delete Permanently';
+      document.getElementById('deleteBookConfirmBtn').innerHTML = '<i class="fa-solid fa-trash"></i> Move to archive';
       document.getElementById('deleteBookConfirmBtn').style.background = '#c0392b';
       document.getElementById('deleteBookConfirmBtn').onclick = async () => {
         try {
           const res = await fetch(`${API_BASE}/admin/books/${bookId}`, { method: 'DELETE', headers: getAuthHeaders() });
           if (res.ok) {
-            toast(`"${title}" permanently deleted.`, 'danger');
+            toast(`"${title}" moved to the SuperAdmin archive.`, 'danger');
             closeDeleteModal();
             await loadInventoryBooks();
           } else { toast('Delete failed', 'danger'); }
@@ -1337,6 +1339,7 @@
     // ── ARCHIVED BOOKS SHELF ───────────────────────────────────────
     let archivedShelfOpen = false;
     function toggleArchivedShelf() {
+      if (!window.StaffRecords?.isSuperAdmin()) return;
       archivedShelfOpen = !archivedShelfOpen;
       const body = document.getElementById('archivedShelfBody');
       const lbl = document.getElementById('archivedShelfToggle');
@@ -1351,6 +1354,7 @@
     }
 
     async function loadArchivedBooks() {
+      if (!window.StaffRecords?.isSuperAdmin()) return;
       try {
         const res = await fetch(`${API_BASE}/admin/books/archived`, { headers: getAuthHeaders() });
         if (!res.ok) return;
@@ -1373,9 +1377,6 @@
               <button class="btn btn-sm" data-title="${escapeHtml(b.title)}" style="background:#2a7a4b; color:#fff;" onclick="restoreBook(${Number(b.id)}, this.dataset.title)">
                 <i class="fa-solid fa-rotate-left"></i> Restore
               </button>
-              <button class="btn btn-sm" data-accession="${escapeHtml(b.accession_no)}" data-title="${escapeHtml(b.title)}" style="background:#c0392b; color:#fff; margin-left:4px;" onclick="confirmDeleteBook(${Number(b.id)}, this.dataset.accession, this.dataset.title)">
-                <i class="fa-solid fa-trash"></i> Delete
-              </button>
             </td>
           `;
         });
@@ -1383,6 +1384,7 @@
     }
 
     async function restoreBook(bookId, title) {
+      if (!window.StaffRecords?.isSuperAdmin()) return;
       try {
         const res = await fetch(`${API_BASE}/admin/books/${bookId}/restore`, { method: 'PATCH', headers: getAuthHeaders() });
         if (res.ok) {
@@ -2156,11 +2158,13 @@
 
     async function loadAcquisitions() {
       try {
-        const res = await fetch(`${API_BASE}/admin/acquisitions`, { headers: getAuthHeaders() });
+        const res = await fetch(StaffRecords.viewUrl(`${API_BASE}/admin/acquisitions`,'acquisitions'), { headers: getAuthHeaders() });
         if (!res.ok) return;
-        const acqs = await res.json();
+        await StaffRecords.refresh();
+        const acqs = (await res.json()).filter(a=>StaffRecords.visible("acquisitions",a.acq_id));
         const tbody = document.getElementById('acquisitionsTable').getElementsByTagName('tbody')[0];
         tbody.innerHTML = '';
+        if (!acqs.length) tbody.innerHTML = '<tr><td colspan="7">No suggestions in this view.</td></tr>';
         acqs.forEach(a => {
           const row = tbody.insertRow();
           const isApprove = a.status.includes('Approved');
@@ -2176,14 +2180,17 @@
               <button class="btn btn-danger btn-sm" data-acq-id="${escapeHtml(a.acq_id)}" onclick="updateAcq(this.dataset.acqId, 'Declined')">Decline</button>` : '<span class="badge badge-outline">Reviewed</span>'}
             </td>
           `;
+          row.lastElementChild.append(StaffRecords.button('acquisitions',a.acq_id));
         });
       } catch (err) { console.error(err); }
     }
 
     async function updateAcq(id, status) {
+      const reason = status === "Declined" ? prompt("Reason for declining this suggestion:") : "";
+      if (status === "Declined" && (!reason || reason.trim().length < 3)) return;
       try {
         const res = await fetch(`${API_BASE}/admin/acquisitions/${id}/status`, {
-          method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify({ status: status })
+          method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify({ status: status, reason })
         });
         const result = await res.json();
         if (!res.ok) throw new Error(result.detail || 'Review failed.');

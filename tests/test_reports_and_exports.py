@@ -98,7 +98,8 @@ def test_download_formats_and_id_access(api):
     doc=client.get(URL+'&format=docx',headers=tokens['staff'])
     assert doc.status_code==200
     with zipfile.ZipFile(io.BytesIO(doc.content)) as archive:
-        assert 'word/media/image1.png' in archive.namelist()
+        assert any(name.startswith('word/media/') and name.endswith('.png') for name in archive.namelist())
+        assert 'word/media/image1.jpeg' in archive.namelist()
         assert b'Person A' in archive.read('word/document.xml')
     assert client.get('/mobile/profile/digital-id/image').status_code==401
     png=client.get('/mobile/profile/digital-id/image',headers=tokens['A'])
@@ -164,3 +165,37 @@ def test_one_day_loan_and_published_overdue_fine_policy(api):
         'mode':'return', 'patron_id':'A', 'accession_no':copy_tag}, headers=tokens['staff'])
     assert returned.status_code == 200 and returned.json()['fine'] == 30.0
     assert client.get('/admin/dashboard/stats', headers=tokens['admin']).json()['uncollected_fines'] == 30.0
+
+
+def test_staff_archive_restore_and_scope(api):
+    client, tokens = api
+    post = client.post('/admin/announcements', headers=tokens['staff'], json={"title":"Library hours", "body":"Open today"}).json()
+    url = f"/admin/archives/announcements/{post['id']}"
+    assert client.put(url+'?reason=Old+news', headers=tokens['A']).status_code == 403
+    assert client.put(url, headers=tokens['staff']).status_code == 422
+    assert client.put(url+'?reason=Old+news', headers=tokens['staff']).status_code == 200
+    assert client.get('/admin/archives', headers=tokens['staff']).status_code == 403
+    assert client.get('/admin/archives', headers=tokens['admin']).json()[0]['reason'] == 'Old news'
+    assert client.get('/admin/announcements', headers=tokens['staff']).json() == []
+    assert client.put(url+'?archived=false', headers=tokens['staff']).status_code == 403
+    assert client.put(url+'?archived=false', headers=tokens['admin']).status_code == 200
+    assert client.get('/admin/announcements', headers=tokens['staff']).json()[0]['is_active']
+    thread = client.post('/admin/messages',headers=tokens['staff'],json={"recipient_username":"A","subject":"Question","message":"Hello"}).json()
+    assert client.put(f"/admin/archives/messages/{thread['id']}?reason=Resolved",headers=tokens['staff']).status_code == 200
+    assert client.post(f"/mobile/messages/{thread['id']}/reply",headers=tokens['A'],json={"message":"Follow up"}).status_code == 404
+    assert client.get('/admin/messages?archive_view=true', headers=tokens['admin']).json()[0]['id'] == thread['id']
+    assert client.put(f"/admin/archives/messages/{thread['id']}?archived=false",headers=tokens['admin']).status_code == 200
+    assert client.post(f"/mobile/messages/{thread['id']}/reply",headers=tokens['A'],json={"message":"Follow up"}).status_code == 201
+    assert not client.get('/admin/archives',headers=tokens['admin']).json()
+
+
+def test_queue_exports_all_matching_records(api):
+    client,tokens=api
+    base='/admin/reports/queue?kind=borrow-requests'
+    assert client.get(base,headers=tokens['A']).status_code==403
+    response=client.get(base+'&status=RETURNED',headers=tokens['staff'])
+    rows=list(csv.reader(io.StringIO(response.content.decode('utf-8-sig'))))
+    assert len(rows)==2 and rows[1][0]=='R1'
+    assert client.get(base+'&format=pdf',headers=tokens['staff']).content.startswith(b'%PDF')
+    doc=client.get(base+'&format=docx',headers=tokens['staff'])
+    assert zipfile.is_zipfile(io.BytesIO(doc.content))

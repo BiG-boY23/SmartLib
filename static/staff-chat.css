@@ -3,6 +3,13 @@
 .staff-chat-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .staff-chat-header h3 { margin: 0; font-size: 15px; }
 .staff-chat-header small { display: block; margin-top: 4px; color: var(--text-muted); }
+.staff-chat-conversation-header { flex-wrap: wrap; align-items: flex-start; }
+.staff-chat-heading { min-width: 0; flex: 1 1 200px; overflow-wrap: anywhere; }
+.staff-chat-manage { flex: 0 1 auto; flex-direction: column; align-items: flex-end; gap: 5px; max-width: 100%; }
+.staff-chat-manage .staff-chat-actions { flex-wrap: wrap; margin-top: 0; }
+.staff-chat-manage small { font-size: 11px; line-height: 1.4; text-align: right; }
+.staff-chat-manage .staff-chat-delete-conversation { border-color: #9b5260; color: #ffc0c7; }
+.staff-chat-manage .staff-chat-delete-conversation:hover { background: #54101a; border-color: #df8593; color: #fff; }
 .staff-chat-list { max-height: 550px; overflow-y: auto; }
 .staff-chat-thread { display: block; width: 100%; padding: 15px 16px; text-align: left; color: inherit; background: transparent; border: 0; border-bottom: 1px solid var(--border); cursor: pointer; font: inherit; }
 .staff-chat-thread:hover, .staff-chat-thread.active { background: rgba(212,175,55,.1); }
@@ -11,7 +18,14 @@
 .staff-chat-unread { float: right; background: var(--evsu-maroon); color: white; border-radius: 100px; padding: 2px 7px; font-size: 11px; }
 .staff-chat-conversation { display: flex; flex-direction: column; min-width: 0; min-height: 570px; }
 .staff-chat-messages { flex: 1; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 18px; }
-.staff-chat-bubble { max-width: min(80%, 500px); padding: 12px 14px; background: #252c39; border: 1px solid var(--border); border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.staff-chat-bubble { max-width: min(85%, 550px); padding: 12px 14px; background: #252c39; border: 1px solid var(--border); border-radius: 12px; overflow-wrap: anywhere; }
+.staff-chat-message-body { white-space: pre-wrap; line-height: 1.5; }
+.staff-chat-message-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; }
+.staff-chat-message-footer small { margin-top: 0; }
+.staff-chat-delete-message { background: transparent; border: 1px solid #9b6570; border-radius: 6px; color: #ffd6dc; cursor: pointer; font: inherit; font-size: 11px; padding: 5px 8px; }
+.staff-chat-delete-message:hover { background: rgba(255, 214, 220, .1); border-color: #ffd6dc; }
+.staff-chat-delete-message:focus-visible, .staff-chat-manage button:focus-visible { outline: 2px solid var(--evsu-gold); outline-offset: 3px; }
+.staff-chat-delete-message:disabled { opacity: .55; cursor: wait; }
 .staff-chat-bubble.staff { align-self: flex-end; background: #54101a; border-color: #76202d; }
 .staff-chat-bubble strong, .staff-chat-bubble small { display: block; }
 .staff-chat-bubble strong { font-size: 11px; color: var(--evsu-gold); margin-bottom: 6px; }
@@ -30,4 +44,4 @@
 .approval-loading-card p { margin: 0; color: var(--text-muted); line-height: 1.5; }
 .approval-spinner { display: inline-block; width: 38px; height: 38px; border: 4px solid rgba(212,175,55,.25); border-top-color: var(--evsu-gold); border-radius: 50%; animation: approval-spin .8s linear infinite; }
 @keyframes approval-spin { to { transform: rotate(360deg); } }
-@media (max-width: 760px) { .staff-chat-shell { grid-template-columns: 1fr; } .staff-chat-list { max-height: 250px; } .staff-chat-conversation { min-height: 430px; } .staff-chat-messages { max-height: 320px; } }
+@media (max-width: 760px) { .staff-chat-shell { grid-template-columns: 1fr; } .staff-chat-list { max-height: 250px; } .staff-chat-conversation { min-height: 430px; } .staff-chat-messages { max-height: 320px; } .staff-chat-manage { align-items: flex-start; } .staff-chat-manage .staff-chat-actions { justify-content: flex-start; } .staff-chat-manage small { text-align: left; } .staff-chat-bubble { max-width: 100%; } }

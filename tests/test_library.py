@@ -223,17 +223,24 @@ def test_admin_book_management():
 
     # Verify in archived list
     list_archived = client.get("/admin/books/archived", headers=headers)
-    assert any(b["id"] == book_id for b in list_archived.json())
+    assert list_archived.status_code == 403
+    super_login = client.post('/auth/login', json={'username': 'ADMIN-EVSU-2026', 'password': 'admin123'})
+    super_headers = {'Authorization': f"Bearer {super_login.json()['access_token']}"}
+    list_archived = client.get('/admin/books/archived', headers=super_headers)
+    assert any(b['id'] == book_id for b in list_archived.json())
 
     # Restore Book
     restore_resp = client.patch(f"/admin/books/{book_id}/restore", headers=headers)
+    assert restore_resp.status_code == 403
+    restore_resp = client.patch(f"/admin/books/{book_id}/restore", headers=super_headers)
     assert restore_resp.status_code == 200
     assert restore_resp.json()["is_archived"] is False
 
-    # Delete Book (Permanent delete)
+    # Delete Book (retained in SuperAdmin archive)
     del_resp = client.delete(f"/admin/books/{book_id}", headers=headers)
     assert del_resp.status_code == 200
-    assert "deleted successfully" in del_resp.json()["message"]
+    assert del_resp.json()['archived'] is True
+    assert 'SuperAdmin archive' in del_resp.json()['message']
 
 
 def test_circulation_execute():

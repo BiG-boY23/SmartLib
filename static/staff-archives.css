@@ -1,0 +1,21 @@
+.archive-card { padding: 22px; }
+.archive-card h3 { margin: 0 0 10px; }
+.archive-muted { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.archive-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 20px 0 12px; }
+.archive-filters label { display: grid; gap: 7px; font-size: 12px; flex: 1 1 200px; }
+.archive-records td { vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+.archive-records { overflow-x: auto; }
+.archive-records table { min-width: 760px; }
+.archive-records strong, .archive-records small { display: block; }
+.archive-pagination { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.archive-dialog { width: min(820px, calc(100% - 32px)); max-height: 85vh; margin: auto; padding: 22px; overflow-y: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-card); color: var(--text-main); }
+.archive-dialog::backdrop { background: #0009; }
+.archive-dialog > button { display: block; margin-left: auto; margin-bottom: 10px; }
+.archive-dialog h3 { overflow-wrap: anywhere; margin: 12px 0; }
+.archive-dialog h4 { margin: 14px 0 8px; }
+.archive-facts { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr); gap: 10px 16px; margin: 12px 0; font-size: 13px; }
+.archive-facts dt { font-weight: 700; overflow-wrap: anywhere; }
+.archive-facts dd { margin: 0; min-width: 0; }
+.archive-value { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.archive-item { padding: 12px; border: 1px solid var(--border); border-radius: 10px; margin-top: 10px; }
+@media (max-width: 600px) { .archive-facts { grid-template-columns: 1fr; gap: 6px; } .archive-facts dd { margin-bottom: 10px; } .archive-dialog { padding: 16px; } }

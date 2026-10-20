@@ -1,0 +1,26 @@
+.staff-notifications { position:relative; margin-left:auto; margin-right:14px; flex-shrink:0; }
+.app-topbar:has(.staff-notifications-trigger[aria-expanded="true"]) { z-index: 1300; }
+.staff-notifications [hidden] { display:none !important; }
+.staff-notifications-trigger { position:relative; display:flex; align-items:center; justify-content:center; width:42px; height:42px; background:var(--bg-input,#10151e); border:1px solid var(--border,#2b3342); border-radius:12px; color:var(--text-main,#fff); cursor:pointer; }
+.staff-notifications-trigger:hover,.staff-notifications-trigger[aria-expanded="true"] { border-color:var(--gold,#d4ac28); background:var(--bg-card-header,#1c2230); }
+.staff-notifications-trigger:focus-visible,.staff-notifications button:focus-visible { outline:2px solid var(--gold,#d4ac28); outline-offset:3px; }
+.staff-notifications-badge { position:absolute; top:-6px; right:-7px; min-width:20px; padding:2px 4px; border-radius:12px; font-size:10px; font-weight:800; background:#a50d22; color:#fff; border:2px solid var(--bg-card,#161c27); }
+.staff-notifications-panel { position:absolute; top:54px; right:0; width:min(430px,calc(100vw - 32px)); z-index:1200; background:var(--bg-card,#161c27); color:var(--text-main,#fff); border:1px solid var(--border,#2b3342); border-radius:16px; box-shadow:0 16px 48px #0007; overflow:hidden; }
+.staff-notifications-head { display:flex; align-items:flex-start; justify-content:space-between; padding:18px 18px 14px; }
+.staff-notifications-head h3 { font-size:17px; margin:0 0 5px; }
+.staff-notifications-status { margin:0; color:var(--text-muted,#95a3b8); font-size:12px; }
+.staff-notifications-close { background:none; border:0; color:inherit; font-size:26px; line-height:24px; padding:0 3px; cursor:pointer; }
+.staff-notifications-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 18px; border-block:1px solid var(--border,#2b3342); color:var(--text-muted,#95a3b8); font-size:11px; }
+.staff-notifications-toolbar button,.staff-notification-footer button { background:none; border:0; color:var(--gold,#e5bc3b); font-size:11px; cursor:pointer; padding:4px 0; font-weight:600; }
+.staff-notifications button:disabled { opacity:.5; cursor:default; }
+.staff-notifications-list { max-height:min(510px,calc(100dvh - 230px)); overflow-y:auto; overscroll-behavior:contain; }
+.staff-notification { padding:16px 18px; border-bottom:1px solid var(--border,#2b3342); border-left:3px solid transparent; }
+.staff-notification:last-child { border-bottom:0; }
+.staff-notification.is-unread { border-left-color:var(--gold,#d4ac28); background:rgba(212,172,40,.055); }
+.staff-notification h4 { margin:0 0 6px; font-size:13px; line-height:1.4; }
+.staff-notification p { margin:0; font-size:12px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--text-muted,#a6b1c3); }
+.staff-notification-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:10px; }
+.staff-notification time { font-size:10px; color:var(--text-muted,#95a3b8); }
+.staff-notifications-empty { padding:28px 22px; margin:0; color:var(--text-muted,#95a3b8); font-size:13px; line-height:1.7; text-align:center; }
+@media(max-width:600px) { .staff-notifications { margin-right:10px; } .staff-notifications-panel { position:fixed; right:16px; top:80px; } }
+@media print { .staff-notifications { display:none !important; } }

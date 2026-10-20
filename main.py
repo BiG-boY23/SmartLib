@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from database import engine, Base, SessionLocal, get_db
 from models import Book
-from routers import auth_router, admin_router, mobile_router, report_router
+from routers import auth_router, admin_router, mobile_router, report_router, staff_notification_router
 from schemas import FeedbackCreate, FeedbackResponse, BookResponse
 import crud
 from library_notifications import process_notifications
@@ -147,6 +147,7 @@ app.include_router(mobile_router.router)
 from routers import public_assistant_router
 app.include_router(public_assistant_router.router)
 app.include_router(report_router.router)
+app.include_router(staff_notification_router.router)
 
 # Installable patron app assets; mobile API routes above take precedence.
 mobile_assets_path = os.path.join(os.path.dirname(__file__), "mobile")

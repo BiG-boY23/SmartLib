@@ -10,7 +10,7 @@ From the project root, start FastAPI so another device on the same Wi-Fi can con
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-For development, you can enter the computer’s Wi-Fi IP and port 8000 on the sign-in screen; the same setting is available under Profile. Android emulators default to `http://10.0.2.2:8000`. For a fixed setup or production build, copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_BASE_URL`. Use HTTPS for deployed builds. Expo public variables are bundled into the app, so they are configuration values and must not contain secrets.
+For development, expand **Connection settings** below the sign-in card to enter the computer’s Wi-Fi IP and port 8000; the same setting is available under Profile. Connection settings are hidden in production builds. Android emulators default to `http://10.0.2.2:8000`. For a fixed setup or production build, copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_BASE_URL`. Use HTTPS for deployed builds. Expo public variables are bundled into the app, so they are configuration values and must not contain secrets.
 
 ## Run the native app
 
@@ -33,6 +33,8 @@ In PowerShell, use `npm.cmd install` and `npx.cmd expo start` if script executio
 - Display the digital library ID QR code.
 - Raise screen brightness while the Library ID tab is open, then restore the previous level when leaving it.
 - Send a book acquisition suggestion.
+- Messages includes visible controls to delete your own messages, clear a conversation, or delete the conversation. Removed content is retained for SuperAdmin review and is hidden from normal inboxes. Each action asks for confirmation.
+- Staff accounts receive borrowing, return, suggestion, and extension activity in Updates, with read status tracked per account.
 - Keep the API token in platform secure storage only when Remember me is selected.
 
 For production Android builds, set `SMARTLIB_ENV=production` and `EXPO_PUBLIC_API_BASE_URL` in the build environment. Remote push notifications require a development/production build and the platform push credentials. Expo Go on Android skips loading the notification module to avoid the SDK 57 remote-push import crash.

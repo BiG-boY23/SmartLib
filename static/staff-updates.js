@@ -11,8 +11,11 @@
     async load() {
       const list = document.getElementById('announcementList');
       try {
-        const posts = await request('/announcements');
+        await StaffRecords.refresh();
+        StaffRecords.control('announcements',list.parentElement,()=>SmartLibUpdates.load());
+        const posts = (await request(StaffRecords.viewUrl('/announcements','announcements'))).filter(p=>StaffRecords.visible('announcements',p.id));
         list.innerHTML = posts.length ? posts.map(post => `<article class="card" style="margin-top:16px"><div class="card-body" style="padding:20px"><small>${escape(date(post.created_at))}</small><h3 style="margin:8px 0">${escape(post.title)}</h3><p style="white-space:pre-wrap">${escape(post.body)}</p></div></article>`).join('') : '<p>No announcements published yet.</p>';
+        list.querySelectorAll('article').forEach((article,i)=>article.firstElementChild.append(StaffRecords.button('announcements',posts[i].id)));
       } catch (error) { toast(error.message, 'danger'); }
     },
     async extend(reqId) {

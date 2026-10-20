@@ -180,6 +180,33 @@ class BorrowRecord(Base):
     fines = relationship("Fine", back_populates="borrow_record")
 
 
+class LoanExtensionEvent(Base):
+    """Append-only approval history with snapshots that survive profile/catalog changes."""
+    __tablename__ = "loan_extension_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    borrow_record_id = Column(Integer, ForeignKey("borrow_records.id", ondelete="SET NULL"), nullable=True, index=True)
+    patron_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reference = Column(String, nullable=False, index=True)
+    patron_name = Column(String, nullable=False)
+    institutional_id = Column(String, nullable=False)
+    patron_role = Column(String(20), nullable=False)
+    department = Column(String, nullable=False)
+    course = Column(String, nullable=False)
+    book_title = Column(String, nullable=False)
+    accession_no = Column(String, nullable=False)
+    copy_accession_no = Column(String, nullable=True)
+    actor_name = Column(String, nullable=False)
+    actor_username = Column(String, nullable=False)
+    actor_role = Column(String(20), nullable=False)
+    old_due_date = Column(DateTime, nullable=False)
+    new_due_date = Column(DateTime, nullable=False)
+    reason = Column(Text, nullable=False)
+    approved_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class BorrowApprovalEmail(Base):
     __tablename__ = "borrow_approval_emails"
 
@@ -222,6 +249,31 @@ class AcquisitionSuggestion(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User", back_populates="acquisitions")
+
+
+class StaffArchive(Base):
+    __tablename__ = "staff_archives"
+    # Operational archive markers hide the retained records from active lists.
+    # Archive browsing and restoration are reserved for SuperAdmin.
+    key = Column(String, primary_key=True)
+    reason = Column(Text, nullable=False)
+    archived_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class DeletedArchive(Base):
+    __tablename__ = "deleted_archives"
+    # Retained snapshots have no foreign keys: deleting an active record must
+    # never destroy the evidence kept for SuperAdmin review.
+    id = Column(String(36), primary_key=True)
+    kind = Column(String(32), nullable=False, index=True)
+    record_id = Column(String(80), nullable=False)
+    title = Column(String(250), nullable=False)
+    action = Column(String(32), nullable=False)
+    origin = Column(String(32), nullable=False)
+    deleted_by = Column(String(120), nullable=False)
+    deleted_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    content_json = Column(Text, nullable=False)
 
 
 class Feedback(Base):

@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
@@ -24,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { isRunningInExpoGo } from 'expo';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import QRCode from 'react-native-qrcode-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 let notificationsModule;
@@ -89,15 +91,49 @@ function borrowingActivityLabel(entry) {
   return `Pickup ${formatPickupLabel(entry.pickup_date)}`;
 }
 
-function Button({ title, onPress, secondary = false, disabled = false, compact = false, style, textStyle }) {
-  return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.button, secondary && styles.buttonSecondary, compact && styles.buttonCompact, disabled && styles.buttonDisabled, pressed && !disabled && styles.buttonPressed, style]}><Text style={[styles.buttonText, secondary && styles.buttonTextSecondary, compact && styles.buttonTextCompact, textStyle]}>{title}</Text></Pressable>;
+function SmartLibIcon({ name, size = 20, color = COLORS.wine }) {
+  const paths = {
+    book: 'M12 5.5C9.2 3.7 5.7 3.5 2.5 4.5v15c3.2-1 6.7-.8 9.5 1 2.8-1.8 6.3-2 9.5-1v-15c-3.2-1-6.7-.8-9.5 1Zm0 0v15',
+    user: 'M20 21v-2a7 7 0 0 0-14 0v2M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
+    lock: 'M6 10h12v11H6ZM8 10V6a4 4 0 0 1 8 0v4',
+    mail: 'M3 5h18v14H3ZM3 5l9 7 9-7',
+    eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z',
+    'eye-off': 'm3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18.7 18.7 0 0 1-3 3.8M6.3 6.3A21 21 0 0 0 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3',
+    arrow: 'M5 12h14m-6-6 6 6-6 6',
+    chevron: 'm9 5 7 7-7 7',
+    down: 'm6 9 6 6 6-6',
+    check: 'm5 12 4 4L19 6',
+    message: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H3l1.8-4.2A8.5 8.5 0 1 1 21 11.5Z',
+    card: 'M3 5h18v14H3ZM7 10h3m-3 4h7m3-4h1',
+    settings: 'M4 7h16M4 17h16M8 4v6m8 4v6',
+    trash: 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',
+  };
+  return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" accessible={false}>
+    <Path d={paths[name] || paths.book} />{name === 'eye' && <Circle cx="12" cy="12" r="3" />}
+  </Svg>;
 }
 
-function Field({ label, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoCapitalize, multiline, style, inputStyle, ...props }) {
-  const [passwordVisible, setPasswordVisible] = useState(false);
-  const input = <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#a8a2a7" secureTextEntry={secureTextEntry && !passwordVisible} keyboardType={keyboardType} autoCapitalize={autoCapitalize || 'none'} multiline={multiline} style={[styles.input, multiline && styles.textarea, secureTextEntry && styles.passwordInput, inputStyle]} {...props} />;
-  return <View style={[styles.field, style]}><Text style={styles.label}>{label}</Text>{secureTextEntry ? <View style={styles.passwordFieldWrap}>{input}<Pressable accessibilityRole="button" accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'} onPress={() => setPasswordVisible((visible) => !visible)} style={styles.passwordToggle}><Text style={styles.passwordToggleGlyph}>{passwordVisible ? '🙈' : '🐵'}</Text></Pressable></View> : input}</View>;
+function Button({ title, onPress, secondary = false, disabled = false, compact = false, style, textStyle, icon, loading = false }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled, busy: loading }} onPress={onPress} disabled={disabled} style={({ pressed }) => [styles.button, secondary && styles.buttonSecondary, compact && styles.buttonCompact, disabled && styles.buttonDisabled, pressed && !disabled && styles.buttonPressed, style]}>
+    {loading && <ActivityIndicator size="small" color={secondary ? COLORS.wine : COLORS.paper} />}
+    <Text style={[styles.buttonText, secondary && styles.buttonTextSecondary, compact && styles.buttonTextCompact, textStyle]}>{title}</Text>
+    {icon && !loading && <SmartLibIcon name={icon} color={secondary ? COLORS.wine : COLORS.paper} />}
+  </Pressable>;
 }
+
+function Field({ label, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoCapitalize, multiline, style, inputStyle, auth = false, icon, onFocus, onBlur, ...props }) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const input = <TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor="#7b6e77" secureTextEntry={secureTextEntry && !passwordVisible} keyboardType={keyboardType} autoCapitalize={autoCapitalize || 'none'} multiline={multiline}
+    onFocus={(event) => { setFocused(true); onFocus?.(event); }} onBlur={(event) => { setFocused(false); onBlur?.(event); }}
+    style={[styles.input, multiline && styles.textarea, auth && styles.authInput, auth && focused && styles.authInputFocused, icon && styles.inputWithIcon, secureTextEntry && styles.passwordInput, inputStyle]} {...props} />;
+  return <View style={[styles.field, auth && styles.authField, style]}><Text style={[styles.label, auth && styles.authLabel]}>{label}</Text><View style={styles.passwordFieldWrap}>
+    {input}{icon && <View pointerEvents="none" style={styles.fieldIcon}><SmartLibIcon name={icon} size={19} color={focused ? COLORS.wine : '#8b7c81'} /></View>}
+    {secureTextEntry && <Pressable accessibilityRole="button" accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'} onPress={() => setPasswordVisible((visible) => !visible)} style={styles.passwordToggle}><SmartLibIcon name={passwordVisible ? 'eye-off' : 'eye'} color="#7e6a72" /></Pressable>}
+  </View></View>;
+}
+
+function AuthField(props) { return <Field auth {...props} />; }
 
 function Badge({ children, tone = 'green' }) {
   const toneStyle = tone === 'amber' ? [styles.badgeAmber, styles.badgeTextAmber] : tone === 'red' ? [styles.badgeRed, styles.badgeTextRed] : [styles.badgeGreen, styles.badgeTextGreen];
@@ -136,6 +172,7 @@ function SmartLibApp() {
   const [threadMessages, setThreadMessages] = useState([]);
   const [messageThreads, setMessageThreads] = useState([]);
   const [messageDraft, setMessageDraft] = useState('');
+  const [messageBusy, setMessageBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [composeMessage, setComposeMessage] = useState({ recipient_role: 'librarian', recipient_username: '', subject: '', message: '' });
   const [showComposeMessage, setShowComposeMessage] = useState(false);
@@ -165,6 +202,10 @@ function SmartLibApp() {
   const savedBrightness = useRef(null);
   const notificationIdsSeen = useRef(null);
   const dueAlertsShown = useRef(new Set());
+  const messageBusyRef = useRef(false);
+  const messageLoadVersion = useRef(0);
+  const messageListVersion = useRef(0);
+  const activeMessageId = useRef(null);
 
   const request = useCallback(async (path, options = {}, authToken = token, base = apiBase) => {
     const headers = { Accept: 'application/json', ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}), ...options.headers };
@@ -181,9 +222,11 @@ function SmartLibApp() {
         setToken(null); setUser(null); setScreen('auth');
       }
       const detail = Array.isArray(data?.detail) ? data.detail.map((item) => item.msg).filter(Boolean).join('\n') : data?.detail;
-      throw new Error(detail || (response.status >= 500
+      const error = new Error(detail || (response.status >= 500
         ? `The library server returned an error (${response.status}). Please try again in a moment.`
         : `The request was not accepted (${response.status}). Please check the details and try again.`));
+      error.status = response.status;
+      throw error;
     }
     return data;
   }, [apiBase, token]);
@@ -240,25 +283,50 @@ function SmartLibApp() {
     try { await syncDueReminders(rows); } catch { /* Keep the library screen usable if notifications are unavailable. */ }
   }, [request]);
   const loadDigitalId = useCallback(async () => setDigitalId(await request('/mobile/profile/digital-id')), [request]);
+  const isStaff = ['admin', 'superadmin', 'librarian'].includes(user?.role);
   const loadLibraryUpdates = useCallback(async () => {
-    const [posts, inbox] = await Promise.all([request('/mobile/announcements'), request('/mobile/notifications')]);
+    const [posts, inbox] = await Promise.all([request('/mobile/announcements'), request(isStaff ? '/admin/notifications' : '/mobile/notifications')]);
     const items = inbox.items || [];
     if (notificationIdsSeen.current === null) notificationIdsSeen.current = new Set(items.map((item) => item.id));
     else {
       const freshApprovals = items.filter((item) => !notificationIdsSeen.current.has(item.id) && !item.read);
       freshApprovals.forEach((item) => notificationIdsSeen.current.add(item.id));
-      if (freshApprovals.some((item) => item.kind === 'borrowing')) await loadBorrowings();
+      if (!isStaff && freshApprovals.some((item) => item.kind === 'borrowing')) await loadBorrowings();
       if (freshApprovals.length) Alert.alert('Library updates', freshApprovals.map((item) => item.body || item.title).join('\n'));
       items.forEach((item) => notificationIdsSeen.current.add(item.id));
     }
     setAnnouncements(posts); setNotifications(items);
-  }, [request, loadBorrowings]);
-  const isStaff = ['admin', 'superadmin', 'librarian'].includes(user?.role);
-  const loadMessageThreads = useCallback(async () => setMessageThreads(await request(isStaff ? '/admin/messages' : '/mobile/messages')), [request, isStaff]);
-  const loadMessageThread = useCallback(async (threadId) => {
-    const data = await request(`${isStaff ? '/admin' : '/mobile'}/messages/${threadId}`);
-    setActiveThread(data.thread); setThreadMessages(data.messages || []);
+  }, [request, loadBorrowings, isStaff]);
+  const closeMessageThread = useCallback(() => {
+    messageLoadVersion.current++;
+    activeMessageId.current = null;
+    setActiveThread(null); setThreadMessages([]);
+  }, []);
+  useEffect(() => {
+    closeMessageThread();
+    messageListVersion.current++;
+    setMessageThreads([]);
+  }, [token, closeMessageThread]);
+  const loadMessageThreads = useCallback(async () => {
+    if (messageBusyRef.current) return;
+    const version = ++messageListVersion.current;
+    const rows = await request(isStaff ? '/admin/messages' : '/mobile/messages');
+    if (version === messageListVersion.current && !messageBusyRef.current) setMessageThreads(rows);
   }, [request, isStaff]);
+  const loadMessageThread = useCallback(async (threadId) => {
+    if (messageBusyRef.current) return;
+    const version = ++messageLoadVersion.current;
+    activeMessageId.current = threadId;
+    try {
+      const data = await request(`${isStaff ? '/admin' : '/mobile'}/messages/${threadId}`);
+      if (version !== messageLoadVersion.current || activeMessageId.current !== threadId || messageBusyRef.current) return;
+      setActiveThread(data.thread); setThreadMessages(data.messages || []);
+    } catch (error) {
+      if (version !== messageLoadVersion.current || activeMessageId.current !== threadId) return;
+      if (error.status === 404) { closeMessageThread(); await loadMessageThreads(); return; }
+      throw error;
+    }
+  }, [request, isStaff, closeMessageThread, loadMessageThreads]);
 
   useEffect(() => {
     if (screen !== 'app' || !token) return;
@@ -531,12 +599,48 @@ function SmartLibApp() {
 
   async function sendThreadReply() {
     const body = messageDraft.trim();
-    if (!body || !activeThread) return;
+    if (!body || !activeThread || messageBusyRef.current) return;
+    const id = activeThread.id;
+    messageBusyRef.current = true; setMessageBusy(true);
+    messageLoadVersion.current++;
     setMessageDraft('');
     try {
-      await request(`${isStaff ? '/admin' : '/mobile'}/messages/${activeThread.id}/reply`, { method: 'POST', body: JSON.stringify({ message: body }) });
-      await loadMessageThread(activeThread.id);
+      await request(`${isStaff ? '/admin' : '/mobile'}/messages/${id}/reply`, { method: 'POST', body: JSON.stringify({ message: body }) });
     } catch (error) { setMessageDraft(body); Alert.alert('Message not sent', error.message); }
+    finally { messageBusyRef.current = false; setMessageBusy(false); }
+    if (activeMessageId.current === id) await loadMessageThread(id).catch((error) => Alert.alert('Could not refresh messages', error.message));
+  }
+
+  function confirmMessageDeletion(kind, message) {
+    const thread = activeThread;
+    if (!thread || messageBusyRef.current) return;
+    const labels = { message: 'Delete message', clear: 'Clear messages', conversation: 'Delete conversation' };
+    const description = kind === 'message' ? 'Remove this message from the conversation?' : kind === 'clear' ? 'Remove every message while keeping this conversation?' : 'Remove this conversation and its messages?';
+    Alert.alert(labels[kind], `${description} A retained copy is kept in an archive that only the SuperAdmin can view. This affects both sides of the conversation.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: labels[kind], style: 'destructive', onPress: async () => {
+        if (messageBusyRef.current || activeMessageId.current !== thread.id) return;
+        if (!thread.created_at || !thread.updated_at || (kind === 'message' && !message?.created_at)) { Alert.alert('Refresh required', 'Refresh this conversation before deleting.'); return; }
+        messageBusyRef.current = true; setMessageBusy(true);
+        messageLoadVersion.current++; messageListVersion.current++;
+        const snapshot = new URLSearchParams({ expected_created_at: kind === 'message' ? message.created_at : thread.created_at });
+        if (kind === 'message') snapshot.set('expected_thread_created_at', thread.created_at);
+        else snapshot.set('expected_updated_at', thread.updated_at);
+        const suffix = kind === 'message' ? `/messages/${message.id}` : kind === 'clear' ? '/messages' : '';
+        try {
+          await request(`${isStaff ? '/admin' : '/mobile'}/messages/${thread.id}${suffix}?${snapshot}`, { method: 'DELETE' });
+          if (kind === 'conversation') { closeMessageThread(); setMessageDraft(''); }
+          else setThreadMessages((rows) => kind === 'clear' ? [] : rows.filter((row) => row.id !== message.id));
+        } catch (error) {
+          if (error.status === 404) closeMessageThread();
+          Alert.alert('Could not delete', error.message);
+        } finally { messageBusyRef.current = false; setMessageBusy(false); }
+        try {
+          if (activeMessageId.current === thread.id) await loadMessageThread(thread.id);
+          else await loadMessageThreads();
+        } catch (error) { Alert.alert('Could not refresh messages', error.message); }
+      } },
+    ]);
   }
 
   async function askAssistant() {
@@ -556,12 +660,12 @@ function SmartLibApp() {
   async function markNotificationRead(item) {
     if (!item.read) {
       try {
-        await request(`/mobile/notifications/${item.id}/read`, { method: 'POST' });
+        await request(`${isStaff ? '/admin' : '/mobile'}/notifications/${item.id}/read`, { method: 'POST' });
         setNotifications((items) => items.map((row) => row.id === item.id ? { ...row, read: true } : row));
       } catch (error) { Alert.alert('Could not update notification', error.message); return; }
     }
-    if (item.kind === 'message') { setActiveThread(null); changeTab('messages'); }
-    if (item.kind === 'borrowing') changeTab('borrowings');
+    if (item.kind === 'message') { closeMessageThread(); changeTab('messages'); }
+    if (!isStaff && item.kind === 'borrowing') changeTab('borrowings');
   }
 
   async function publishAnnouncement() {
@@ -671,15 +775,15 @@ function SmartLibApp() {
   const firstName = (user?.full_name || 'reader').trim().split(/\s+/)[0];
   const currentTabLabel = TABS.find((item) => item.id === tab)?.label || (tab === 'messages' ? 'Messages' : 'Profile');
   const unreadNotifications = notifications.filter((item) => !item.read).length;
-  return <View style={[styles.app, Platform.OS === 'ios' && { paddingTop: safeArea.top }]} onTouchStart={resetIdleTimer}><StatusBar barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'} backgroundColor="#000000" translucent={Platform.OS === 'android'} />{Platform.OS === 'android' ? <View style={styles.statusBarSpacer} /> : null}<View style={styles.topbar}><View style={styles.brandLine}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.brandLogoImage} accessibilityLabel="EVSU OC SmartLib logo" /><View><Text style={styles.brandText}>SmartLib</Text><Text style={styles.topCurrent}>{currentTabLabel}</Text></View></View><View style={styles.topbarActions}><Pressable style={[styles.headerAction, tab === 'messages' && styles.headerActionActive]} accessibilityLabel="Open messages" accessibilityState={{ selected: tab === 'messages' }} onPress={() => { setActiveThread(null); changeTab('messages'); }}><Text style={styles.headerActionGlyph}>✉</Text></Pressable><Pressable style={[styles.headerAction, assistantVisible && styles.headerActionActive]} accessibilityLabel="Ask the library assistant" accessibilityState={{ selected: assistantVisible }} onPress={() => setAssistantVisible(true)}><Text style={styles.headerActionGlyph}>✦</Text></Pressable><Pressable style={[styles.headerAction, tab === 'updates' && styles.headerActionActive]} accessibilityLabel="Open notifications" accessibilityState={{ selected: tab === 'updates' }} onPress={() => changeTab('updates')}><Text style={styles.headerActionGlyph}>♧</Text>{unreadNotifications > 0 && <View style={styles.unreadDot} />}</Pressable><Pressable style={[styles.avatar, tab === 'profile' && styles.avatarActive]} accessibilityLabel="Open profile" accessibilityState={{ selected: tab === 'profile' }} onPress={() => setTab('profile')}>{user?.profile_picture_url ? <Image source={{ uri: `${apiBase.replace(/\/+$/, '')}${user.profile_picture_url}` }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text>}</Pressable></View></View>
+  return <View style={[styles.app, Platform.OS === 'ios' && { paddingTop: safeArea.top }]} onTouchStart={resetIdleTimer}><StatusBar barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'} backgroundColor="#000000" translucent={Platform.OS === 'android'} />{Platform.OS === 'android' ? <View style={styles.statusBarSpacer} /> : null}<View style={styles.topbar}><View style={styles.brandLine}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.brandLogoImage} accessibilityLabel="EVSU OC SmartLib logo" /><View><Text style={styles.brandText}>SmartLib</Text><Text style={styles.topCurrent}>{currentTabLabel}</Text></View></View><View style={styles.topbarActions}><Pressable style={[styles.headerAction, tab === 'messages' && styles.headerActionActive]} accessibilityLabel="Open messages" accessibilityState={{ selected: tab === 'messages' }} onPress={() => { closeMessageThread(); changeTab('messages'); }}><Text style={styles.headerActionGlyph}>✉</Text></Pressable><Pressable style={[styles.headerAction, assistantVisible && styles.headerActionActive]} accessibilityLabel="Ask the library assistant" accessibilityState={{ selected: assistantVisible }} onPress={() => setAssistantVisible(true)}><Text style={styles.headerActionGlyph}>✦</Text></Pressable><Pressable style={[styles.headerAction, tab === 'updates' && styles.headerActionActive]} accessibilityLabel="Open notifications" accessibilityState={{ selected: tab === 'updates' }} onPress={() => changeTab('updates')}><Text style={styles.headerActionGlyph}>♧</Text>{unreadNotifications > 0 && <View style={styles.unreadDot} />}</Pressable><Pressable style={[styles.avatar, tab === 'profile' && styles.avatarActive]} accessibilityLabel="Open profile" accessibilityState={{ selected: tab === 'profile' }} onPress={() => setTab('profile')}>{user?.profile_picture_url ? <Image source={{ uri: `${apiBase.replace(/\/+$/, '')}${user.profile_picture_url}` }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text>}</Pressable></View></View>
     <ScrollView keyboardShouldPersistTaps="handled" alwaysBounceVertical refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshCurrentScreen} tintColor={COLORS.wine} colors={[COLORS.wine]} />} contentContainerStyle={styles.scrollContent}>
-      {tab === 'home' && <HomeScreen apiBase={apiBase} firstName={firstName} user={user} books={books} borrowings={borrowings} announcements={announcements} busy={busy} onExplore={() => changeTab('catalog')} onTab={changeTab} onBorrow={openBorrowRequest} onAssistant={() => setAssistantVisible(true)} onMessages={() => { setActiveThread(null); changeTab('messages'); }} />}
+      {tab === 'home' && <HomeScreen apiBase={apiBase} firstName={firstName} user={user} books={books} borrowings={borrowings} announcements={announcements} busy={busy} onExplore={() => changeTab('catalog')} onTab={changeTab} onBorrow={openBorrowRequest} onAssistant={() => setAssistantVisible(true)} onMessages={() => { closeMessageThread(); changeTab('messages'); }} />}
       {tab === 'catalog' && <CatalogScreen apiBase={apiBase} books={visibleBooks} categories={categories} category={category} onCategory={setCategory} query={query} onQuery={setQuery} availabilityFilter={availabilityFilter} setAvailabilityFilter={setAvailabilityFilter} busy={busy} onBorrow={openBorrowRequest} />}
       {tab === 'borrowings' && <BorrowingsScreen borrowings={borrowings} busy={busy} onRefresh={loadBorrowings} onExplore={() => changeTab('catalog')} onSelect={setSelectedBorrowing} />}
       {tab === 'digital-id' && <DigitalIdScreen digitalId={digitalId} busy={busy} onRefresh={loadDigitalId} apiBase={apiBase} token={token} />}
       {tab === 'updates' && <UpdatesScreen announcements={announcements} notifications={notifications} isStaff={isStaff} onPublish={() => setShowAnnouncementEditor(true)} onRead={markNotificationRead} onRefresh={loadLibraryUpdates} />}
-      {tab === 'messages' && <MessagesScreen user={user} isStaff={isStaff} threads={messageThreads} activeThread={activeThread} messages={threadMessages} draft={messageDraft} setDraft={setMessageDraft} onOpen={loadMessageThread} onBack={() => { setActiveThread(null); loadMessageThreads(); }} onSend={sendThreadReply} onCompose={() => setShowComposeMessage(true)} />}
-      {tab === 'profile' && <ProfileScreen user={user} apiBase={apiBase} onEdit={openEditProfile} onSuggest={() => setShowSuggestion(true)} onMessages={() => { setActiveThread(null); changeTab('messages'); }} onUpdates={() => changeTab('updates')} onDigitalId={() => changeTab('digital-id')} onSignOut={signOut} onChangePassword={() => setShowChangePassword(true)} onChangeApi={() => { setApiDraft(apiBase); setScreen('server-settings'); }} />}
+      {tab === 'messages' && <MessagesScreen user={user} isStaff={isStaff} threads={messageThreads} activeThread={activeThread} messages={threadMessages} draft={messageDraft} setDraft={setMessageDraft} onOpen={loadMessageThread} onBack={() => { closeMessageThread(); loadMessageThreads(); }} onSend={sendThreadReply} onCompose={() => setShowComposeMessage(true)} onDelete={confirmMessageDeletion} busy={messageBusy} />}
+      {tab === 'profile' && <ProfileScreen user={user} apiBase={apiBase} onEdit={openEditProfile} onSuggest={() => setShowSuggestion(true)} onMessages={() => { closeMessageThread(); changeTab('messages'); }} onUpdates={() => changeTab('updates')} onDigitalId={() => changeTab('digital-id')} onSignOut={signOut} onChangePassword={() => setShowChangePassword(true)} onChangeApi={() => { setApiDraft(apiBase); setScreen('server-settings'); }} />}
     </ScrollView>
     <View style={[styles.tabBar, { paddingBottom: Math.max(safeArea.bottom, Platform.OS === 'ios' ? 18 : 20) }]}>{TABS.map((item) => <Pressable key={item.id} onPress={() => changeTab(item.id)} style={[styles.tabItem, tab === item.id && styles.tabItemActive]} accessibilityRole="tab" accessibilityState={{ selected: tab === item.id }}><Text style={[styles.tabIcon, tab === item.id && styles.tabActive]}>{item.icon}</Text><Text style={[styles.tabLabel, tab === item.id && styles.tabActive]}>{item.label}</Text></Pressable>)}</View>
     <BorrowModal book={selectedBook} pickupAt={pickupAt} dateChosen={pickupDateChosen} timeChosen={pickupTimeChosen} onChoosePickup={choosePickup} iosPickerMode={iosPickerMode} setIosPickerMode={setIosPickerMode} onPickupChange={(value, mode) => { setPickupAt(value); if (mode === 'datetime' || mode === 'date') setPickupDateChosen(true); if (mode === 'datetime' || mode === 'time') setPickupTimeChosen(true); }} onClose={() => { setSelectedBook(null); setIosPickerMode(null); }} onSubmit={requestBook} busy={busy} />
@@ -731,10 +835,40 @@ function PasswordStrengthIndicator({ password }) {
   );
 }
 
+function AuthHero({ topInset }) {
+  const { width, fontScale } = useWindowDimensions();
+  const compact = width < 360 || fontScale > 1.2;
+  return <View style={styles.authHero}>
+    <View pointerEvents="none" style={styles.authHalo} />
+    <View style={[styles.authHeroInner, { paddingTop: topInset + 20 }]}>
+      <View style={styles.authBrand}>
+        <View style={styles.authLogoFrame}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.authLogo} accessibilityLabel="EVSU SmartLib logo" /></View>
+        <View style={styles.flex}><Text style={styles.authBrandName}>EVSU SmartLib</Text><Text style={styles.authCampus}>ORMOC CITY CAMPUS</Text></View>
+        <View style={styles.authBrandMark}><SmartLibIcon name="book" color={COLORS.gold} size={22} /></View>
+      </View>
+      <View style={styles.authHeroContent}>
+        <View style={styles.authHeroCopy}>
+          <Text style={styles.authEyebrow}>A WORLD OF IDEAS AWAITS</Text>
+          <Text style={[styles.authHeroTitle, compact && styles.authHeroTitleSmall]}>{compact ? 'Your next\nchapter starts here.' : 'Your next chapter\nstarts here.'}</Text>
+          <Text style={styles.authHeroBody}>Discover books. Borrow with ease.{compact ? '\n' : ' '}Make room for something new.</Text>
+        </View>
+        {!compact && <View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.authBookScene}>
+          <View style={styles.authBookBack} /><View style={styles.authBookMiddle} />
+          <View style={styles.authBookFront}><View style={styles.authBookRule} /><SmartLibIcon name="book" size={33} color={COLORS.wine} /><View style={styles.authBookShortRule} /><Text style={styles.authBookLabel}>SMARTLIB</Text></View>
+          <View style={styles.authBookBadge}><SmartLibIcon name="check" size={16} color={COLORS.wine} /></View>
+        </View>}
+      </View>
+    </View>
+  </View>;
+}
+
 function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, onRegistrationFailed, error, busy, signupOptions, signupOptionsError, signupOptionsLoading, onRefreshSignupOptions }) {
   const [form, setForm] = useState(EMPTY_AUTH_FORM);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const safeArea = useSafeAreaInsets();
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   async function submitForm(value = form) {
+    if (busy) return;
     const succeeded = await onSubmit(value);
     if (succeeded !== false && mode === 'register-otp' && !value.resend_otp) setForm(EMPTY_AUTH_FORM);
     if (succeeded === false && ['login', 'register', 'register-otp'].includes(mode)) {
@@ -753,15 +887,70 @@ function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, onRegistrat
   const forgotOtp = mode === 'forgot-otp';
   const newPassword = mode === 'forgot-new-password';
   const authStep = register || registerOtp || forgot || forgotOtp || newPassword;
-  const title = register ? 'Create your account' : registerOtp ? 'Verify your email' : forgot ? 'Reset your password' : forgotOtp ? 'Enter your code' : newPassword ? 'Choose a new password' : 'Welcome back';
-  const subtitle = register ? 'Join your EVSU library community.' : registerOtp ? `Enter the 6-digit code sent to ${form.email}. Your account is created after verification.` : forgot ? 'We’ll email a 6-digit code to continue.' : forgotOtp ? `Enter the 6-digit code sent to ${form.email}.` : newPassword ? 'Set a new password for your account.' : 'Sign in with your institutional account.';
-  const successful = notice;
-  return <KeyboardAvoidingView style={styles.authPage} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><StatusBar barStyle="light-content" /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.authScroll}><View style={styles.authHero}><View style={styles.brandLine}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.brandLogoImage} accessibilityLabel="EVSU OC SmartLib logo" /><Text style={styles.brandTextLight}>EVSU SmartLib</Text></View><Text style={styles.authHeroTitle}>Your campus library, wherever you are.</Text><Text style={styles.authHeroBody}>Find your next read, request a copy, and keep your library card close at hand.</Text></View><View style={styles.authCard}>
-    <Text style={styles.authTitle}>{title}</Text><Text style={styles.authSubtitle}>{subtitle}</Text>{error ? <Text style={[styles.errorBox, successful && styles.successBox]}>{error}</Text> : null}
-    {register ? <><Field label="First name" value={form.first_name} onChangeText={(value) => update('first_name', value)} autoCapitalize="words" /><Field label="Middle name (optional)" value={form.middle_name} onChangeText={(value) => update('middle_name', value)} autoCapitalize="words" /><Field label="Last name" value={form.last_name} onChangeText={(value) => update('last_name', value)} autoCapitalize="words" /><Field label="Student or staff ID" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your institutional ID" autoCapitalize="characters" /><Field label="EVSU email" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" /><Text style={styles.label}>Account type</Text><View style={styles.choiceRow}>{['student', 'faculty'].map((role) => <Pressable key={role} onPress={() => update('account_type', role)} style={[styles.choice, form.account_type === role && styles.choiceSelected]}><Text style={[styles.choiceText, form.account_type === role && styles.choiceTextSelected]}>{role === 'student' ? 'Student' : 'Faculty'}</Text></Pressable>)}</View><SelectField label="Department" value={signupOptions.departments.find((item) => item.id === form.department_id)?.name} options={signupOptions.departments} placeholder={signupOptionsLoading ? 'Loading departments…' : signupOptionsError ? 'Could not load departments' : 'Choose your department'} disabled={signupOptionsLoading || !signupOptions.departments.length} onSelect={(item) => { update('department_id', item.id); update('course_id', null); }} /><SelectField label="Course" value={signupOptions.courses.find((item) => item.id === form.course_id)?.name} options={signupOptions.courses.filter((item) => item.department_id === form.department_id)} placeholder={form.department_id ? 'Choose your course' : 'Select a department first'} disabled={signupOptionsLoading || !form.department_id || !signupOptions.courses.some((item) => item.department_id === form.department_id)} onSelect={(item) => update('course_id', item.id)} />{signupOptionsError ? <Pressable onPress={onRefreshSignupOptions} style={styles.authSwitch}><Text style={styles.authSwitchAction}>Retry loading departments and courses</Text></Pressable> : !signupOptionsLoading && !signupOptions.departments.length ? <Text style={styles.serverHint}>No department options are available yet. Ask the superAdmin to add them in the Admin Portal.</Text> : null}<Field label="Password" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–12 characters" /><PasswordStrengthIndicator password={form.password} /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text><Field label="Confirm password" value={form.confirm_password} onChangeText={(value) => update('confirm_password', value)} secureTextEntry placeholder="Enter the password again" /></> : registerOtp || forgotOtp ? <><Field label="6-digit email code" value={form.otp} onChangeText={(value) => update('otp', value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" autoCapitalize="none" /><Pressable style={styles.authSwitch} onPress={() => submitForm({ ...form, resend_otp: true })}><Text style={styles.authSwitchAction}>Send a new code</Text></Pressable></> : forgot ? <Field label="EVSU email" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" /> : newPassword ? <><Field label="New password" value={form.new_password} onChangeText={(value) => update('new_password', value)} secureTextEntry placeholder="8–12 characters" /><Field label="Confirm new password" value={form.confirm_new_password} onChangeText={(value) => update('confirm_new_password', value)} secureTextEntry placeholder="Enter it again" /><Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text></> : <><Field label="Institutional ID or email" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Enter your ID or email" autoCapitalize="none" /><Field label="Password" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="Enter your password" /><Pressable style={styles.authSwitch} onPress={() => setMode('forgot')}><Text style={styles.authSwitchAction}>Forgot password?</Text></Pressable><Pressable style={styles.rememberRow} onPress={() => update('remember_me', !form.remember_me)}><View style={[styles.checkBox, form.remember_me && styles.checkBoxChecked]}>{form.remember_me ? <Text style={styles.checkMark}>✓</Text> : null}</View><Text style={styles.authSwitchText}>Remember me</Text></Pressable></>}
-    {__DEV__ && <><Field label="Library server address" value={apiBase} onChangeText={onApiChange} placeholder="http://192.168.1.20:8000" autoCapitalize="none" keyboardType="url" /><Text style={styles.serverHint}>Development only: enter your computer’s Wi-Fi IP and port 8000. Keep the phone and computer on the same network.</Text></>}
-    <Button title={busy ? 'Please wait…' : register ? 'Continue to email code' : registerOtp ? 'Verify code & create account' : forgot ? 'Send verification code' : forgotOtp ? 'Verify code' : newPassword ? 'Save new password' : 'Sign in'} disabled={busy} onPress={() => submitForm()} />{authStep && <Pressable onPress={() => setMode('login')} style={styles.authSwitch}><Text style={styles.authSwitchText}>Back to <Text style={styles.authSwitchAction}>sign in</Text></Text></Pressable>}{mode === 'login' && <Pressable onPress={() => setMode('register')} style={styles.authSwitch}><Text style={styles.authSwitchText}>New to SmartLib? <Text style={styles.authSwitchAction}>Create account</Text></Text></Pressable>}</View></ScrollView></KeyboardAvoidingView>;
+  const title = register ? 'Create your account' : registerOtp ? 'Verify your email' : forgot ? 'Forgot your password?' : forgotOtp ? 'Check your email' : newPassword ? 'Choose a new password' : 'Welcome back';
+  const subtitle = register ? 'Your campus library, now in your pocket.' : registerOtp ? `Enter the 6-digit code sent to ${form.email}. Your account is created after verification.` : forgot ? 'Enter your EVSU email to get a reset code.' : forgotOtp ? `Enter the 6-digit code sent to ${form.email}.` : newPassword ? 'A fresh start for your SmartLib account.' : 'Sign in to pick up where you left off.';
+
+  return <KeyboardAvoidingView style={styles.authPage} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <StatusBar barStyle="light-content" backgroundColor={COLORS.wineDark} />
+    <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={[styles.authScroll, { paddingBottom: Math.max(safeArea.bottom, 18) }]}>
+      <AuthHero topInset={safeArea.top} />
+      <View style={styles.authFormWrap}>
+        <View style={styles.authCard}>
+          <View style={styles.authCardAccent} />
+          <Text style={styles.authTitle} accessibilityRole="header">{title}</Text>
+          <Text style={styles.authSubtitle}>{subtitle}</Text>
+          {error ? <Text accessibilityLiveRegion="polite" style={[styles.errorBox, styles.authNotice, notice && styles.successBox]}>{error}</Text> : null}
+          {register ? <>
+            <AuthField label="First name" icon="user" value={form.first_name} onChangeText={(value) => update('first_name', value)} autoCapitalize="words" autoComplete="given-name" />
+            <AuthField label="Middle name (optional)" value={form.middle_name} onChangeText={(value) => update('middle_name', value)} autoCapitalize="words" />
+            <AuthField label="Last name" value={form.last_name} onChangeText={(value) => update('last_name', value)} autoCapitalize="words" autoComplete="family-name" />
+            <AuthField label="Student or staff ID" icon="card" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your institutional ID" autoCapitalize="characters" />
+            <AuthField label="EVSU email" icon="mail" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" autoComplete="email" />
+            <Text style={[styles.label, styles.authLabel]}>Account type</Text>
+            <View style={styles.choiceRow}>{['student', 'faculty'].map((role) => <Pressable key={role} accessibilityRole="radio" accessibilityState={{ checked: form.account_type === role }} onPress={() => update('account_type', role)} style={[styles.choice, styles.authAccountChoice, form.account_type === role && styles.choiceSelected]}><Text style={[styles.choiceText, form.account_type === role && styles.choiceTextSelected]}>{role === 'student' ? 'Student' : 'Faculty'}</Text></Pressable>)}</View>
+            <SelectField label="Department" value={signupOptions.departments.find((item) => item.id === form.department_id)?.name} options={signupOptions.departments} placeholder={signupOptionsLoading ? 'Loading departments…' : signupOptionsError ? 'Could not load departments' : 'Choose your department'} disabled={signupOptionsLoading || !signupOptions.departments.length} onSelect={(item) => { update('department_id', item.id); update('course_id', null); }} />
+            <SelectField label="Course" value={signupOptions.courses.find((item) => item.id === form.course_id)?.name} options={signupOptions.courses.filter((item) => item.department_id === form.department_id)} placeholder={form.department_id ? 'Choose your course' : 'Select a department first'} disabled={signupOptionsLoading || !form.department_id || !signupOptions.courses.some((item) => item.department_id === form.department_id)} onSelect={(item) => update('course_id', item.id)} />
+            {signupOptionsError ? <Pressable accessibilityRole="button" onPress={onRefreshSignupOptions} style={styles.authSwitch}><Text style={styles.authSwitchAction}>Retry loading departments and courses</Text></Pressable> : !signupOptionsLoading && !signupOptions.departments.length ? <Text style={styles.serverHint}>No department options are available yet. Ask the superAdmin to add them in the Admin Portal.</Text> : null}
+            <AuthField label="Password" icon="lock" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–12 characters" autoComplete="new-password" />
+            <PasswordStrengthIndicator password={form.password} />
+            <Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text>
+            <AuthField label="Confirm password" icon="lock" value={form.confirm_password} onChangeText={(value) => update('confirm_password', value)} secureTextEntry placeholder="Enter the password again" autoComplete="new-password" />
+          </> : registerOtp || forgotOtp ? <>
+            <AuthField label="6-digit email code" icon="mail" value={form.otp} onChangeText={(value) => update('otp', value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} inputStyle={styles.authCodeInput} />
+            <Pressable accessibilityRole="button" disabled={busy} style={styles.authSwitch} onPress={() => submitForm({ ...form, resend_otp: true })}><Text style={styles.authSwitchAction}>Send a new code</Text></Pressable>
+          </> : forgot ? <AuthField label="EVSU email" icon="mail" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" autoComplete="email" /> : newPassword ? <>
+            <AuthField label="New password" icon="lock" value={form.new_password} onChangeText={(value) => update('new_password', value)} secureTextEntry placeholder="8–12 characters" autoComplete="new-password" />
+            <AuthField label="Confirm new password" icon="lock" value={form.confirm_new_password} onChangeText={(value) => update('confirm_new_password', value)} secureTextEntry placeholder="Enter it again" autoComplete="new-password" />
+            <Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text>
+          </> : <>
+            <AuthField label="Institutional ID or email" icon="user" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your ID or EVSU email" autoComplete="username" autoCorrect={false} />
+            <AuthField label="Password" icon="lock" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="Enter your password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={() => submitForm()} />
+            <View style={styles.authOptions}>
+              <Pressable accessibilityRole="checkbox" accessibilityLabel="Remember me" accessibilityState={{ checked: form.remember_me }} style={styles.rememberRow} onPress={() => update('remember_me', !form.remember_me)}>
+                <View style={[styles.checkBox, form.remember_me && styles.checkBoxChecked]}>{form.remember_me && <SmartLibIcon name="check" color={COLORS.paper} size={14} />}</View><Text style={styles.authRememberText}>Remember me</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={busy} style={styles.authForgot} onPress={() => setMode('forgot')}><Text style={styles.authForgotText}>Forgot password?</Text></Pressable>
+            </View>
+          </>}
+          <Button title={busy ? 'Please wait…' : register ? 'Continue to email code' : registerOtp ? 'Verify & create account' : forgot ? 'Send reset code' : forgotOtp ? 'Verify code' : newPassword ? 'Save new password' : 'Sign in'} icon="arrow" loading={busy} disabled={busy} style={styles.authSubmit} textStyle={styles.authSubmitText} onPress={() => submitForm()} />
+          {authStep ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => setMode('login')} style={styles.authSwitch}><Text style={styles.authSwitchText}>Back to <Text style={styles.authSwitchAction}>sign in</Text></Text></Pressable> : <>
+            <View style={styles.authDivider}><View style={styles.authDividerLine} /><Text style={styles.authDividerText}>NEW TO SMARTLIB?</Text><View style={styles.authDividerLine} /></View>
+            <Pressable accessibilityRole="button" disabled={busy} onPress={() => setMode('register')} style={({ pressed }) => [styles.authCreateAccount, pressed && styles.buttonPressed]}><Text style={styles.authCreateAccountText}>Create an account</Text><SmartLibIcon name="arrow" size={18} /></Pressable>
+          </>}
+        </View>
+        <View style={styles.authServices}>{[{ icon: 'book', text: 'Explore books' }, { icon: 'card', text: 'Library ID' }, { icon: 'message', text: 'Stay connected' }].map((item) => <View key={item.text} style={styles.authService}><SmartLibIcon name={item.icon} size={17} color="#8a6b74" /><Text style={styles.authServiceText}>{item.text}</Text></View>)}</View>
+        {__DEV__ && <View style={styles.authConnection}>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: connectionOpen }} accessibilityLabel="Connection settings" onPress={() => setConnectionOpen((open) => !open)} style={styles.authConnectionToggle}>
+            <SmartLibIcon name="settings" size={17} color="#76696f" /><Text style={styles.authConnectionText}>Connection settings</Text><SmartLibIcon name={connectionOpen ? 'down' : 'chevron'} size={15} color="#76696f" />
+          </Pressable>
+          {connectionOpen && <View style={styles.authConnectionPanel}><AuthField label="Library server address" value={apiBase} onChangeText={onApiChange} placeholder="http://192.168.1.20:8000" autoCorrect={false} keyboardType="url" /><Text style={styles.authConnectionHint}>For local development, use your computer’s Wi-Fi address and port 8000. Keep both devices on the same network.</Text></View>}
+        </View>}
+        <Text style={styles.authFooter}>Your campus library, wherever you are.</Text>
+      </View>
+    </ScrollView>
+  </KeyboardAvoidingView>;
 }
+
 
 function Greeting({ eyebrow, title, subtitle, right }) {
   return <View style={styles.greeting}><View style={styles.flex}><Text style={styles.eyebrow}>{eyebrow}</Text><Text style={styles.pageTitle}>{title}</Text>{subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}</View>{right}</View>;
@@ -897,10 +1086,30 @@ function UpdatesScreen({ announcements, notifications, isStaff, onPublish, onRea
   return <><Greeting eyebrow="Stay in the loop" title="News & notifications" subtitle="Library announcements and updates on your requests." right={<View style={styles.topbarActions}>{isStaff && <Button title="Post news" compact onPress={onPublish} />}</View>} /><SectionTitle title="Notifications" />{notifications.length ? notifications.map((item) => <Pressable key={item.id} style={[styles.notificationCard, !item.read && styles.notificationUnread]} onPress={() => onRead(item)}><View style={styles.notificationIcon}><Text>{item.kind === 'message' ? '✉' : item.kind === 'borrowing' ? '▤' : '♧'}</Text></View><View style={styles.flex}><Text style={styles.newsTitle}>{item.title}</Text><Text style={styles.newsBody}>{item.body}</Text><Text style={styles.newsEyebrow}>{new Date(item.created_at).toLocaleString()}</Text></View>{!item.read && <View style={styles.unreadDot} />}</Pressable>) : <EmptyState icon="♧" title="You're all caught up" message="Updates about your library requests and messages will show here." />}<SectionTitle title="News & announcements" />{announcements.length ? announcements.map((post) => <View key={post.id} style={styles.newsCard}><Text style={styles.newsEyebrow}>EVSU SMARTLIB · {new Date(post.created_at).toLocaleDateString()}</Text><Text style={styles.newsTitle}>{post.title}</Text><Text style={styles.newsBody}>{post.body}</Text></View>) : <EmptyState icon="▤" title="No announcements yet" message="New library events and service news will appear here." />}</>;
 }
 
-function MessagesScreen({ user, isStaff, threads, activeThread, messages, draft, setDraft, onOpen, onBack, onSend, onCompose }) {
-  if (activeThread) return <><Greeting eyebrow={isStaff ? `${activeThread.patron_name || 'Library patron'} · ${activeThread.patron_email || ''}` : 'EVSU library support'} title={activeThread.subject} subtitle={activeThread.is_closed ? 'This conversation is closed.' : 'Messages are checked regularly during library hours.'} right={<Pressable onPress={onBack}><Text style={styles.actionText}>Back</Text></Pressable>} /><View style={styles.chatList}>{messages.map((item) => <View key={item.id} style={[styles.chatBubble, (isStaff ? item.is_staff : !item.is_staff) ? styles.chatBubbleUser : styles.chatBubbleStaff]}><Text style={styles.chatSender}>{item.sender_id === user?.id ? 'You' : item.sender_name || (item.is_staff ? 'Library team' : activeThread.patron_name || 'Patron')}</Text><Text style={styles.chatText}>{item.message}</Text><Text style={styles.chatTime}>{new Date(item.created_at).toLocaleString()}</Text></View>)}</View>{!activeThread.is_closed && <View style={styles.composerRow}><TextInput value={draft} onChangeText={setDraft} placeholder="Write a message…" placeholderTextColor={COLORS.muted} style={[styles.input, styles.composerInput]} multiline /><Button title="Send" onPress={onSend} compact /></View>}</>;
-  return <><Greeting eyebrow={isStaff ? 'Library support inbox' : 'Talk to our team'} title={isStaff ? 'Messages' : 'Message the library'} subtitle={isStaff ? 'Reply to student and faculty inquiries.' : 'Ask an admin or librarian without visiting the desk.'} right={<Button title="New message" compact onPress={onCompose} /> } />{threads.length ? <View style={styles.listStack}>{threads.map((item) => <Pressable key={item.id} style={styles.threadCard} onPress={() => onOpen(item.id)}><View style={styles.threadAvatar}><Text style={styles.threadAvatarText}>{isStaff ? (item.patron_name || 'P')[0].toUpperCase() : '✉'}</Text></View><View style={styles.flex}><Text style={styles.newsTitle}>{isStaff ? item.patron_name : item.subject}</Text><Text style={styles.listSub}>{isStaff ? item.subject : (item.recipient_role === 'admin' ? 'To: Admin' : 'To: Librarian')}</Text><Text style={styles.newsBody} numberOfLines={1}>{item.last_message}</Text></View>{item.unread_count > 0 && <View style={styles.unreadCount}><Text style={styles.unreadCountText}>{item.unread_count}</Text></View>}</Pressable>)}</View> : <EmptyState icon="✉" title={isStaff ? 'No conversations yet' : 'Need help from the library?'} message={isStaff ? 'New patron inquiries will appear in this inbox.' : 'Start a message to ask about loans, services, or library resources.'}><Button title={isStaff ? 'New message' : 'Message a librarian'} onPress={onCompose} /></EmptyState>}</>;
+function MessagesScreen({ user, isStaff, threads, activeThread, messages, draft, setDraft, onOpen, onBack, onSend, onCompose, onDelete, busy = false }) {
+  if (activeThread) return <>
+    <Greeting eyebrow={isStaff ? `${activeThread.patron_name || 'Library patron'} · ${activeThread.patron_email || ''}` : 'EVSU library support'} title={activeThread.subject} subtitle={activeThread.is_closed ? 'This conversation is closed.' : 'Messages are checked regularly during library hours.'} right={<Pressable accessibilityRole="button" disabled={busy} onPress={onBack} style={styles.messageBack}><Text style={styles.actionText}>Back</Text></Pressable>} />
+    <View style={styles.messageManage}>
+      <Button title="Clear messages" secondary disabled={busy || !messages.length} style={styles.messageManageButton} textStyle={styles.messageManageText} onPress={() => onDelete('clear')} />
+      <Button title="Delete conversation" secondary disabled={busy} style={styles.messageManageButton} textStyle={styles.messageDeleteText} onPress={() => onDelete('conversation')} />
+    </View>
+    <Text style={styles.messageArchiveNote}>Deleted content is retained in an archive visible only to the SuperAdmin.</Text>
+    <View style={styles.chatList}>{messages.length ? messages.map((item) => <View key={item.id} style={[styles.chatBubble, (isStaff ? item.is_staff : !item.is_staff) ? styles.chatBubbleUser : styles.chatBubbleStaff]}>
+      <Text style={styles.chatSender}>{item.sender_id === user?.id ? 'You' : item.sender_name || (item.is_staff ? 'Library team' : activeThread.patron_name || 'Patron')}</Text>
+      <Text style={styles.chatText}>{item.message}</Text>
+      <Text style={styles.chatTime}>{parseServerTimestamp(item.created_at).toLocaleString()}</Text>
+      {(isStaff || item.sender_id === user?.id) && <Pressable accessibilityRole="button" accessibilityLabel={`Delete message from ${item.sender_id === user?.id ? 'you' : item.sender_name || 'this conversation'}`} disabled={busy} onPress={() => onDelete('message', item)} style={({ pressed }) => [styles.messageDelete, pressed && styles.buttonPressed, busy && styles.buttonDisabled]}>
+        <SmartLibIcon name="trash" color={COLORS.wine} size={14} /><Text style={styles.messageDeleteText}>Delete message</Text>
+      </Pressable>}
+    </View>) : <Text style={styles.messageEmpty}>No messages in this conversation. Send a message to continue.</Text>}</View>
+    {!activeThread.is_closed && <View style={styles.composerRow}><TextInput accessibilityLabel="Your message" editable={!busy} value={draft} onChangeText={setDraft} placeholder="Write a message…" placeholderTextColor={COLORS.muted} style={[styles.input, styles.composerInput]} multiline /><Button title={busy ? 'Working…' : 'Send'} onPress={onSend} disabled={busy || !draft.trim()} compact style={styles.messageSend} /></View>}
+  </>;
+  return <>
+    <Greeting eyebrow={isStaff ? 'Library support inbox' : 'Talk to our team'} title={isStaff ? 'Messages' : 'Message the library'} subtitle={isStaff ? 'Reply to student and faculty inquiries.' : 'Ask an admin or librarian without visiting the desk.'} right={<Button title="New message" compact disabled={busy} onPress={onCompose} />} />
+    {threads.length ? <View style={styles.listStack}>{threads.map((item) => <Pressable key={item.id} accessibilityRole="button" disabled={busy} style={styles.threadCard} onPress={() => onOpen(item.id)}><View style={styles.threadAvatar}><Text style={styles.threadAvatarText}>{isStaff ? (item.patron_name || 'P')[0].toUpperCase() : '✉'}</Text></View><View style={styles.flex}><Text style={styles.newsTitle}>{isStaff ? item.patron_name : item.subject}</Text><Text style={styles.listSub}>{isStaff ? item.subject : (item.recipient_role === 'admin' ? 'To: Admin' : 'To: Librarian')}</Text><Text style={styles.newsBody} numberOfLines={1}>{item.last_message}</Text></View>{item.unread_count > 0 && <View style={styles.unreadCount}><Text style={styles.unreadCountText}>{item.unread_count}</Text></View>}</Pressable>)}</View> : <EmptyState icon="✉" title={isStaff ? 'No conversations yet' : 'Need help from the library?'} message={isStaff ? 'New patron inquiries will appear in this inbox.' : 'Start a message to ask about loans, services, or library resources.'}><Button title={isStaff ? 'New message' : 'Message a librarian'} disabled={busy} onPress={onCompose} /></EmptyState>}
+  </>;
 }
+
 
 function ComposeMessageModal({ visible, value, onChange, onClose, onSubmit, busy, isStaff }) {
   const set = (key, text) => onChange((current) => ({ ...current, [key]: text }));
@@ -985,8 +1194,8 @@ const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: COLORS.canvas, alignItems: 'center', justifyContent: 'center', gap: 14 },
   helperText: { color: COLORS.muted, fontSize: 13 },
   splashLogo: { width: 148, height: 148, borderRadius: 74, marginBottom: 8 },
-  topbar: { height: 70, backgroundColor: COLORS.paper, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: COLORS.line },
-  topbarActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  topbar: { minHeight: 70, backgroundColor: COLORS.paper, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: COLORS.line },
+  topbarActions: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 'auto' },
   headerAction: { width: 38, height: 42, borderRadius: 11, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   headerActionActive: { backgroundColor: COLORS.soft, borderBottomWidth: 3, borderBottomColor: COLORS.wine },
   headerActionGlyph: { color: COLORS.wine, fontSize: 20, fontWeight: '800' },
@@ -1144,6 +1353,15 @@ const styles = StyleSheet.create({
   chatSender: { color: COLORS.wine, fontSize: 9, fontWeight: '800', marginBottom: 4 },
   chatText: { color: COLORS.ink, fontSize: 12, lineHeight: 18 },
   chatTime: { color: COLORS.muted, fontSize: 8, marginTop: 6, textAlign: 'right' },
+  messageManage: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 7 },
+  messageManageButton: { flexGrow: 1, flexBasis: 130, minHeight: 44, paddingHorizontal: 10 },
+  messageManageText: { fontSize: 12 },
+  messageDeleteText: { color: COLORS.wine, fontSize: 11, fontWeight: '700' },
+  messageArchiveNote: { color: '#6b6168', fontSize: 10, lineHeight: 16, marginBottom: 13 },
+  messageDelete: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5, marginTop: 3, paddingHorizontal: 4 },
+  messageBack: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
+  messageEmpty: { color: '#6b6168', fontSize: 12, lineHeight: 18, paddingVertical: 14 },
+  messageSend: { minHeight: 44 },
   composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 10 },
   composerInput: { flex: 1, minHeight: 44, maxHeight: 100, paddingTop: 11 },
   assistantPage: { flex: 1, backgroundColor: COLORS.canvas, paddingTop: Platform.OS === 'ios' ? 48 : 22 },
@@ -1165,20 +1383,69 @@ const styles = StyleSheet.create({
   profileExtra: { display: 'none' },
   authPage: { flex: 1, backgroundColor: COLORS.canvas },
   authScroll: { flexGrow: 1 },
-  authHero: { backgroundColor: COLORS.wineDark, paddingTop: Platform.OS === 'ios' ? 62 : 38, paddingHorizontal: 23, paddingBottom: 29 },
-  authHeroTitle: { color: COLORS.paper, fontSize: 30, lineHeight: 34, fontWeight: '900', letterSpacing: -0.8, marginTop: 29 },
-  authHeroBody: { color: '#edcdd1', fontSize: 13, lineHeight: 20, marginTop: 8, maxWidth: 340 },
-  authCard: { flex: 1, paddingHorizontal: 22, paddingTop: 26, paddingBottom: 40, borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: COLORS.paper, marginTop: -1 },
-  authTitle: { color: COLORS.ink, fontSize: 25, fontWeight: '900' },
-  authSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 6, marginBottom: 22 },
+  authHero: { backgroundColor: COLORS.wineDark, overflow: 'hidden' },
+  authHalo: { position: 'absolute', width: 300, height: 300, borderRadius: 150, borderWidth: 1, borderColor: '#b6777940', top: -148, right: -68 },
+  authHeroInner: { width: '100%', maxWidth: 516, alignSelf: 'center', paddingHorizontal: 24, paddingBottom: 49 },
+  authBrand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  authLogoFrame: { width: 44, height: 44, borderRadius: 14, padding: 3, borderWidth: 1, borderColor: '#b887524d', backgroundColor: '#ffffff0d' },
+  authLogo: { width: '100%', height: '100%', borderRadius: 10 },
+  authBrandName: { color: '#fffaf3', fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  authCampus: { color: '#e0b867', fontSize: 9, fontWeight: '600', letterSpacing: 1.7, marginTop: 4 },
+  authBrandMark: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: '#ffffff26', alignItems: 'center', justifyContent: 'center' },
+  authHeroContent: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 28 },
+  authHeroCopy: { flex: 1 },
+  authEyebrow: { color: '#e6c081', fontSize: 9, lineHeight: 14, fontWeight: '700', letterSpacing: 1.25, marginBottom: 9 },
+  authHeroTitle: { color: '#fffaf3', fontSize: 29, lineHeight: 34, fontWeight: '800', letterSpacing: -0.8 },
+  authHeroTitleSmall: { fontSize: 28, lineHeight: 33 },
+  authHeroBody: { color: '#e6cfd3', fontSize: 12, lineHeight: 18, marginTop: 10 },
+  authBookScene: { width: 77, height: 111, marginRight: 5, marginTop: 14 },
+  authBookBack: { position: 'absolute', top: 0, right: 0, width: 65, height: 92, borderRadius: 8, backgroundColor: '#b77868', transform: [{ rotate: '15deg' }] },
+  authBookMiddle: { position: 'absolute', top: 5, left: 0, width: 65, height: 92, borderRadius: 8, backgroundColor: '#d6a95d', transform: [{ rotate: '-10deg' }] },
+  authBookFront: { position: 'absolute', top: 7, left: 4, width: 66, height: 94, borderRadius: 8, borderLeftWidth: 5, borderLeftColor: '#e8d9c2', backgroundColor: '#fff8e9', alignItems: 'center', justifyContent: 'center', gap: 7, transform: [{ rotate: '3deg' }] },
+  authBookRule: { width: 34, height: 1, backgroundColor: '#c5a56c' },
+  authBookShortRule: { width: 24, height: 1, backgroundColor: '#c5a56c' },
+  authBookLabel: { color: '#825c51', fontSize: 6, fontWeight: '800', letterSpacing: 1.2 },
+  authBookBadge: { position: 'absolute', right: -6, bottom: 0, width: 30, height: 30, backgroundColor: '#f2d9a0', borderWidth: 3, borderColor: COLORS.wineDark, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  authFormWrap: { width: '100%', maxWidth: 516, alignSelf: 'center', paddingHorizontal: 18, marginTop: -22 },
+  authCard: { padding: 22, borderRadius: 22, borderWidth: 1, borderColor: '#eee5df', backgroundColor: COLORS.paper, shadowColor: '#44232c', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.07, shadowRadius: 18, elevation: 3 },
+  authCardAccent: { width: 32, height: 4, borderRadius: 2, backgroundColor: '#c89d52', marginBottom: 15 },
+  authTitle: { color: '#2b2027', fontSize: 26, lineHeight: 33, fontWeight: '800', letterSpacing: -0.6 },
+  authSubtitle: { color: '#6b6168', fontSize: 13, lineHeight: 20, marginTop: 5, marginBottom: 23 },
+  authField: { marginBottom: 16, gap: 8 },
+  authLabel: { color: '#4e4149', fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  authInput: { minHeight: 52, borderRadius: 12, borderColor: '#e3dbd8', backgroundColor: '#fcfbfa', fontSize: 14, paddingHorizontal: 14, paddingVertical: 14 },
+  authInputFocused: { borderColor: COLORS.wine, backgroundColor: '#fffdfc' },
+  inputWithIcon: { paddingLeft: 42 },
+  fieldIcon: { position: 'absolute', left: 14, top: 0, bottom: 0, justifyContent: 'center' },
+  authCodeInput: { fontSize: 22, letterSpacing: 6, fontWeight: '700' },
+  authAccountChoice: { minHeight: 44 },
+  authOptions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginTop: -6, marginBottom: 13 },
+  authRememberText: { color: '#6b6168', fontSize: 12 },
+  authForgot: { minHeight: 44, justifyContent: 'center', paddingLeft: 6 },
+  authForgotText: { color: COLORS.wine, fontSize: 12, fontWeight: '700' },
+  authSubmit: { minHeight: 52, borderRadius: 12, flexDirection: 'row', gap: 10, marginTop: 3, shadowColor: COLORS.wine, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 7, elevation: 2 },
+  authSubmitText: { fontSize: 15, fontWeight: '700' },
+  authDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 20 },
+  authDividerLine: { flex: 1, height: 1, backgroundColor: '#eee6e1' },
+  authDividerText: { color: '#81727a', fontSize: 9, fontWeight: '600', letterSpacing: 1 },
+  authCreateAccount: { minHeight: 48, borderWidth: 1, borderColor: '#e5d2d7', backgroundColor: '#fcf8f8', borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  authCreateAccountText: { color: COLORS.wine, fontWeight: '700', fontSize: 13 },
+  authServices: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 15, rowGap: 12, marginTop: 23, marginBottom: 12 },
+  authService: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  authServiceText: { color: '#72636b', fontSize: 10 },
+  authConnection: { marginTop: 2 },
+  authConnectionToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, minHeight: 44 },
+  authConnectionText: { color: '#76696f', fontSize: 11 },
+  authConnectionPanel: { padding: 15, backgroundColor: '#f0ebe7', borderRadius: 14, marginTop: 4 },
+  authConnectionHint: { color: '#675c62', fontSize: 11, lineHeight: 17 },
+  authFooter: { color: '#786b71', fontSize: 10, textAlign: 'center', marginTop: 9, lineHeight: 16 },
+  authNotice: { fontSize: 12, lineHeight: 18 },
   field: { flexShrink: 0, marginBottom: 14, gap: 7 },
   label: { color: '#48434a', fontSize: 11, fontWeight: '800' },
   input: { minHeight: 46, borderWidth: 1, borderColor: '#e7e1dc', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, color: COLORS.ink, fontSize: 13, backgroundColor: COLORS.paper },
   passwordFieldWrap: { position: 'relative', justifyContent: 'center' },
-  passwordInput: { paddingRight: 85 },
-  passwordToggle: { position: 'absolute', right: 9, top: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 5 },
-  passwordToggleGlyph: { fontWeight: '900', fontSize: 23 },
-  passwordToggleLabel: { color: COLORS.wine, fontSize: 10, fontWeight: '800' },
+  passwordInput: { paddingRight: 49 },
+  passwordToggle: { position: 'absolute', right: 3, top: 0, bottom: 0, minHeight: 44, width: 44, alignItems: 'center', justifyContent: 'center' },
   passwordStrength: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -5, marginBottom: 12 },
   passwordStrengthBars: { flexDirection: 'row', gap: 4, flex: 1 },
   passwordStrengthBar: { height: 5, flex: 1, borderRadius: 4, backgroundColor: '#e8e2e3' },
@@ -1204,15 +1471,15 @@ const styles = StyleSheet.create({
   choiceSelected: { backgroundColor: COLORS.soft, borderColor: '#d5aab4' },
   choiceText: { color: COLORS.muted, fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   choiceTextSelected: { color: COLORS.wine },
-  serverHint: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: -6, marginBottom: 16 },
+  serverHint: { color: '#6b6168', fontSize: 10, lineHeight: 15, marginTop: -6, marginBottom: 16 },
   errorBox: { color: COLORS.red, backgroundColor: COLORS.redBg, borderRadius: 11, padding: 11, fontSize: 11, marginBottom: 15 },
   successBox: { color: COLORS.green, backgroundColor: COLORS.greenBg },
   authSwitch: { alignItems: 'center', paddingVertical: 16 },
-  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 9, alignSelf: 'flex-start', paddingVertical: 6 },
+  rememberRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingVertical: 6 },
   checkBox: { width: 19, height: 19, borderWidth: 1, borderColor: '#c9c1c4', borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
   checkBoxChecked: { backgroundColor: COLORS.wine, borderColor: COLORS.wine },
   checkMark: { color: COLORS.paper, fontSize: 13, fontWeight: '900' },
-  authSwitchText: { color: COLORS.muted, fontSize: 12 },
+  authSwitchText: { color: '#6b6168', fontSize: 12 },
   authSwitchAction: { color: COLORS.wine, fontWeight: '800' },
   modalShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#16111677' },
   modalWrap: { maxHeight: '92%' },

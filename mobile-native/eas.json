@@ -1,0 +1,28 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "remote" },
+  "build": {
+    "pilot-android": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "environment": "preview",
+      "env": { "SMARTLIB_ENV": "production" },
+      "android": { "buildType": "apk" },
+      "autoIncrement": true
+    },
+    "pilot-ios": {
+      "distribution": "store",
+      "environment": "preview",
+      "env": { "SMARTLIB_ENV": "production" },
+      "ios": { "simulator": false },
+      "autoIncrement": true
+    },
+    "production": {
+      "distribution": "store",
+      "environment": "production",
+      "env": { "SMARTLIB_ENV": "production" },
+      "android": { "buildType": "app-bundle" },
+      "autoIncrement": true
+    }
+  },
+  "submit": { "pilot-ios": {}, "production": {} }
+}

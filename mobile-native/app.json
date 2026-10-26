@@ -11,7 +11,12 @@
     },
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-secure-store", "expo-notifications", "expo-brightness", "expo-image-picker"],
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications",
+      "expo-brightness",
+      "expo-image-picker"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ph.edu.evsu.smartlib",
@@ -29,6 +34,12 @@
         "backgroundColor": "#f3ead0"
       },
       "usesCleartextTraffic": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5168797a-3802-447a-8eff-4b6b5b70055b"
+      }
+    },
+    "owner": "wenzint20"
   }
 }

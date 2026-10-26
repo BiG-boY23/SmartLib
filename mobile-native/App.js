@@ -145,10 +145,12 @@ function SectionTitle({ title, action, onAction }) {
 }
 
 export default function App() {
-  return <SafeAreaProvider><SmartLibApp /></SafeAreaProvider>;
+  const [sessionGeneration, setSessionGeneration] = useState(0);
+  const onSessionEnd = useCallback(() => setSessionGeneration(value => value + 1), []);
+  return <SafeAreaProvider><SmartLibApp key={sessionGeneration} restoreSession={sessionGeneration === 0} onSessionEnd={onSessionEnd} /></SafeAreaProvider>;
 }
 
-function SmartLibApp() {
+function SmartLibApp({ onSessionEnd, restoreSession }) {
   const safeArea = useSafeAreaInsets();
   const [apiBase, setApiBase] = useState(DEFAULT_API);
   const [apiDraft, setApiDraft] = useState(DEFAULT_API);
@@ -206,6 +208,26 @@ function SmartLibApp() {
   const messageLoadVersion = useRef(0);
   const messageListVersion = useRef(0);
   const activeMessageId = useRef(null);
+  const sessionEnded = useRef(false);
+
+  const clearPrivateSession = useCallback(async () => {
+    if (sessionEnded.current) return;
+    sessionEnded.current = true;
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    try {
+      await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(TAB_KEY)]);
+    } catch {
+      Alert.alert('Session locked', 'The phone could not clear secure storage. Check the device before sharing it with another person.');
+    } finally {
+      // A storage failure must still lock this session and discard private memory.
+      onSessionEnd();
+    }
+    try {
+      const module = await getNotificationsModule();
+      await module?.cancelAllScheduledNotificationsAsync();
+      await module?.dismissAllNotificationsAsync();
+    } catch { /* Secure session clearing must work when notifications are unavailable. */ }
+  }, [onSessionEnd]);
 
   const request = useCallback(async (path, options = {}, authToken = token, base = apiBase) => {
     const headers = { Accept: 'application/json', ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}), ...options.headers };
@@ -216,10 +238,10 @@ function SmartLibApp() {
       throw new Error('Can’t connect to EVSU SmartLib right now. Check your connection and try again.');
     }
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
+    if (sessionEnded.current) throw new Error('This session has ended. Sign in again to continue.');
     if (!response.ok) {
       if (response.status === 401 && authToken) {
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
-        setToken(null); setUser(null); setScreen('auth');
+        await clearPrivateSession();
       }
       const detail = Array.isArray(data?.detail) ? data.detail.map((item) => item.msg).filter(Boolean).join('\n') : data?.detail;
       const error = new Error(detail || (response.status >= 500
@@ -229,12 +251,12 @@ function SmartLibApp() {
       throw error;
     }
     return data;
-  }, [apiBase, token]);
+  }, [apiBase, token, clearPrivateSession]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [savedBase, savedToken, savedTab] = await Promise.all([__DEV__ ? SecureStore.getItemAsync(API_KEY) : Promise.resolve(null), SecureStore.getItemAsync(TOKEN_KEY), SecureStore.getItemAsync(TAB_KEY)]);
+      const [savedBase, savedToken, savedTab] = await Promise.all([__DEV__ ? SecureStore.getItemAsync(API_KEY) : Promise.resolve(null), restoreSession ? SecureStore.getItemAsync(TOKEN_KEY) : Promise.resolve(null), restoreSession ? SecureStore.getItemAsync(TAB_KEY) : Promise.resolve(null)]);
       if (!alive) return;
       if (__DEV__ && savedBase) { setApiBase(savedBase); setApiDraft(savedBase); }
       if (savedToken) {
@@ -391,8 +413,9 @@ function SmartLibApp() {
 
   async function syncDueReminders(rows) {
     const Notifications = await getNotificationsModule();
-    if (!Notifications) return;
+    if (!Notifications || sessionEnded.current) return;
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    if (sessionEnded.current) return;
     for (const item of scheduled) {
       if (item.content.data?.smartlibDueReminder) await Notifications.cancelScheduledNotificationAsync(item.identifier);
     }
@@ -401,7 +424,7 @@ function SmartLibApp() {
     if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('library-returns', { name: 'Library return reminders', importance: Notifications.AndroidImportance.DEFAULT });
     let permission = await Notifications.getPermissionsAsync();
     if (permission.status !== 'granted' && permission.canAskAgain) permission = await Notifications.requestPermissionsAsync();
-    if (permission.status !== 'granted') return;
+    if (permission.status !== 'granted' || sessionEnded.current) return;
     const now = Date.now();
     for (const entry of loans) {
       const due = parseServerTimestamp(entry.due_date);
@@ -411,8 +434,13 @@ function SmartLibApp() {
         { date: new Date(due.getTime() + 24 * 60 * 60 * 1000), title: 'Library book return is overdue', body: `${entry.book_title || 'A borrowed book'} is past its due date. Contact the library about returning it and any late fine.` },
       ];
       for (const reminder of reminders) {
+        if (sessionEnded.current) return;
         if (reminder.date.getTime() <= now) continue;
-        await Notifications.scheduleNotificationAsync({ content: { title: reminder.title, body: reminder.body, data: { smartlibDueReminder: true, borrowingId: entry.id }, ...(Platform.OS === 'android' ? { channelId: 'library-returns' } : {}) }, trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminder.date } });
+        const identifier = await Notifications.scheduleNotificationAsync({ content: { title: reminder.title, body: reminder.body, data: { smartlibDueReminder: true, borrowingId: entry.id }, ...(Platform.OS === 'android' ? { channelId: 'library-returns' } : {}) }, trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminder.date } });
+        if (sessionEnded.current) {
+          await Notifications.cancelScheduledNotificationAsync(identifier);
+          return;
+        }
       }
     }
   }
@@ -506,10 +534,7 @@ function SmartLibApp() {
 
   async function signOut() {
     if (token) request('/auth/logout', { method: 'POST' }).catch(() => {});
-    if (idleTimer.current) clearTimeout(idleTimer.current);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(TAB_KEY);
-    setToken(null); setUser(null); setDigitalId(null); setScreen('auth'); setAuthMode('login'); setTab('home');
+    await clearPrivateSession();
   }
 
   async function requestBook() {
@@ -566,7 +591,7 @@ function SmartLibApp() {
     try {
       const result = await request('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password, new_password, confirm_new_password: confirm_password }) });
       setShowChangePassword(false); setChangePasswordForm({ current_password: '', new_password: '', confirm_password: '' });
-      await SecureStore.deleteItemAsync(TOKEN_KEY); setToken(null); setUser(null); setScreen('auth'); setAuthMode('login');
+      await clearPrivateSession();
       Alert.alert('Password changed', result.message || 'Sign in again with your new password.');
     } catch (error) { Alert.alert('Could not change password', error.message); }
     finally { setBusy(false); }

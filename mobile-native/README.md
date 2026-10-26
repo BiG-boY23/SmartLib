@@ -2,6 +2,12 @@
 
 This is the native iOS and Android patron client for the existing FastAPI SmartLib service. It uses Expo SDK 57, React Native 0.86, and React 19.2.3.
 
+For installable Android APK and iPhone TestFlight pilot builds, follow
+[the deployment guide](../DEPLOYMENT.md#build-installable-android-and-iphone-apps).
+Those builds run independently of Expo Go. `eas.json` provides separate signed
+Android APK, iPhone TestFlight, and production store profiles; they require a real
+public HTTPS backend and configured Expo/Apple accounts.
+
 ## Start the backend for a phone
 
 From the project root, start FastAPI so another device on the same Wi-Fi can connect:

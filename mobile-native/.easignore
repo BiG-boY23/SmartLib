@@ -1,0 +1,16 @@
+.git
+node_modules
+.expo
+.env
+.env.*
+credentials.json
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+dist
+build
+android
+ios
+*.log

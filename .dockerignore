@@ -1,0 +1,23 @@
+# Allowlist the backend runtime. In particular, do not upload .env or user content.
+**
+!Dockerfile
+!requirements.txt
+!*.py
+!*.html
+!library_guide.json
+!routers/
+!routers/*.py
+!templates/
+!templates/**
+!static/
+!static/**
+!mobile/
+!mobile/**
+**/.env
+**/.env.*
+**/*.db
+**/__pycache__
+**/node_modules
+**/*.pem
+**/*.key
+**/*.p12

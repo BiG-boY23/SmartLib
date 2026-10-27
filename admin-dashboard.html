@@ -1501,7 +1501,7 @@
           <td><span class="badge badge-secondary">${escapeHtml(b.category)}</span></td>
           <td>${escapeHtml(b.publisher || '—')}<div style="font-size:11px; color:var(--text-muted);">${escapeHtml(b.year_published || '')}</div></td>
           <td><span class="badge badge-success">${b.available_copies}/${b.total_copies}</span></td>
-          <td><span class="badge ${condBadge}">${b.condition || 'Good'}</span></td>
+          <td><span class="badge ${condBadge}">${escapeHtml(b.condition || 'Good')}</span></td>
           <td style="text-align:center;">
             <button class="btn btn-gold btn-sm" data-accession="${escapeHtml(b.accession_no)}" onclick="openBookQrSheet(this.dataset.accession)" title="Print Multi-Copy 2D QR Labels">
               <i class="fa-solid fa-qrcode"></i> QR Labels

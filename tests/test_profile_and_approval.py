@@ -59,7 +59,8 @@ def api(tmp_path, monkeypatch):
         db.commit()
         option_ids = (department.id, course.id)
     monkeypatch.setattr(auth_router, "enforce_rate_limit", lambda *args, **kwargs: None)
-    monkeypatch.setattr(auth_router, "__file__", str(tmp_path / "routers" / "auth_router.py"))
+    import storage
+    monkeypatch.setattr(storage, "PROFILE_PHOTOS", tmp_path / "profile-photos")
     yield TestClient(app), factory, headers, option_ids
     engine.dispose()
 
@@ -101,7 +102,8 @@ def test_own_profile_update_and_photo(api):
     assert response.json()["profile_picture_url"].startswith("/profile-photos/")
     assert client.post("/auth/me/profile-photo", files={"photo": ("bad.png", b"not an image", "image/png")}, headers=headers["reader"]).status_code == 400
     with factory() as db:
-        assert db.query(User).filter_by(username="reader").one().profile_picture_url == response.json()["profile_picture_url"]
+        assert db.query(User).filter_by(username="reader").one().profile_picture_url == response.json()["profile_picture_url"].split("?", 1)[0]
+    assert "signature=" in response.json()["profile_picture_url"]
 
 
 def test_approval_email_failure_retry_and_no_duplicate(api, monkeypatch):

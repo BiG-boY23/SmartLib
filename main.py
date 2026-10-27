@@ -9,13 +9,15 @@ from config import load_project_dotenv
 load_project_dotenv()
 
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from deployment_middleware import PublicHTTPSRedirect, RequestSizeLimit
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect, or_, func
+from sqlalchemy import inspect, or_, func, text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from database import engine, Base, SessionLocal, get_db
 from models import Book
@@ -23,6 +25,8 @@ from routers import auth_router, admin_router, mobile_router, report_router, sta
 from schemas import FeedbackCreate, FeedbackResponse, BookResponse
 import crud
 from library_notifications import process_notifications
+from production import validate_production_settings, prepare_production_accounts
+from storage import BOOK_COVERS, PROFILE_PHOTOS, prepare_storage
 
 
 async def notification_worker():
@@ -36,6 +40,7 @@ async def notification_worker():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_production_settings()
     # Startup: Create tables & seed database
     Base.metadata.create_all(bind=engine)
     thread_columns = {column["name"] for column in inspect(engine).get_columns("support_threads")}
@@ -47,7 +52,7 @@ async def lifespan(app: FastAPI):
     if "email_verified" not in user_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql(
-                "ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT 1"
+                "ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE"
             )
     if "course" not in user_columns:
         with engine.begin() as connection:
@@ -75,10 +80,13 @@ async def lifespan(app: FastAPI):
     approval_email_columns = {column["name"] for column in inspect(engine).get_columns("borrow_approval_emails")}
     if "last_attempt_at" not in approval_email_columns:
         with engine.begin() as connection:
-            connection.exec_driver_sql("ALTER TABLE borrow_approval_emails ADD COLUMN last_attempt_at DATETIME")
+            connection.exec_driver_sql("ALTER TABLE borrow_approval_emails ADD COLUMN last_attempt_at TIMESTAMP")
+    from models import active_copy_index
+    active_copy_index.create(bind=engine, checkfirst=True)
     db = SessionLocal()
     try:
         crud.seed_initial_data(db)
+        prepare_production_accounts(db)
         crud.ensure_book_copies(db, legacy_as_printed=True)
     finally:
         db.close()
@@ -95,10 +103,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="EVSU SmartLib Integrated Library Resource & Circulation System",
-    description="Production-ready FastAPI backend for Library Web Management Portal (Admin & Librarian)",
+    description="Library Web Management Portal API (Admin & Librarian)",
     version="2.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(IntegrityError)
+async def database_conflict(request, exc):
+    return JSONResponse({"detail": "This record conflicts with a recent change. Refresh and try again."}, status_code=409)
 
 # Native clients do not use browser CORS; allow only explicitly configured web origins.
 allowed_origins = [
@@ -117,7 +130,15 @@ if allowed_origins:
 
 https_required = os.getenv("REQUIRE_HTTPS", "false").lower() in {"1", "true", "yes"}
 if https_required or os.getenv("SMARTLIB_ENV", "development").lower() == "production":
-    app.add_middleware(HTTPSRedirectMiddleware)
+    app.add_middleware(PublicHTTPSRedirect)
+
+if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
+    from urllib.parse import urlsplit
+    host = urlsplit(os.getenv("PUBLIC_BASE_URL", "")).hostname
+    if host:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=[host, "localhost", "127.0.0.1", "healthcheck.railway.app"])
+
+app.add_middleware(RequestSizeLimit)
 
 
 @app.middleware("http")
@@ -136,7 +157,7 @@ async def security_response_headers(request, call_next):
     )
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    if request.url.path.startswith(("/auth/", "/admin/")):
+    if request.url.path.startswith(("/auth/", "/admin/", "/mobile/", "/reports/", "/staff/", "/profile-photos/")):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -157,13 +178,20 @@ static_assets_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_assets_path):
     app.mount("/static", StaticFiles(directory=static_assets_path), name="static")
 
-book_covers_path = os.path.join(os.path.dirname(__file__), "uploads", "book-covers")
-os.makedirs(book_covers_path, exist_ok=True)
+prepare_storage()
+book_covers_path = str(BOOK_COVERS)
 app.mount("/book-covers", StaticFiles(directory=book_covers_path), name="book-covers")
 
-profile_photos_path = os.path.join(os.path.dirname(__file__), "uploads", "profile-photos")
-os.makedirs(profile_photos_path, exist_ok=True)
-app.mount("/profile-photos", StaticFiles(directory=profile_photos_path), name="profile-photos")
+@app.get("/profile-photos/{filename}", include_in_schema=False)
+def serve_profile_photo(filename: str, expires: int = 0, signature: str = ""):
+    from photo_security import valid_photo_link
+    from pathlib import Path
+    if Path(filename).name != filename or not valid_photo_link(filename, expires, signature):
+        raise HTTPException(status_code=403, detail="This photo link has expired or is invalid")
+    path = PROFILE_PHOTOS / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return FileResponse(path, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -185,8 +213,26 @@ def health_check():
     }
 
 
+@app.get("/ready", tags=["Health Check"])
+def readiness_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ready"}
+
+
+@app.get("/public/app-releases", tags=["Public Portal"])
+def public_app_releases():
+    from app_releases import app_releases
+    return JSONResponse(app_releases(), headers={"Cache-Control": "no-store"})
+
+
 @app.post("/public/feedback", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED, tags=["Public Portal"])
-def submit_public_feedback(fb_data: FeedbackCreate, db: Session = Depends(get_db)):
+def submit_public_feedback(fb_data: FeedbackCreate, request: Request, db: Session = Depends(get_db)):
+    if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
+        from rate_limits import enforce_rate_limit
+        enforce_rate_limit(f"feedback:{request.client.host if request.client else 'unknown'}", 10, 3600)
     return crud.create_feedback(db, fb_data)
 
 
@@ -194,8 +240,8 @@ def submit_public_feedback(fb_data: FeedbackCreate, db: Session = Depends(get_db
 def get_public_books(
     search: Optional[str] = None,
     category: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     query = db.query(Book).filter(Book.is_archived == False)

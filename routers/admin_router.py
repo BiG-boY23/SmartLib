@@ -139,7 +139,8 @@ async def upload_book_cover(
     if not valid_image:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload a valid JPG or PNG front-cover image.")
 
-    cover_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "book-covers")
+    from storage import BOOK_COVERS
+    cover_dir = str(BOOK_COVERS)
     os.makedirs(cover_dir, exist_ok=True)
     stored_name = f"book-{book.id}-{uuid.uuid4().hex}{extension}"
     stored_path = os.path.join(cover_dir, stored_name)
@@ -268,7 +269,7 @@ def execute_circulation_terminal(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    return crud.execute_circulation(db, req.mode, req.patron_id, req.accession_no)
+    return crud.execute_circulation(db, req.mode, req.patron_id, req.accession_no, actor=current_user.username)
 
 
 # Borrow Requests Management

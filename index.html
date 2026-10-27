@@ -1695,6 +1695,22 @@
         gap: 20px;
       }
     }
+    .app-download-section { padding: 80px 24px; scroll-margin-top: 84px; background: linear-gradient(135deg, #210e19, var(--bg)); border-block: 1px solid var(--border-gold); }
+    .app-download-inner { max-width: 1160px; margin: auto; display: grid; grid-template-columns: 1fr 1.1fr; align-items: center; gap: 48px; }
+    .app-download-eyebrow { color: var(--gold); font-size: 12px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
+    .app-download-copy h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.2; margin: 14px 0 18px; }
+    .app-download-copy p { color: var(--text-muted); max-width: 440px; }
+    .app-download-features { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 24px; font-size: 13px; color: var(--gold-light); }
+    .app-download-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .app-download-card { padding: 26px 22px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 18px; display: flex; flex-direction: column; align-items: flex-start; }
+    .app-download-icon { color: var(--gold); font-size: 30px; margin-bottom: 20px; }
+    .app-download-card h3 { font-size: 21px; }
+    .app-download-card p { color: var(--text-muted); font-size: 13px; margin: 8px 0 20px; flex: 1; }
+    .app-download-link { width: 100%; justify-content: center; padding: 12px 10px; font-size: 13px; text-align: center; }
+    .app-download-status { color: var(--text-muted); font-size: 12px; margin-top: 12px; }
+    .app-download-card [hidden] { display: none; }
+    @media (max-width: 900px) { .app-download-inner { grid-template-columns: 1fr; gap: 28px; } }
+    @media (max-width: 420px) { .app-download-cards { grid-template-columns: 1fr; } }
   </style>
 </head>
 
@@ -1712,6 +1728,7 @@
 
     <nav class="nav-links">
       <a href="#catalog">Book Catalog</a>
+      <a href="#get-app">Get the App</a>
       <a href="#policies">Rules & Policies</a>
       <a href="#staff">Library Staff</a>
       <a href="#faq">FAQ</a>
@@ -1746,8 +1763,8 @@
           <a href="#catalog" class="btn-primary">
             <i class="fas fa-magnifying-glass"></i> Explore Book Catalog
           </a>
-          <a href="#policies" class="btn-secondary">
-            <i class="fas fa-book-open"></i> Library Policies
+          <a href="#get-app" class="btn-secondary">
+            <i class="fas fa-mobile-screen-button"></i> Get the SmartLib App
           </a>
         </div>
         <div class="hero-stats-row">
@@ -1790,6 +1807,33 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </section>
+
+  <section class="app-download-section" id="get-app" aria-labelledby="appDownloadTitle">
+    <div class="app-download-inner">
+      <div class="app-download-copy">
+        <span class="app-download-eyebrow">SmartLib on your phone</span>
+        <h2 id="appDownloadTitle">Your library.<br>Ready when you are.</h2>
+        <p>Find your next read, request a book, and keep your library ID close at hand. Join the SmartLib mobile pilot on Android or iPhone.</p>
+        <div class="app-download-features"><span><i class="fas fa-book-open" aria-hidden="true"></i> Explore the catalog</span><span><i class="fas fa-clock" aria-hidden="true"></i> Track your loans</span><span><i class="fas fa-id-card" aria-hidden="true"></i> Digital library ID</span></div>
+      </div>
+      <div class="app-download-cards">
+        <article class="app-download-card">
+          <i class="fab fa-android app-download-icon" aria-hidden="true"></i>
+          <h3>Android</h3>
+          <p>Install the SmartLib app directly on your Android phone. Your phone may ask you to allow installation from your browser.</p>
+          <a id="androidAppDownload" class="btn-primary app-download-link" hidden rel="noopener noreferrer">Download Android APK</a>
+          <span id="androidAppStatus" class="app-download-status" role="status">Android pilot coming soon</span>
+        </article>
+        <article class="app-download-card">
+          <i class="fab fa-apple app-download-icon" aria-hidden="true"></i>
+          <h3>iPhone</h3>
+          <p>Join the pilot through Apple's TestFlight app, then install SmartLib and share your feedback with the library.</p>
+          <a id="iosAppDownload" class="btn-primary app-download-link" hidden rel="noopener noreferrer">Join iPhone TestFlight</a>
+          <span id="iosAppStatus" class="app-download-status" role="status">iPhone pilot coming soon</span>
+        </article>
       </div>
     </div>
   </section>
@@ -2362,10 +2406,7 @@
 
     // Escape HTML to prevent XSS when rendering user-searchable data
     function esc(str) {
-      if (!str) return '';
-      const d = document.createElement('div');
-      d.textContent = str;
-      return d.innerHTML;
+      return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
     async function loadPublicStats() {
@@ -2487,9 +2528,29 @@
       loadCatalogBooks(search, cat);
     }
 
+    async function loadAppReleases() {
+      try {
+        const response = await fetch('/public/app-releases', { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json();
+        for (const platform of ['android', 'ios']) {
+          const release = data[platform];
+          if (!release?.available || !release.url) continue;
+          const url = new URL(release.url);
+          if (url.protocol !== 'https:' || url.username || url.password) continue;
+          if (platform === 'ios' && (url.hostname !== 'testflight.apple.com' || !/^\/join\/[A-Za-z0-9]+\/?$/.test(url.pathname))) continue;
+          const link = document.getElementById(platform + 'AppDownload');
+          link.href = url.href;
+          link.hidden = false;
+          document.getElementById(platform + 'AppStatus').textContent = 'Pilot available · v' + data.version;
+        }
+      } catch { /* Keep the unavailable state when release metadata cannot be loaded. */ }
+    }
+
     // ======== INIT ON PAGE LOAD ========
     document.addEventListener('DOMContentLoaded', () => {
       loadPublicStats();
+      loadAppReleases();
       loadCatalogBooks('', 'all');
     });
   </script>

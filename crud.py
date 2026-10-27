@@ -439,6 +439,31 @@ def get_borrow_records(
     return records
 
 
+def _checkout_eligibility(db: Session, patron):
+    if not patron:
+        return "Patron account not found."
+    # Serialize checkouts for this patron, including different titles.
+    db.query(User).filter(User.id == patron.id).update({User.is_active: User.is_active}, synchronize_session=False)
+    db.refresh(patron)
+    if not patron.is_active:
+        return "Patron account is suspended."
+    if db.query(Fine).filter(Fine.user_id == patron.id, Fine.is_paid.is_(False)).first():
+        return "Patron has unpaid library fines."
+    maximum = 3 if patron.role == UserRole.STUDENT else 5
+    active = db.query(BorrowRecord).filter(BorrowRecord.user_id == patron.id,
+        BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE])).count()
+    if active >= maximum:
+        return f"Borrow limit reached: maximum is {maximum} books at a time."
+    return None
+
+
+def _claim_stock(db: Session, book):
+    claimed = db.query(Book).filter(Book.id == book.id, Book.is_archived.is_(False), Book.available_copies > 0).update(
+        {Book.available_copies: Book.available_copies - 1}, synchronize_session=False)
+    db.refresh(book)
+    return claimed == 1
+
+
 def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, persist: bool = True):
     record = (
         db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
@@ -460,6 +485,9 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, per
     elif new_status == BorrowStatus.CHECKED_OUT:
         if record.status != BorrowStatus.APPROVED:
             return None, "Approve the request before checking it out."
+        eligibility_error = _checkout_eligibility(db, record.user)
+        if eligibility_error:
+            return None, eligibility_error
         if not record.book or record.book.is_archived or record.book.available_copies <= 0:
             return None, "No available copy can be checked out for this request."
         copy_tag, allocation_error = _allocate_available_copy(db, record.book)
@@ -469,7 +497,8 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, per
         record.copy_accession_no = copy_tag
         record.issue_date = now
         record.due_date = now + timedelta(days=LOAN_PERIOD_DAYS)
-        record.book.available_copies -= 1
+        if not _claim_stock(db, record.book):
+            return None, "No available copy can be checked out for this request."
         record.status = new_status
     elif new_status == BorrowStatus.RETURNED:
         if record.status != BorrowStatus.CHECKED_OUT:
@@ -647,10 +676,12 @@ def get_circulation_book_info(db: Session, accession_no: str):
 
 
 def execute_circulation(
-    db: Session, mode: str, patron_username: Optional[str], accession_no: str
+    db: Session, mode: str, patron_username: Optional[str], accession_no: str, actor: Optional[str] = None
 ):
     # Normalized modes
     norm_mode = mode.lower().strip()
+    if norm_mode == "borrow_clear":
+        norm_mode = "borrow"
     # Older clients labelled a return request "return_late". The actual due
     # date determines whether it was late, so route it through the real check-in.
     if norm_mode in {"return_late", "return_ontime"}:
@@ -663,6 +694,9 @@ def execute_circulation(
         patron = get_user_by_username(db, patron_username)
         if not patron:
             return {"status": "error", "message": f"Patron '{patron_username}' not registered in system."}
+        eligibility_error = _checkout_eligibility(db, patron)
+        if eligibility_error:
+            return {"status": "blocked", "message": eligibility_error}
         if not patron.is_active:
             return {"status": "blocked", "message": f"Patron '{patron.username}' is currently suspended."}
         
@@ -711,7 +745,8 @@ def execute_circulation(
             }
 
         # Check out
-        book.available_copies -= 1
+        if not _claim_stock(db, book):
+            return {"status": "unavail", "message": "The last available copy was just checked out. Refresh and try again."}
         now = datetime.utcnow()
         due = now + timedelta(days=LOAN_PERIOD_DAYS)
         loan_label = "1-Day Faculty Loan" if is_faculty else "1-Day Student Loan"
@@ -732,7 +767,7 @@ def execute_circulation(
         notify_borrow_activity(db, rec)
         db.commit()
 
-        log_audit(db, patron.username, f"Issued Copy {copy_tag} ({book.title})", "Approved")
+        log_audit(db, actor or patron.username, f"Issued Copy {copy_tag} ({book.title}) to {patron.username}", "Approved")
         log_smtp(db, patron.email, "Book Issued Confirmation", f"You borrowed '{book.title}'. Due Date: {due_str}.")
 
         return {
@@ -830,7 +865,7 @@ def execute_circulation(
         db.commit()
 
         if is_overdue:
-            log_audit(db, borrower_name, f"Returned {active_rec.copy_accession_no or book.accession_no} late", f"Fine ₱{fine_amount:.2f}")
+            log_audit(db, actor or borrower_name, f"Returned {active_rec.copy_accession_no or book.accession_no} late by {borrower_name}", f"Fine ₱{fine_amount:.2f}")
             return {
                 "status": "warning",
                 "message": f"Overdue Return: '{book.title}' returned late by {borrower_name}. ₱{fine_amount:.2f} overdue fine added to patron account.",
@@ -839,7 +874,7 @@ def execute_circulation(
                 "patron_name": borrower_name,
                 "fine": fine_amount
             }
-        log_audit(db, borrower_name, f"Returned {active_rec.copy_accession_no or book.accession_no} on time", "Success")
+        log_audit(db, actor or borrower_name, f"Returned {active_rec.copy_accession_no or book.accession_no} on time by {borrower_name}", "Success")
         return {
             "status": "success",
             "message": f"Returned on time: '{book.title}' by {borrower_name}. Copy restored to shelf ({book.available_copies}/{book.total_copies} available).",
@@ -974,6 +1009,9 @@ def update_acquisition_status(db: Session, acq_id: str, new_status: str):
 
 # Initial Data Seeding
 def seed_initial_data(db: Session):
+    import os
+    if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
+        return
     # Check if users exist
     if db.query(User).count() == 0:
         super_admin = User(

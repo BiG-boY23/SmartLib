@@ -14,6 +14,8 @@ from models import User, UserRole, UserSession
 
 logger = logging.getLogger(__name__)
 SECRET_KEY = os.getenv("SMARTLIB_SECRET_KEY")
+if os.getenv("SMARTLIB_ENV", "development").lower() == "production" and (not SECRET_KEY or len(SECRET_KEY) < 32):
+    raise RuntimeError("Configure a random SMARTLIB_SECRET_KEY of at least 32 characters in the hosting secret settings")
 if not SECRET_KEY:
     if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
         raise RuntimeError("SMARTLIB_SECRET_KEY must be configured in production")

@@ -1,0 +1,54 @@
+# Paid single-instance pilot: the disk preserves SQLite and uploaded files.
+services:
+  - type: web
+    name: evsu-smartlib
+    runtime: docker
+    plan: 0.5c-512mb
+    region: singapore
+    healthCheckPath: /ready
+    numInstances: 1
+    disk:
+      name: smartlib-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: SMARTLIB_ENV
+        value: production
+      - key: SMARTLIB_SECRET_KEY
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        fromService:
+          name: evsu-smartlib
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: DATABASE_URL
+        value: sqlite:////var/data/library.db
+      - key: SMARTLIB_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: REQUIRE_HTTPS
+        value: "true"
+      - key: SMARTLIB_SEED_DEMO
+        value: "false"
+      # Render terminates TLS before forwarding to the private service port.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+      - key: BOOTSTRAP_ADMIN_USERNAME
+        sync: false
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_STARTTLS
+        value: "true"
+      - key: SMTP_USE_SSL
+        value: "false"

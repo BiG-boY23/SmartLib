@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     Text,
     UniqueConstraint,
+    Index,
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -178,6 +179,13 @@ class BorrowRecord(Base):
     user = relationship("User", back_populates="borrow_records")
     book = relationship("Book", back_populates="borrow_records")
     fines = relationship("Fine", back_populates="borrow_record")
+
+
+active_copy_index = Index(
+    "uq_active_borrow_copy", BorrowRecord.copy_accession_no, unique=True,
+    sqlite_where=BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
+    postgresql_where=BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
+)
 
 
 class LoanExtensionEvent(Base):

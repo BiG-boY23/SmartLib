@@ -208,6 +208,8 @@ def get_signup_options(db: Session = Depends(get_db)):
 
 @router.post("/register/request-otp", status_code=status.HTTP_202_ACCEPTED)
 def request_registration_otp(req: RegisterRequest, request: Request, db: Session = Depends(get_db)):
+    if req.account_type not in (UserRole.STUDENT, UserRole.FACULTY):
+        raise HTTPException(status_code=403, detail="Staff accounts must be provisioned by a SuperAdmin")
     enforce_rate_limit(f"register-otp-ip:{_ip(request)}", 5, 60 * 60)
     email = str(req.email).strip().casefold()
     username = req.username.strip()
@@ -269,6 +271,10 @@ def verify_registration_otp(req: RegistrationOtpRequest, request: Request, db: S
     now = datetime.utcnow()
     if not pending or pending.expires_at <= now or pending.attempts >= 5:
         raise HTTPException(status_code=400, detail="This code is invalid or expired. Please request a new one.")
+    if pending.role not in (UserRole.STUDENT, UserRole.FACULTY):
+        db.delete(pending)
+        db.commit()
+        raise HTTPException(status_code=400, detail="Staff accounts must be provisioned by SuperAdmin.")
     if not secrets.compare_digest(pending.otp_hash, _hash_action_token(f"{email}:{req.otp}")):
         pending.attempts += 1
         db.commit()
@@ -419,8 +425,16 @@ def complete_mobile_password_reset(req: PasswordResetComplete, db: Session = Dep
     if not user:
         raise HTTPException(status_code=400, detail="Your verification has expired. Request a new code.")
     now = datetime.utcnow()
-    action.consumed_at = now
+    claimed = db.query(EmailActionToken).filter(EmailActionToken.id == action.id,
+        EmailActionToken.consumed_at.is_(None), EmailActionToken.expires_at > now).update(
+            {EmailActionToken.consumed_at: now}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        raise HTTPException(400, "Your verification has expired. Request a new code.")
     user.hashed_password = get_password_hash(req.new_password)
+    db.query(EmailActionToken).filter(EmailActionToken.user_id == user.id,
+        EmailActionToken.purpose.in_(["password_reset", "mobile_reset_otp", "mobile_reset_verified"]),
+        EmailActionToken.consumed_at.is_(None)).update({EmailActionToken.consumed_at: now}, synchronize_session=False)
     db.query(UserSession).filter(UserSession.user_id == user.id, UserSession.revoked_at.is_(None)).update(
         {UserSession.revoked_at: now}, synchronize_session=False
     )
@@ -501,7 +515,8 @@ async def upload_profile_photo(
         raise HTTPException(status_code=400, detail="Upload a JPG or PNG image up to 4096 pixels per side.")
     extension = "jpg" if image_format == "JPEG" else "png"
     filename = f"{secrets.token_hex(20)}.{extension}"
-    destination = Path(__file__).resolve().parent.parent / "uploads" / "profile-photos"
+    from storage import PROFILE_PHOTOS
+    destination = PROFILE_PHOTOS
     destination.mkdir(parents=True, exist_ok=True)
     (destination / filename).write_bytes(content)
     current_user.profile_picture_url = f"/profile-photos/{filename}"
@@ -533,6 +548,9 @@ def change_password(
         raise HTTPException(status_code=400, detail="Choose a password different from your current password.")
     now = datetime.utcnow()
     current_user.hashed_password = get_password_hash(req.new_password)
+    db.query(EmailActionToken).filter(EmailActionToken.user_id == current_user.id,
+        EmailActionToken.purpose.in_(["password_reset", "mobile_reset_otp", "mobile_reset_verified"]),
+        EmailActionToken.consumed_at.is_(None)).update({EmailActionToken.consumed_at: now}, synchronize_session=False)
     db.query(UserSession).filter(UserSession.user_id == current_user.id, UserSession.revoked_at.is_(None)).update(
         {UserSession.revoked_at: now}, synchronize_session=False
     )

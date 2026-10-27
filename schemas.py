@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
 from typing import Optional, List, Literal
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, field_validator, field_serializer
 from models import UserRole, BorrowStatus
 
 
@@ -35,6 +35,13 @@ class RegisterRequest(BaseModel):
     course: Optional[str] = None
     department_id: Optional[int] = None
     course_id: Optional[int] = None
+
+    @field_validator("account_type")
+    @classmethod
+    def public_patron_role(cls, value):
+        if value not in (UserRole.STUDENT, UserRole.FACULTY):
+            raise ValueError("Public registration is limited to students and faculty")
+        return value
 
     @field_validator("first_name", "middle_name", "last_name")
     @classmethod
@@ -127,6 +134,14 @@ class UserStaffCreate(BaseModel):
     department: str
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def production_password(cls, value):
+        import os
+        if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
+            validate_password_policy(value)
+        return value
+
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -169,6 +184,11 @@ class UserResponse(UserBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("profile_picture_url")
+    def private_photo_link(self, value):
+        from photo_security import signed_photo_url
+        return signed_photo_url(value)
 
 
 class SignupOptionCreate(BaseModel):
@@ -322,10 +342,17 @@ class FineResponse(BaseModel):
 
 # Acquisition Schemas
 class AcquisitionCreate(BaseModel):
-    title: str
-    author: str
-    publisher_isbn: Optional[str] = None
-    justification: str
+    title: str = Field(min_length=1, max_length=300)
+    author: str = Field(min_length=1, max_length=200)
+    publisher_isbn: Optional[str] = Field(default=None, max_length=200)
+    justification: str = Field(min_length=1, max_length=5000)
+
+    @field_validator("title", "author", "publisher_isbn", "justification")
+    @classmethod
+    def valid_text(cls, value):
+        if value is not None and any(ord(char)<32 and char not in '\n\r\t' for char in value):
+            raise ValueError("Text contains unsupported control characters")
+        return value
 
 
 class AcquisitionStatusUpdate(BaseModel):

@@ -242,3 +242,41 @@ Additional hardening: remove CSP inline script allowances as part of the XSS fix
 
 **Raw evidence:** [npm audit](D:/Master/build/security/npm-advisories.json), [Python dependency audit](D:/Master/build/security/python-advisories.json), [Bandit application scan](D:/Master/build/security/bandit-app.json). Audit tools were placed under `build/security/tools`, separate from the runtime environment. The root npm lockfile contains no packages; the actual Node project audited is `mobile-native`.
 
+## Implementation follow-up — 2026-10-26
+
+This records changes since the original scan; it is not a fresh dependency audit
+or a declaration that every finding is resolved. See [DEPLOYMENT.md](DEPLOYMENT.md)
+for release steps and the remaining full-launch work.
+
+- F01: public registration now accepts only students/faculty; OTP verification
+  also invalidates older pending registrations requesting staff roles.
+- F02/F06: production skips demo seeding, blocks known staff demo passwords,
+  provisions a first SuperAdmin from hosting secrets and requires HTTPS settings.
+  Existing accounts still need a human review. Release mobile builds reject
+  HTTP and local/placeholder backend addresses.
+- F03: credential values were removed from the tracked example. The local `.env`
+  remains ignored and is excluded from image/build uploads. Previously exposed
+  API/SMTP credentials still require provider-side revocation/rotation; historical
+  commits were not rewritten.
+- F04/F05: the identified condition and public attribute escaping sinks were
+  corrected. This does not replace a broader CSP/browser-session hardening pass.
+- F07/F08: password changes/resets invalidate outstanding reset grants; completion
+  atomically claims a reset grant. Native logout remounts the private session,
+  clears secure keys and reminders, and rejects late authenticated responses.
+- F09: profile photos now use expiring signed URLs instead of a public static
+  mount. Uploaded files were removed from tracking while preserving local copies;
+  old repository history still requires separate review.
+- F11: public catalog page size, acquisition text and request bodies are bounded;
+  production public feedback is rate-limited. Comprehensive per-user quotas,
+  retention limits and multi-process rate limiting remain follow-up work.
+- F12/F13: checkout uses an atomic stock decrement and a unique active-copy index;
+  approved requests and the legacy checkout alias now share eligibility checks.
+  Live concurrent circulation/load testing remains necessary.
+- F14: circulation desk audit events now use the authenticated staff actor and
+  identify the affected patron. Other older hardcoded audit actors remain to be
+  reviewed separately.
+
+Native dependencies now have a versioned lockfile and direct Python requirements
+are pinned to tested versions. The dependency advisories listed above have not
+been claimed fixed by these deployment changes.
+

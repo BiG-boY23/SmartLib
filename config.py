@@ -12,6 +12,8 @@ def load_project_dotenv() -> None:
     This supports the plain assignments, comments, and quotes used by this app's
     environment example without adding a runtime dependency.
     """
+    if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
+        return  # Hosting-provider secrets are authoritative; never load a shipped local file.
     dotenv_path = Path(__file__).resolve().parent / ".env"
     if not dotenv_path.is_file():
         return

@@ -179,12 +179,20 @@ def _pdf(title, metadata, sections, chart, paper):
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, Image, CondPageBreak
     from PIL import Image as PILImage
     font, bold = "Times-Roman", "Times-Bold"
-    fonts = Path("C:/Windows/Fonts")
-    if (fonts / "times.ttf").exists() and (fonts / "timesbd.ttf").exists():
-        if "ReportTimes" not in pdfmetrics.getRegisteredFontNames():
-            pdfmetrics.registerFont(TTFont("ReportTimes", str(fonts / "times.ttf")))
-            pdfmetrics.registerFont(TTFont("ReportTimesBold", str(fonts / "timesbd.ttf")))
-        font, bold = "ReportTimes", "ReportTimesBold"
+    font_pairs = [
+        (Path("C:/Windows/Fonts/times.ttf"), Path("C:/Windows/Fonts/timesbd.ttf")),
+        (Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"),
+         Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf")),
+        (Path("/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf"),
+         Path("/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf")),
+    ]
+    for regular_path, bold_path in font_pairs:
+        if regular_path.exists() and bold_path.exists():
+            if "ReportTimes" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("ReportTimes", str(regular_path)))
+                pdfmetrics.registerFont(TTFont("ReportTimesBold", str(bold_path)))
+            font, bold = "ReportTimes", "ReportTimesBold"
+            break
     width, height, left, right = _template_geometry(paper); available = width - left - right
     normal = ParagraphStyle("report-body", fontName=font, fontSize=10, leading=13, spaceAfter=6)
     heading = ParagraphStyle("report-heading", parent=normal, fontName=bold, fontSize=12, leading=15, spaceBefore=9, spaceAfter=6)

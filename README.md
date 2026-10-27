@@ -1,6 +1,10 @@
 # EVSU SmartLib - Integrated Library Resource & Circulation System
 
-A production-ready, modular FastAPI backend application with an integrated Web Management Portal for Administrators & Librarians and REST APIs for Mobile Clients (Students & Faculty).
+A modular FastAPI backend with a Web Management Portal for Administrators & Librarians and REST APIs for Mobile Clients (Students & Faculty).
+
+For the hosted pilot and standalone Android/iPhone distribution, follow
+[DEPLOYMENT.md](DEPLOYMENT.md). The landing page includes **Get the App** links
+that activate when real signed APK and TestFlight release URLs are configured.
 
 ## Core Features
 
@@ -16,7 +20,9 @@ A production-ready, modular FastAPI backend application with an integrated Web M
 
 ## Default Seed Accounts
 
-Upon first launch, the system automatically initializes `library.db` and provisions the following default credentials:
+In local development, the system initializes `library.db` with these demo accounts.
+Production disables demo seeding, blocks known staff demo passwords, and provisions
+the first SuperAdmin from hosting secrets as described in the deployment guide.
 
 | Role | Username / ID | Password | Access Rights |
 |---|---|---|---|
@@ -28,7 +34,7 @@ Students and faculty can also create an account from the mobile app at `/mobile/
 
 ## Account security and deployment
 
-- New accounts remain inactive for sign-in until the email verification link is used. Verification links expire after 24 hours; password reset links expire after one hour and can be used once.
+- Students/faculty verify registration using an email OTP. Password recovery also uses email OTP; the old direct sign-up and reset-link routes are disabled.
 - Configure mail delivery before account registration or password recovery. Copy `.env.example` to `.env` beside `main.py`, fill in `SMTP_HOST`, `SMTP_FROM`, and a `PUBLIC_BASE_URL` reachable by the account holder, plus credentials if your provider requires them. The server loads that file on startup; process environment values take priority. Never commit SMTP passwords or a production signing key.
 - To enable model-backed answers in the mobile library assistant, set `OPENAI_API_KEY` on the FastAPI server and optionally `SMARTLIB_AI_MODEL` (default: `gpt-5-mini`), then restart the server. The key stays on the server. The assistant sends the user's question and recent chat, plus relevant catalog titles, availability, and recent borrowing status to the model. When the key is absent or the provider fails, it uses local library guidance. Staff decisions and transactions remain in the existing authenticated APIs.
 - Sessions expire after 15 minutes without an authenticated request. Normal sessions have a 12-hour maximum lifetime; “Remember me” sessions have a 30-day maximum. The web and native clients also sign out after 15 minutes of local inactivity.

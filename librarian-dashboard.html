@@ -344,6 +344,7 @@
       100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
     }
   .password-input-wrap{position:relative}.password-input-wrap .form-control{padding-right:84px}.password-toggle{position:absolute;right:8px;top:0;bottom:0;border:0;background:none;color:var(--evsu-gold);display:flex;align-items:center;gap:5px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer}.password-toggle b{font-size:12px}</style>
+<link rel="stylesheet" href="/static/staff-attendance.css?v=20261103">
 </head>
 <body>
 
@@ -369,7 +370,7 @@
           <div><small style="color:var(--text-muted);">Borrower</small><div id="confirmBorrowPatron" style="font-weight:700;"></div></div>
           <div><small style="color:var(--text-muted);">Book</small><div id="confirmBorrowBook" style="font-weight:700;"></div></div>
           <div><small style="color:var(--text-muted);">Copy accession</small><div id="confirmBorrowAccession" style="font-weight:700;color:var(--evsu-gold);"></div></div>
-          <div><small style="color:var(--text-muted);">Loan period</small><div>24 hours from checkout</div></div>
+          <div><label for="checkoutDue">Return due date and time (Philippine time)</label><input id="checkoutDue" class="form-control" type="datetime-local" required></div>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px;">
           <button type="button" class="btn btn-outline" onclick="closeBorrowConfirmation()">Cancel / edit scan</button>
@@ -682,7 +683,7 @@
               <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 14px;">
                 <div class="form-group">
                   <label>Accession No.</label>
-                  <input type="text" id="catAcc" class="form-control" value="LIB-QR-1005" required>
+                  <input type="text" id="catAcc" class="form-control" placeholder="Assigned automatically when saved" readonly>
                 </div>
                 <div class="form-group">
                   <label>Call Number</label>
@@ -873,7 +874,7 @@
                 <div class="form-group" style="margin-top:10px;">
                   <label><i class="fa-solid fa-book text-gold"></i> Book Accession / QR Tag</label>
                   <div style="display:flex; gap:8px;">
-                    <input type="text" id="circBorrowBook" class="form-control" placeholder="Scan Book QR tag (e.g. LIB-QR-1001-C01)..." autocomplete="off">
+                    <input type="text" id="circBorrowBook" class="form-control" placeholder="Scan Book QR tag (e.g. 00002)..." autocomplete="off">
                     <button class="btn btn-outline btn-sm" type="button" onclick="handleBookScanSubmit()" title="Verify Book"><i class="fa-solid fa-magnifying-glass"></i></button>
                   </div>
                 </div>
@@ -908,7 +909,7 @@
                 <div class="form-group">
                   <label><i class="fa-solid fa-qrcode text-gold"></i> Scan Book 2D QR Code Label</label>
                   <div style="display:flex; gap:8px;">
-                    <input type="text" id="circReturnBook" class="form-control" placeholder="Scan Book QR (e.g. LIB-QR-1001-C01)..." style="font-size:15px; padding:12px;" autocomplete="off">
+                    <input type="text" id="circReturnBook" class="form-control" placeholder="Scan Book QR (e.g. 00002)..." style="font-size:15px; padding:12px;" autocomplete="off">
                     <button class="btn btn-maroon" type="button" onclick="executeReturnDesk()" style="padding:0 22px; font-weight:700;"><i class="fa-solid fa-arrow-right"></i> Return</button>
                   </div>
                 </div>
@@ -1477,7 +1478,6 @@
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({
-            accession_no: acc,
             title: title,
             author: author,
             publisher: publisher || null,
@@ -1503,8 +1503,7 @@
           openBookQrSheet(acc);
 
           // Prepare next accession
-          let next = parseInt(acc.replace('LIB-QR-', '')) + 1;
-          document.getElementById('catAcc').value = isNaN(next) ? '' : `LIB-QR-${next}`;
+
           document.getElementById('catTitle').value = '';
           document.getElementById('catAuthor').value = '';
           document.getElementById('catPublisher').value = '';
@@ -1891,6 +1890,7 @@
       document.getElementById('confirmBorrowPatron').textContent = `${verifiedPatron.full_name || patronId} (${patronId})`;
       document.getElementById('confirmBorrowBook').textContent = verifiedBook.title || 'Book';
       document.getElementById('confirmBorrowAccession').textContent = bookAcc;
+      document.getElementById('checkoutDue').value = '';
       document.getElementById('circulationBorrowConfirmModal').classList.add('open');
     }
 
@@ -1906,6 +1906,9 @@
         toast('The scanned borrower or book is no longer verified. Scan them again before checkout.', 'warning');
         return;
       }
+      const dueInput = document.getElementById('checkoutDue').value;
+      const due = dueInput ? new Date(dueInput + ':00+08:00') : null;
+      if (!due || !Number.isFinite(due.getTime()) || due <= new Date()) { toast('Choose a future return date and time.', 'warning'); return; }
       const commitButton = document.getElementById('btnCommitBorrow');
       commitButton.disabled = true;
       commitButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving checkout…';
@@ -1914,7 +1917,7 @@
         const res = await fetch(`${API_BASE}/admin/circulation/execute`, {
           method: 'POST',
           headers: getAuthHeaders(),
-          body: JSON.stringify({ mode: 'borrow', patron_id: patronId, accession_no: bookAcc })
+          body: JSON.stringify({ mode: 'borrow', patron_id: patronId, accession_no: bookAcc, due_date: due.toISOString() })
         });
         const data = await res.json();
 
@@ -1929,12 +1932,12 @@
             <div style="font-size:14px; font-weight:700; color:var(--text-main); margin-bottom:6px;">${escapeHtml(data.book_title || bookAcc)}</div>
             <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:10px;">
               Issued to: <strong style="color:var(--evsu-gold);">${escapeHtml(data.patron_name || patronId)}</strong><br>
-              Due Date: <span class="badge badge-gold" style="font-size:12px;">${escapeHtml(data.due_date || 'In 1 Day')}</span>
+              Due Date: <span class="badge badge-gold" style="font-size:12px;">${escapeHtml(data.due_date || 'See selected schedule')}</span>
             </div>
             <button class="btn btn-outline btn-sm" onclick="resetCircDesk()"><i class="fa-solid fa-plus"></i> Next Checkout</button>
           `;
           toast(`Issued to ${data.patron_name || patronId}!`, 'success');
-          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'in 1 day'}`);
+          addCircSessionEntry('Borrow', data.book_title || bookAcc, data.patron_name || patronId, `Due ${data.due_date || 'see selected schedule'}`);
           
           document.getElementById('circBorrowPatron').value = '';
           document.getElementById('circBorrowBook').value = '';
@@ -2238,5 +2241,6 @@
       try { initChart(); } catch (e) { console.error('Chart init error:', e); }
     })();
   </script>
+<script src="/static/staff-attendance.js?v=20261103"></script>
 </body>
 </html>

@@ -375,3 +375,18 @@ class LibraryEmail(Base):
     attempts = Column(Integer, default=0, nullable=False)
     next_attempt_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_error = Column(String, nullable=True)
+
+
+class AccessionCounter(Base):
+    __tablename__ = "accession_counter"
+    id = Column(Integer, primary_key=True)
+    value = Column(Integer, nullable=False)
+
+
+class LibraryAttendance(Base):
+    __tablename__ = "library_attendance"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    recorded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    entered_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    user = relationship("User", foreign_keys=[user_id])

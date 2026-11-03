@@ -1,3 +1,7 @@
+> Email on Render Free: SMTP ports are blocked. The app now supports Brevo HTTPS delivery; follow [EMAIL-SETUP.md](EMAIL-SETUP.md) before testing signup.
+
+> PostgreSQL update (2026-10-30): follow [POSTGRESQL-SETUP.md](POSTGRESQL-SETUP.md) for the current setup and migration. The Blueprint now asks for the PostgreSQL Internal Database URL; its disk is for images. SQLite instructions below apply only to older/local deployments. Back up hosted SQLite before any restart or redeploy.
+
 # SmartLib pilot deployment and mobile distribution
 
 The repository contains deployment and standalone mobile build configuration.

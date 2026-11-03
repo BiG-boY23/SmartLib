@@ -1,4 +1,5 @@
-# Paid single-instance pilot: the disk preserves SQLite and uploaded files.
+# PostgreSQL stores records; the disk preserves uploaded files.
+# Create PostgreSQL in this region first, then supply its Internal Database URL.
 services:
   - type: web
     name: evsu-smartlib
@@ -22,7 +23,7 @@ services:
           type: web
           envVarKey: RENDER_EXTERNAL_URL
       - key: DATABASE_URL
-        value: sqlite:////var/data/library.db
+        sync: false
       - key: SMARTLIB_UPLOAD_DIR
         value: /var/data/uploads
       - key: REQUIRE_HTTPS

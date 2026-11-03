@@ -1,5 +1,5 @@
 """Staff activity fanout, transactional delivery, access and read isolation."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -103,7 +103,7 @@ def test_failed_request_and_suggestion_submission(activity_api):
 @pytest.mark.parametrize('mode', ['borrow', 'borrow_clear'])
 def test_desk_checkout_return_and_repeated_failed_return(activity_api, mode):
     client, tokens, factory, _ = activity_api
-    payload = {'mode': mode, 'patron_id':'student', 'accession_no':'BOOK-1'}
+    payload = {'due_date': (datetime.now(timezone.utc)+timedelta(days=3)).isoformat(), 'mode': mode, 'patron_id':'student', 'accession_no':'BOOK-1'}
     assert client.post('/admin/circulation/execute', headers=tokens['librarian'], json=payload).json()['status'] == 'success'
     counts = staff_counts(factory)
     assert counts['admin'] == counts['superadmin'] == counts['librarian'] == 1
@@ -124,10 +124,10 @@ def test_online_checkout_return_status_transitions_and_retry(activity_api):
         db.add(BorrowRecord(req_id='APPROVED-1', user_id=ids['student'], book_id=book.id, status=BorrowStatus.APPROVED))
         db.commit()
     for state in ('CHECKED_OUT', 'RETURNED'):
-        result = client.put('/admin/borrow-requests/APPROVED-1/status', headers=tokens['admin'], json={'status':state})
+        result = client.put('/admin/borrow-requests/APPROVED-1/status', headers=tokens['admin'], json={'status':state, 'due_date':(datetime.now(timezone.utc)+timedelta(days=3)).isoformat()})
         assert result.status_code == 200, result.text
         counts = staff_counts(factory)
-        assert client.put('/admin/borrow-requests/APPROVED-1/status', headers=tokens['admin'], json={'status':state}).status_code == 409
+        assert client.put('/admin/borrow-requests/APPROVED-1/status', headers=tokens['admin'], json={'status':state, 'due_date':(datetime.now(timezone.utc)+timedelta(days=3)).isoformat()}).status_code == 409
         assert staff_counts(factory) == counts
     assert counts['admin'] == counts['superadmin'] == counts['librarian'] == 2
 
@@ -140,13 +140,13 @@ def test_failed_circulation_commit_leaves_no_phantom_notification_then_retry_suc
             raise RuntimeError('Simulated storage failure')
         event.listen(db, 'before_commit', fail_commit, once=True)
         with pytest.raises(RuntimeError, match='storage failure'):
-            crud.execute_circulation(db, 'borrow', 'student', 'BOOK-1')
+            crud.execute_circulation(db, 'borrow', 'student', 'BOOK-1', due_date=datetime.now(timezone.utc)+timedelta(days=3))
         db.rollback()
     with factory() as db:
         assert db.query(Book).one().available_copies == 1
         assert db.query(BorrowRecord).count() == db.query(Notification).count() == 0
         assert db.query(StaffActivityEvent).count() == 0
-        assert crud.execute_circulation(db, 'borrow', 'student', 'BOOK-1')['status'] == 'success'
+        assert crud.execute_circulation(db, 'borrow', 'student', 'BOOK-1', due_date=datetime.now(timezone.utc)+timedelta(days=3))['status'] == 'success'
     counts = staff_counts(factory)
     assert counts['admin'] == counts['superadmin'] == counts['librarian'] == 1
 

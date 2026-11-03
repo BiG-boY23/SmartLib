@@ -153,17 +153,19 @@ def test_archived_book_history_and_scanner_return_remain_available_but_checkout_
     with factory() as db:
         patron = db.query(User).filter_by(username='student').one()
         book = db.get(Book, created['id'])
+        from models import BookCopy
+        copy_tag = db.query(BookCopy).filter_by(book_id=book.id).one().accession_no
         book.available_copies = 0
         db.add(BorrowRecord(req_id='ARCHIVED-ACTIVE', user_id=patron.id, book_id=book.id,
-            status=BorrowStatus.CHECKED_OUT, copy_accession_no='RETURN-ARCHIVED-C01',
+            status=BorrowStatus.CHECKED_OUT, copy_accession_no=copy_tag,
             issue_date=datetime.utcnow() - timedelta(hours=1), due_date=datetime.utcnow() + timedelta(hours=23)))
         db.commit()
     assert client.delete(f'/admin/books/{created["id"]}', headers=headers['librarian']).status_code == 200
     history = client.get('/mobile/my-borrowings', headers=headers['student']).json()
     assert history[0]['book_title'] == 'Retained loan history'
-    lookup = client.get('/admin/circulation/book/RETURN-ARCHIVED-C01', headers=headers['librarian']).json()
+    lookup = client.get(f'/admin/circulation/book/{copy_tag}', headers=headers['librarian']).json()
     assert lookup['found'] and lookup['current_borrower']['username'] == 'student'
-    payload = {'mode': 'borrow', 'patron_id': 'student', 'accession_no': 'RETURN-ARCHIVED-C01'}
+    payload = {'mode': 'borrow', 'patron_id': 'student', 'accession_no': copy_tag}
     blocked = client.post('/admin/circulation/execute', headers=headers['librarian'], json=payload).json()
     assert blocked['status'] == 'error' and 'archived' in blocked['message']
     payload['mode'] = 'return'

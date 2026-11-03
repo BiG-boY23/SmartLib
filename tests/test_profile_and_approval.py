@@ -167,3 +167,27 @@ def test_legacy_accounts_gain_nullable_name_columns(tmp_path, monkeypatch):
         assert user.full_name == "Legacy Student"
         assert user.middle_name is None and user.profile_picture_url is None
     engine.dispose()
+
+
+def test_registration_delivers_brevo_otp_and_retries_provider_failure(api, monkeypatch):
+    import re
+    import httpx
+    import email_service
+    client, factory, _, (department_id, course_id) = api
+    monkeypatch.setenv("EMAIL_PROVIDER", "brevo")
+    monkeypatch.setenv("BREVO_API_KEY", "test-key")
+    monkeypatch.setenv("SMTP_FROM", "library@example.test")
+    sent = []
+    def post(url, **kwargs):
+        sent.append(kwargs['json']['textContent'])
+        return httpx.Response(503 if len(sent)==1 else 201)
+    monkeypatch.setattr(email_service.httpx, 'post', post)
+    payload = {"username":"https-reader","email":"https-reader@evsu.edu.ph","password":"Strong1!",
+        "confirm_password":"Strong1!","first_name":"Test","last_name":"Reader","account_type":"student",
+        "department_id":department_id,"course_id":course_id}
+    assert client.post('/auth/register/request-otp',json=payload).status_code == 503
+    assert client.post('/auth/register/request-otp',json=payload).status_code == 202
+    code=re.search(r'\b[0-9]{6}\b',sent[-1]).group(0)
+    response=client.post('/auth/register/verify-otp',json={'email':payload['email'],'otp':code})
+    assert response.status_code == 201, response.text
+    assert client.post('/auth/register/verify-otp',json={'email':payload['email'],'otp':code}).status_code != 201

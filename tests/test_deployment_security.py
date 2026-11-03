@@ -1,5 +1,5 @@
 """Release blockers: privilege escalation, secret exposure and lost persistent data."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -156,7 +156,7 @@ def test_all_checkout_paths_honor_fines_and_audit_staff_actor(isolated):
         assert crud.update_borrow_status(db, approved.req_id, BorrowStatus.CHECKED_OUT)[0] is None
         fine.is_paid = True
         db.commit()
-        assert crud.execute_circulation(db, "borrow", reader.username, book.accession_no, actor="pilot-librarian")["status"] == "success"
+        assert crud.execute_circulation(db, "borrow", reader.username, book.accession_no, actor="pilot-librarian", due_date=datetime.now(timezone.utc)+timedelta(days=3))["status"] == "success"
         assert db.query(AuditLog).filter_by(user_name="pilot-librarian").count() == 1
         active = db.query(BorrowRecord).filter_by(status=BorrowStatus.CHECKED_OUT).one()
         db.add(BorrowRecord(req_id="DUPLICATE", user_id=reader.id, book_id=book.id,

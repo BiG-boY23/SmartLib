@@ -9,7 +9,7 @@
       "noon break",
       "saturday"
     ],
-    "answer": "🏛️  Library Hours:  • Monday to Friday:  7:00 AM – 6:00 PM  (NO NOON BREAK) • All checkouts are due  24 hours after checkout ."
+    "answer": "🏛️  Library Hours:  • Monday to Friday:  7:00 AM – 6:00 PM  (NO NOON BREAK) • Library staff selects the return date and time at checkout. Check your loan details for the deadline."
   },
   {
     "keywords": [
@@ -21,7 +21,7 @@
       "entitled",
       "faculty"
     ],
-    "answer": "📚  Loan Privileges:  •  Students:  Up to  3 books  of different titles. •  Faculty:  Up to  5 books  of different titles. • All checkouts are due  24 hours after checkout . •  Note:  Books marked \"NOT FOR HOME USE\" & General Reference are strictly for room-use only."
+    "answer": "📚  Loan Privileges:  •  Students:  Up to  3 books  of different titles. •  Faculty:  Up to  5 books  of different titles. • Library staff selects the return date and time at checkout. Check your loan details for the deadline. •  Note:  Books marked \"NOT FOR HOME USE\" & General Reference are strictly for room-use only."
   },
   {
     "keywords": [
@@ -33,7 +33,7 @@
       "9:00",
       "9 am"
     ],
-    "answer": "⏳  Returning Policy:  All checked-out books are due  24 hours after checkout . Returns are accepted during the library's 7:00 AM – 6:00 PM operating hours."
+    "answer": "⏳  Returning Policy:  Library staff selects the return date and time at checkout. Check your loan details for the deadline. Returns are accepted during the library's 7:00 AM – 6:00 PM operating hours."
   },
   {
     "keywords": [

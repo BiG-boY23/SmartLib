@@ -2,7 +2,7 @@
 import csv
 import io
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -129,7 +129,7 @@ def test_password_change_checks_confirmation_and_revokes_session(api):
     assert client.post('/auth/login',json={'username':'A','password':'Newpass2!'}).status_code==200
 
 
-def test_one_day_loan_and_published_overdue_fine_policy(api):
+def test_selected_due_date_and_published_overdue_fine_policy(api):
     client,tokens=api
     session_generator = client.app.dependency_overrides[get_db]()
     session = next(session_generator)
@@ -144,9 +144,10 @@ def test_one_day_loan_and_published_overdue_fine_policy(api):
         crud.ensure_book_copies(session)
         approved, message = crud.update_borrow_status(session, 'R6', BorrowStatus.APPROVED)
         assert message == 'Success' and approved.issue_date is None and approved.due_date is None
-        record, message = crud.update_borrow_status(session, 'R6', BorrowStatus.CHECKED_OUT)
+        selected_due = datetime.now(timezone.utc) + timedelta(days=4)
+        record, message = crud.update_borrow_status(session, 'R6', BorrowStatus.CHECKED_OUT, due_date=selected_due)
         assert message == 'Success'
-        assert round((record.due_date - record.issue_date).total_seconds()) == 86400
+        assert record.due_date == selected_due.replace(tzinfo=None)
         copy_tag = record.copy_accession_no
         late_record = session.query(BorrowRecord).filter_by(req_id='R6').one()
         # Use a due date well beyond the daily cap so this assertion is not

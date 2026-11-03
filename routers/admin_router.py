@@ -66,11 +66,6 @@ def create_new_book(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    if crud.get_book_by_accession(db, book_data.accession_no):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Accession Number {book_data.accession_no} already exists",
-        )
     return crud.create_book(db, book_data)
 
 
@@ -269,7 +264,7 @@ def execute_circulation_terminal(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    return crud.execute_circulation(db, req.mode, req.patron_id, req.accession_no, actor=current_user.username)
+    return crud.execute_circulation(db, req.mode, req.patron_id, req.accession_no, actor=current_user.username, due_date=req.due_date)
 
 
 # Borrow Requests Management
@@ -324,7 +319,7 @@ def update_request_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    updated, msg = crud.update_borrow_status(db, req_id, status_update.status, persist=False)
+    updated, msg = crud.update_borrow_status(db, req_id, status_update.status, persist=False, due_date=status_update.due_date)
     if not updated:
         code = status.HTTP_404_NOT_FOUND if msg == "Request record not found" else status.HTTP_409_CONFLICT
         raise HTTPException(status_code=code, detail=msg)
@@ -988,3 +983,28 @@ def read_deleted_archive(archive_id: str, response: Response, db: Session = Depe
     if not entry:
         raise HTTPException(404, "Archived record not found.")
     return dict(_deleted_archive_summary(entry), content=json.loads(entry.content_json))
+
+
+@router.post("/attendance", status_code=201)
+def record_attendance(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    from models import LibraryAttendance
+    from datetime import datetime, timedelta
+    identifier = str(payload.get("identifier", "")).strip()
+    if not identifier or len(identifier) > 300:
+        raise HTTPException(400, "Scan a Library ID or enter the institutional ID.")
+    info = crud.get_circulation_patron_info(db, identifier)
+    if not info.get("found"):
+        raise HTTPException(404, "Library user not found.")
+    patron = crud.get_user_by_username(db, info["username"])
+    # Lock the patron so repeated scanner submissions cannot create duplicate visits.
+    db.query(User).filter(User.id == patron.id).with_for_update().first()
+    now = datetime.utcnow()
+    recent = db.query(LibraryAttendance).filter(LibraryAttendance.user_id == patron.id,
+        LibraryAttendance.entered_at >= now - timedelta(seconds=30)).first()
+    if recent:
+        return {"id": recent.id, "name": patron.full_name, "duplicate": True}
+    visit = LibraryAttendance(user_id=patron.id, recorded_by=current_user.id, entered_at=now)
+    db.add(visit)
+    db.add(AuditLog(user_name=current_user.username, event=f"Library entry recorded for {patron.username}", status="Recorded"))
+    db.commit()
+    return {"id": visit.id, "name": patron.full_name, "duplicate": False}

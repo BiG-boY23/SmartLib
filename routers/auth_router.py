@@ -57,7 +57,7 @@ def _ip(request: Request) -> str:
 def _email_configuration_error() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Email delivery is not configured. Set SMTP_HOST and SMTP_FROM in the project-root .env file, then restart the server.",
+        detail="Email verification is temporarily unavailable. Please contact the library.",
     )
 
 

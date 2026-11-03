@@ -241,6 +241,8 @@ class BookBase(BaseModel):
 
 
 class BookCreate(BookBase):
+    total_copies: int = Field(default=1, ge=1, le=500)
+    accession_no: Optional[str] = None  # Ignored: allocated by the server.
     # Covers are stored through the validated multipart upload endpoint, not an arbitrary client URL.
     cover_url: Optional[str] = Field(default=None, exclude=True)
 
@@ -293,6 +295,7 @@ class BorrowRequestCreate(BaseModel):
 
 class BorrowStatusUpdate(BaseModel):
     status: BorrowStatus
+    due_date: Optional[datetime] = None
 
 
 class LoanExtensionRequest(BaseModel):
@@ -301,6 +304,7 @@ class LoanExtensionRequest(BaseModel):
 
 
 class CirculationExecuteRequest(BaseModel):
+    due_date: Optional[datetime] = None
     mode: str
     patron_id: Optional[str] = None
     accession_no: str

@@ -1,7 +1,7 @@
 import re
 import uuid
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -204,6 +204,9 @@ def get_book(db: Session, book_id: int):
 def resolve_book_copy(db: Session, accession_no: str):
     """Resolve a base catalog accession or an exact physical-copy QR tag."""
     scanned = str(accession_no or "").strip().upper()
+    exact = db.query(BookCopy).filter(BookCopy.accession_no == scanned).first()
+    if exact:
+        return db.get(Book, exact.book_id), exact.accession_no, True
     copy_match = re.fullmatch(r"(.+)-C(\d+)", scanned)
     if copy_match:
         base_accession = copy_match.group(1)
@@ -211,7 +214,8 @@ def resolve_book_copy(db: Session, accession_no: str):
         book = db.query(Book).filter(func.upper(Book.accession_no) == base_accession).first()
         if not book or copy_number < 1 or copy_number > book.total_copies:
             return None, None, True
-        return book, f"{book.accession_no}-C{copy_number:02d}", True
+        registered = db.query(BookCopy).filter_by(book_id=book.id, copy_number=copy_number).first()
+        return book, registered.accession_no if registered else f"{book.accession_no}-C{copy_number:02d}", True
 
     book = db.query(Book).filter(func.upper(Book.accession_no) == scanned).first()
     if not book:
@@ -238,7 +242,8 @@ def _allocate_available_copy(db: Session, book: Book):
         return None, "An older checkout has no copy QR recorded. Resolve that loan before issuing another copy of this title."
     used = {row.copy_accession_no.upper() for row in active}
     for copy_number in range(1, book.total_copies + 1):
-        tag = f"{book.accession_no}-C{copy_number:02d}"
+        copy = db.query(BookCopy).filter_by(book_id=book.id, copy_number=copy_number).first()
+        tag = copy.accession_no if copy else f"{book.accession_no}-C{copy_number:02d}"
         if tag.upper() not in used:
             return tag, None
     return None, "All physical copies of this book are currently checked out."
@@ -270,11 +275,11 @@ def get_books(
     return query.offset(skip).limit(limit).all()
 
 
-def _new_book_copy(book: Book, copy_number: int, qr_printed_at=None):
+def _new_book_copy(db, book: Book, copy_number: int, qr_printed_at=None):
     return BookCopy(
         book_id=book.id,
         copy_number=copy_number,
-        accession_no=f"{book.accession_no}-C{copy_number:02d}",
+        accession_no=(f"{book.accession_no}-C{copy_number:02d}" if qr_printed_at else next_accession(db)),
         qr_printed_at=qr_printed_at,
     )
 
@@ -289,7 +294,7 @@ def ensure_book_copies(db: Session, legacy_as_printed: bool = True):
         }
         for copy_number in range(1, book.total_copies + 1):
             if copy_number not in existing:
-                db.add(_new_book_copy(book, copy_number, stamp))
+                db.add(_new_book_copy(db, book, copy_number, stamp))
     db.commit()
 
 
@@ -313,11 +318,37 @@ def mark_book_copies_printed(db: Session, book_id: int, copy_ids: List[int]):
     return rows
 
 
+def next_accession(db):
+    """Atomic allocation across catalog and physical-copy identifiers."""
+    from models import AccessionCounter
+    from sqlalchemy import case
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    existing = [v for (v,) in db.query(Book.accession_no).all()] + [v for (v,) in db.query(BookCopy.accession_no).all()]
+    start = max((int(v) for v in existing if v and v.isascii() and v.isdigit()), default=0) + 1
+    insert = pg_insert if db.bind.dialect.name == "postgresql" else sqlite_insert
+    stmt = insert(AccessionCounter).values(id=1, value=start)
+    stmt = stmt.on_conflict_do_update(index_elements=[AccessionCounter.id], set_={"value": case((AccessionCounter.value < start, start), else_=AccessionCounter.value + 1)}).returning(AccessionCounter.value)
+    return f"{db.execute(stmt).scalar_one():05d}"
+
+
+def checkout_due_date(value):
+    if value is None or value.tzinfo is None:
+        raise ValueError("Select a return date and time with a timezone before checkout.")
+    due = value.astimezone(timezone.utc).replace(tzinfo=None)
+    if due <= datetime.utcnow():
+        raise ValueError("The return date and time must be in the future.")
+    return due
+
+
 def create_book(db: Session, book_data: BookCreate):
-    db_book = Book(**book_data.model_dump())
+    values = book_data.model_dump(exclude={"accession_no"})
+    values["available_copies"] = values["total_copies"]
+    values["accession_no"] = next_accession(db)
+    db_book = Book(**values)
     db.add(db_book)
     db.flush()
-    db.add_all(_new_book_copy(db_book, copy_number) for copy_number in range(1, db_book.total_copies + 1))
+    db.add_all(_new_book_copy(db, db_book, copy_number) for copy_number in range(1, db_book.total_copies + 1))
     db.commit()
     db.refresh(db_book)
     log_audit(
@@ -352,7 +383,7 @@ def update_book(db: Session, book_id: int, book_update: BookUpdate):
         new_rows = []
         while len(new_rows) < copy_delta:
             if next_number not in existing_numbers:
-                new_rows.append(_new_book_copy(db_book, next_number))
+                new_rows.append(_new_book_copy(db, db_book, next_number))
             next_number += 1
         db.add_all(new_rows)
     db.commit()
@@ -464,7 +495,7 @@ def _claim_stock(db: Session, book):
     return claimed == 1
 
 
-def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, persist: bool = True):
+def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, persist: bool = True, due_date=None):
     record = (
         db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
     )
@@ -494,9 +525,13 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, per
         if allocation_error:
             return None, allocation_error
         now = datetime.utcnow()
+        try:
+            due = checkout_due_date(due_date)
+        except ValueError as exc:
+            return None, str(exc)
         record.copy_accession_no = copy_tag
         record.issue_date = now
-        record.due_date = now + timedelta(days=LOAN_PERIOD_DAYS)
+        record.due_date = due
         if not _claim_stock(db, record.book):
             return None, "No available copy can be checked out for this request."
         record.status = new_status
@@ -676,7 +711,7 @@ def get_circulation_book_info(db: Session, accession_no: str):
 
 
 def execute_circulation(
-    db: Session, mode: str, patron_username: Optional[str], accession_no: str, actor: Optional[str] = None
+    db: Session, mode: str, patron_username: Optional[str], accession_no: str, actor: Optional[str] = None, due_date=None
 ):
     # Normalized modes
     norm_mode = mode.lower().strip()
@@ -744,13 +779,16 @@ def execute_circulation(
                 "message": f"Borrow limit reached: {patron.role.value if patron.role else 'Student'} maximum is {max_allowed} books at a time.",
             }
 
+        try:
+            due = checkout_due_date(due_date)
+        except ValueError as exc:
+            return {"status": "error", "message": str(exc)}
         # Check out
         if not _claim_stock(db, book):
             return {"status": "unavail", "message": "The last available copy was just checked out. Refresh and try again."}
         now = datetime.utcnow()
-        due = now + timedelta(days=LOAN_PERIOD_DAYS)
-        loan_label = "1-Day Faculty Loan" if is_faculty else "1-Day Student Loan"
-        due_str = due.strftime("%b %d, %Y at %I:%M %p")
+        loan_label = "Staff-scheduled loan"
+        due_str = (due + timedelta(hours=8)).strftime("%b %d, %Y at %I:%M %p")
 
         rec = BorrowRecord(
             req_id=f"CIR-{int(now.timestamp())}-{uuid.uuid4().hex[:6].upper()}",
@@ -767,7 +805,7 @@ def execute_circulation(
         notify_borrow_activity(db, rec)
         db.commit()
 
-        log_audit(db, actor or patron.username, f"Issued Copy {copy_tag} ({book.title}) to {patron.username}", "Approved")
+        log_audit(db, actor or patron.username, f"Issued Copy {copy_tag} ({book.title}) to {patron.username}; due {due.isoformat()} UTC", "Approved")
         log_smtp(db, patron.email, "Book Issued Confirmation", f"You borrowed '{book.title}'. Due Date: {due_str}.")
 
         return {
@@ -910,7 +948,7 @@ def execute_circulation(
             copy_accession_no=copy_tag,
             status=BorrowStatus.CHECKED_OUT,
             issue_date=datetime.utcnow(),
-            due_date=datetime.utcnow() + timedelta(days=LOAN_PERIOD_DAYS),
+            due_date=checkout_due_date(due_date),
         )
         db.add(record)
         db.flush()

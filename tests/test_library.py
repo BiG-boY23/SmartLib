@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -182,7 +183,7 @@ def test_admin_book_management():
     response = client.post("/admin/books", json=new_book, headers=headers)
     assert response.status_code == 201
     data = response.json()
-    assert data["accession_no"] == "LIB-QR-9999"
+    assert data["accession_no"].isdigit()
     assert data["title"] == "Clean Code Architecture"
     assert data["author"] == "Robert C. Martin"
     assert data["publisher"] == "Prentice Hall"
@@ -253,6 +254,7 @@ def test_circulation_execute():
 
     circ_req = {
         "mode": "borrow_clear",
+        "due_date": (datetime.now(timezone.utc)+timedelta(days=3)).isoformat(),
         "patron_id": "EVSU-LIB-2026",
         "accession_no": "LIB-QR-1001",
     }
@@ -279,6 +281,7 @@ def test_circulation_execute():
     # 3. Test Real Scanner Borrow (mode: borrow)
     real_borrow_req = {
         "mode": "borrow",
+        "due_date": (datetime.now(timezone.utc)+timedelta(days=3)).isoformat(),
         "patron_id": "EVSU-LIB-2026",
         "accession_no": "LIB-QR-1003-C01",
     }

@@ -105,3 +105,27 @@ def extension_history(start: Optional[date]=None, end: Optional[date]=None,
           "xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[format]
     return Response(export_loan_extensions(report,format,paper=paper),media_type=mime,headers={
         "Content-Disposition":f'attachment; filename="SmartLib-loan-extensions-{start}-{end}.{format}"', "Cache-Control":"no-store"})
+
+
+@router.get("/attendance")
+def attendance_report(start: date, end: date, format: Literal["json", "csv", "pdf", "docx", "xlsx"]="json",
+    paper: Literal["a4", "long"]="long", db: Session=Depends(get_db), user: User=Depends(staff)):
+    from models import LibraryAttendance
+    from datetime import time, timezone
+    if start > end or (end-start).days > 365 or end == date.max:
+        raise HTTPException(400, "Choose a date range of 1 to 366 days.")
+    lower = datetime.combine(start, time.min, LOCAL_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+    upper = datetime.combine(end + timedelta(days=1), time.min, LOCAL_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+    visits = db.query(LibraryAttendance).filter(LibraryAttendance.entered_at >= lower,
+        LibraryAttendance.entered_at < upper).order_by(LibraryAttendance.entered_at.desc()).all()
+    rows = [[v.entered_at.replace(tzinfo=timezone.utc).astimezone(LOCAL_TZ).isoformat(), v.user.username,
+        v.user.full_name, v.user.role.value, v.user.department or "", v.user.course or ""] for v in visits]
+    columns = ["Entry time (Philippines)", "Institutional ID", "Name", "Role", "Department", "Course"]
+    unique = len({v.user_id for v in visits})
+    if format == "json":
+        return {"columns": columns, "rows": rows, "visits": len(rows), "unique_visitors": unique}
+    content = export_queue_report("Library Attendance", columns, rows, format,
+        [f"Period: {start} to {end}", f"Visits: {len(rows)} | Unique visitors: {unique}", "Timezone: Asia/Manila"], paper=paper)
+    mime = {"csv":"text/csv", "pdf":"application/pdf", "docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[format]
+    return Response(content, media_type=mime, headers={"Content-Disposition":f'attachment; filename="attendance-{start}-{end}.{format}"', "Cache-Control":"no-store"})

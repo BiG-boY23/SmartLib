@@ -1082,7 +1082,7 @@ def seed_initial_data(db: Session):
             hashed_password=get_password_hash("password123"),
             full_name="EVSU Student Patron",
             role=UserRole.STUDENT,
-            department="Ormoc City Campus",
+            department="Ormoc Campus",
         )
         db.add_all([super_admin, librarian, librarian2, student])
         db.commit()
@@ -1098,7 +1098,7 @@ def seed_initial_data(db: Session):
                 hashed_password=get_password_hash("password123"),
                 full_name="EVSU Student Patron",
                 role=UserRole.STUDENT,
-                department="Ormoc City Campus",
+                department="Ormoc Campus",
             )
         )
         db.commit()

@@ -50,7 +50,7 @@
     const p=new URLSearchParams({format,...exportPaper(format)});Object.entries(values).forEach(([k,id])=>{const value=document.getElementById(id).value;if(value)p.set(k,value)});return p;
   }
   async function openReports() {
-    show('panelReports','navReports','Circulation reports','Recorded borrowing and returns · Ormoc City Campus · Philippine time');
+    show('panelReports','navReports','Circulation reports','Recorded borrowing and returns · Ormoc Campus · Philippine time');
     try {reportOptions=await (await api('/admin/reports/options')).json();document.getElementById('reportDepartment').innerHTML='<option value="">All departments</option>'+reportOptions.departments.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');refreshCourses();await generate();}
     catch(error){document.getElementById('reportStatus').textContent=error.message;}
   }

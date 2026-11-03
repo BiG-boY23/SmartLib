@@ -10,7 +10,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import joinedload
 from models import Book, BorrowRecord, BorrowStatus, Fine, User, UserRole, LoanExtensionEvent
 
-CAMPUS = "EVSU Ormoc City Campus"
+CAMPUS = "EVSU Ormoc Campus"
 LOCAL_TZ = timezone(timedelta(hours=8))
 ROOT = Path(__file__).resolve().parent
 
@@ -172,7 +172,7 @@ def font(size, bold=False):
 
 
 def chart_png(report):
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageOps
     image = Image.new("RGB", (1400, 520), "white")
     draw = ImageDraw.Draw(image)
     draw.text((65, 20), "Daily people borrowing and returning", fill="#252129", font=font(28, True))
@@ -383,15 +383,15 @@ def export_loan_extensions(report, format, paper="long"):
 
 
 def library_id_png(user):
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageOps
     import qrcode
-    image=Image.new("RGB",(900,1400),"#ffffff"); draw=ImageDraw.Draw(image)
+    image=Image.new("RGB",(900,1720),"#ffffff"); draw=ImageDraw.Draw(image)
     wine, gold, ink="#730d24", "#d8b366", "#252129"
     draw.polygon([(0,0),(335,0),(0,335)],fill=wine)
     draw.polygon([(900,0),(665,0),(900,235)],fill=wine)
     draw.line([(0,350),(350,0)], fill=gold,width=14)
     draw.line([(900,250),(650,0)],fill=gold,width=14)
-    logo_path=ROOT/"mobile-native"/"assets"/"evsu-smartlib-logo.jpg"
+    logo_path=ROOT/"static"/"evsu-logo.jpg"
     if logo_path.exists():
         logo=Image.open(logo_path).convert("RGB").resize((150,150)); image.paste(logo,(375,48))
     def centered(text,y,size=30,bold=False,color=ink,max_width=780):
@@ -406,7 +406,7 @@ def library_id_png(user):
             draw.text((450,y),line,font=font(size,bold),fill=color,anchor="mt"); y+=size+10
         return y
     centered("EASTERN VISAYAS STATE UNIVERSITY",226,26,True)
-    centered("ORMOC CITY CAMPUS",269,24,True,wine)
+    centered("ORMOC CAMPUS",269,24,True,wine)
     centered("SMARTLIB  /  LIBRARY MEMBERSHIP",320,20,False)
     payload=f"EVSU-CARD-2026::{user.username}::{user.role.value}"
     qr=qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,box_size=12,border=4)
@@ -416,11 +416,29 @@ def library_id_png(user):
     # Integer module scaling preserves a four-module white quiet zone.
     side=qr_image.width; image.paste(qr_image,((900-side)//2,390))
     draw.rounded_rectangle((100,375,800,1070),radius=24,outline=gold,width=4)
-    name_y=1110
+    from storage import PROFILE_PHOTOS
+    photo_url = getattr(user, "profile_picture_url", None) or ""
+    photo = None
+    if photo_url.startswith("/profile-photos/"):
+        candidate = (PROFILE_PHOTOS / photo_url.removeprefix("/profile-photos/")).resolve()
+        if candidate.parent == PROFILE_PHOTOS.resolve():
+            try:
+                with Image.open(candidate) as source:
+                    photo = ImageOps.fit(ImageOps.exif_transpose(source).convert("RGB"), (210, 250))
+            except (OSError, ValueError):
+                pass
+    draw.rectangle((340,1095,560,1355), fill="#f5f1ed", outline=gold, width=3)
+    if photo is not None:
+        image.paste(photo, (345,1100))
+    else:
+        draw.ellipse((420,1140,480,1200), fill="#c8beb6")
+        draw.rounded_rectangle((390,1210,510,1290), radius=45, fill="#c8beb6")
+        centered("No profile photo",1320,16)
+    name_y=1380
     name_y=centered(user.full_name,name_y,32,True)
     name_y=centered(user.username,name_y+2,26,True,wine)
     centered(f"{user.role.value.title()} | {'Active member' if user.is_active else 'Inactive member'}",name_y+4,19)
-    draw.rectangle((0,1250,900,1400),fill=wine)
-    y=centered(user.department or "Ormoc City Campus",1270,22,True,"#ffffff")
+    draw.rectangle((0,1550,900,1720),fill=wine)
+    y=centered(user.department or "Ormoc Campus",1570,22,True,"#ffffff")
     centered(user.course or "Library member",y+2,20,False,"#ffffff")
     output=io.BytesIO(); image.save(output,format="PNG"); return output.getvalue()

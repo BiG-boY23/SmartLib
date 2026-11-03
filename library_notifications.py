@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def queue_email(db, key, patron, subject, body):
     if not db.query(LibraryEmail.id).filter_by(event_key=key).first():
         db.add(LibraryEmail(event_key=key, recipient=patron.email, subject=" ".join(subject.split()),
-                            body=f"Dear {patron.full_name or patron.username},\n\n{body}\n\nEVSU Ormoc City Campus Library"))
+                            body=f"Dear {patron.full_name or patron.username},\n\n{body}\n\nEVSU Ormoc Campus Library"))
 
 
 def queue_due_reminders(db, now=None):

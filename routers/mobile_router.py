@@ -142,9 +142,10 @@ def get_digital_student_id(
 
     return {
         "patron_id": current_user.username,
+        "profile_picture_url": current_user.profile_picture_url,
         "full_name": current_user.full_name,
         "role": current_user.role.value.upper(),
-        "department": current_user.department or "EVSU Ormoc City Campus",
+        "department": current_user.department or "EVSU Ormoc Campus",
         "course": current_user.course,
         "is_active": current_user.is_active,
         "active_borrows_count": active_borrows_count,

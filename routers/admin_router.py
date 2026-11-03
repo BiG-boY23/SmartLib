@@ -358,7 +358,7 @@ def _deliver_approval_email(db: Session, record: BorrowRecord) -> str:
         f"Approval date: {delivery.created_at.strftime('%B %d, %Y at %I:%M %p UTC')}\n"
         f"Pickup schedule: {record.pickup_date or 'Please contact the library to arrange pickup.'}\n\n"
         "Please present your library ID at the circulation desk. The loan period begins when the book is checked out.\n\n"
-        "EVSU Ormoc City Campus Library"
+        "EVSU Ormoc Campus Library"
     )
     subject = f"Borrow request approved — {record.req_id}"
     try:

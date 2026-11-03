@@ -248,7 +248,7 @@ def _pdf(title, metadata, sections, chart, paper):
         canvas.restoreState()
     output = io.BytesIO()
     SimpleDocTemplate(output, pagesize=(width, height), leftMargin=left, rightMargin=right,
-                      topMargin=110, bottomMargin=78, title=clean_text(title), author="EVSU Ormoc City Campus").build(
+                      topMargin=110, bottomMargin=78, title=clean_text(title), author="EVSU Ormoc Campus").build(
                           content, onFirstPage=page, onLaterPages=page)
     return output.getvalue()
 

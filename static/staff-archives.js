@@ -60,17 +60,15 @@
     }catch(error){if(current===version){status.textContent=error.message;previous.disabled=true;next.disabled=true;}}
   }
   function open() {
-    document.querySelectorAll('.screen-panel,.nav-item-btn').forEach(node=>node.classList.remove('active'));
-    panel.classList.add('active');document.getElementById('navRetainedArchive').classList.add('active');
-    document.getElementById('pageTitle').textContent='Retained archive';
-    document.getElementById('pageSubTitle').textContent='SuperAdmin access · Removed records and conversation history';
+    if (!panel.open) panel.showModal();
     load();
   }
   async function setup() {
     try{await StaffRecords.refresh();if(!StaffRecords.isSuperAdmin())return;}catch{return;}
     const menu=document.querySelector('.sidebar-menu'),container=document.querySelector('.content-container');if(!menu||!container)return;
     const nav=element('button','Retained archive','nav-item-btn');nav.id='navRetainedArchive';nav.type='button';nav.onclick=open;menu.append(nav);
-    panel=element('div',undefined,'screen-panel');panel.id='panelRetainedArchive';
+    panel=element('dialog',undefined,'archive-dialog');panel.id='panelRetainedArchive';panel.setAttribute('aria-label','Retained archive');
+    const dismiss=element('button','Close archive','btn btn-outline btn-sm');dismiss.type='button';dismiss.onclick=()=>panel.close();panel.append(dismiss);
     const card=element('section',undefined,'card archive-card');
     const form=element('form',undefined,'archive-filters');
     const searchLabel=element('label','Search records');query=element('input');query.type='search';query.maxLength=200;query.placeholder='Title, reference, or removed by';query.className='form-control';searchLabel.append(query);
@@ -80,7 +78,7 @@
     form.onsubmit=event=>{event.preventDefault();skip=0;load();};
     status=element('p',undefined,'archive-muted');status.setAttribute('role','status');list=element('div',undefined,'table-responsive archive-records');
     const pagination=element('div',undefined,'archive-pagination');previous=element('button','Previous','btn btn-outline btn-sm');next=element('button','Next','btn btn-outline btn-sm');previous.type=next.type='button';previous.disabled=next.disabled=true;previous.onclick=()=>{skip=Math.max(0,skip-limit);load();};next.onclick=()=>{skip+=limit;load();};pagination.append(previous,next);
-    card.append(element('h3','Retained records'),element('p','Removed content is retained here for SuperAdmin review. Other accounts cannot view this archive.','archive-muted'),form,status,list,pagination);panel.append(card);container.append(panel);
+    card.append(element('h3','Retained records'),element('p','Removed content is retained here for SuperAdmin review. Other accounts cannot view this archive.','archive-muted'),form,status,list,pagination);panel.append(card);document.body.append(panel);
     dialog=element('dialog',undefined,'archive-dialog');dialog.setAttribute('aria-label','Retained record');dialog.onclose=()=>{detailVersion++;};const close=element('button','Close','btn btn-outline btn-sm');close.type='button';close.onclick=()=>dialog.close();detail=element('div');dialog.append(close,detail);document.body.append(dialog);
   }
   document.addEventListener('DOMContentLoaded',setup);

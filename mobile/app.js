@@ -193,7 +193,7 @@
       }
     }
     if (action === 'public-home') { window.location.assign('/'); }
-    if (action === 'logout') { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.token = null; state.user = null; state.digitalId = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); state.authMode = 'login'; renderAuth(); }
+    if (action === 'logout') { window.confirmSignOut(() => { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.token = null; state.user = null; state.digitalId = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); state.authMode = 'login'; renderAuth(); }); }
     if (action === 'refresh-borrowings') await renderTab('borrowings');
     if (action === 'refresh-id') { await renderTab('digital-id'); notify('Library ID refreshed.'); }
     if (action === 'copy-id' && state.digitalId?.qr_payload) { try { await navigator.clipboard.writeText(state.digitalId.qr_payload); notify('Digital ID copied.'); } catch { notify(state.digitalId.qr_payload); } }

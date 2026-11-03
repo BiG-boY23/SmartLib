@@ -16,9 +16,9 @@
   function plot(canvas, daily, people=true) {
     charts.get(canvas)?.destroy();
     if(typeof Chart==='undefined') return;
-    charts.set(canvas,new Chart(document.getElementById(canvas),{type:'bar',data:{labels:daily.map(d=>d.date),datasets:[
-      {label:people?'People borrowing':'Items borrowed',data:daily.map(d=>d[people?'borrowers':'borrowed_items']),borderColor:'#e1b842',backgroundColor:'#e1b842bb',tension:0,pointRadius:3},
-      {label:people?'People returning':'Items returned',data:daily.map(d=>d[people?'returners':'returned_items']),borderColor:'#36bf9a',backgroundColor:'#36bf9abb',tension:0,pointRadius:3}
+    charts.set(canvas,new Chart(document.getElementById(canvas),{type:'line',data:{labels:daily.map(d=>d.date),datasets:[
+      {label:people?'People borrowing':'Items borrowed',data:daily.map(d=>d[people?'borrowers':'borrowed_items']),borderColor:'#e1b842',backgroundColor:'#e1b842bb',fill:false,borderWidth:2,tension:0,pointRadius:3},
+      {label:people?'People returning':'Items returned',data:daily.map(d=>d[people?'returners':'returned_items']),borderColor:'#36bf9a',backgroundColor:'#36bf9abb',fill:false,borderWidth:2,tension:0,pointRadius:3}
     ]},options:{
       responsive:true,maintainAspectRatio:false,
       plugins:{legend:{labels:{color:'#cdd3de'}}},

@@ -345,6 +345,7 @@
     }
   .password-input-wrap{position:relative}.password-input-wrap .form-control{padding-right:84px}.password-toggle{position:absolute;right:8px;top:0;bottom:0;border:0;background:none;color:var(--evsu-gold);display:flex;align-items:center;gap:5px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer}.password-toggle b{font-size:12px}</style>
 <link rel="stylesheet" href="/static/staff-attendance.css?v=20261103">
+  <script src="/static/signout-dialog.js?v=20261103-2"></script>
 </head>
 <body>
 
@@ -622,7 +623,7 @@
           <div class="acc-drop-body">
             <button class="acc-drop-item" onclick="openAccountSettings()"><i class="fa-solid fa-user-gear"></i> Account Settings</button>
             <div class="acc-drop-divider"></div>
-            <button class="acc-drop-item logout" onclick="handleLogout()"><i class="fa-solid fa-right-from-bracket"></i> Sign Out</button>
+            <button class="acc-drop-item logout" onclick="requestLogout()"><i class="fa-solid fa-right-from-bracket"></i> Sign Out</button>
           </div>
         </div>
       </div>
@@ -986,11 +987,11 @@
     </div>
   </div>
 
-  <script src="/static/staff-reports.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-reports.js?v=20261103"></script>
   <script src="/static/staff-chat.js?v=20261020-activity-archive"></script>
   <script src="/static/staff-updates.js?v=20261020-activity-archive"></script>
   <script src="/static/staff-records.js?v=20261020-activity-archive"></script>
-  <script src="/static/staff-archives.js?v=20261020-activity-archive"></script>
+  <script src="/static/staff-archives.js?v=20261103"></script>
   <script src="/static/staff-notifications.js?v=20261020-activity-archive"></script>
   <script>
     // AUTH GUARD FOR LIBRARIAN PORTAL
@@ -1016,6 +1017,13 @@
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${getActiveToken()}`
       };
+    }
+
+    function requestLogout() {
+      confirmSignOut(() => {
+        sessionStorage.setItem('smartlib_logout_notice', 'signed-out');
+        handleLogout();
+      });
     }
 
     function handleLogout() {

@@ -85,8 +85,8 @@ def test_rows_fit_wrapped_multiline_text_and_have_frozen_filterable_headings():
     assert float(long_row.get("ht")) <= 409.5
     pane = sheet.find("s:sheetViews/s:sheetView/s:pane", NS)
     assert pane.get("state") == "frozen"
-    assert pane.get("topLeftCell") == "A5"
-    assert sheet.find("s:autoFilter", NS).get("ref") == "A4:B6"
+    assert pane.get("topLeftCell") == "A12"
+    assert sheet.find("s:autoFilter", NS).get("ref") == "A11:B13"
     for style in parts["xl/styles.xml"].findall("s:cellXfs/s:xf", NS):
         assert style.find("s:alignment", NS).get("wrapText") == "1"
         assert style.find("s:alignment", NS).get("vertical") == "top"

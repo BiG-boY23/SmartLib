@@ -24,13 +24,22 @@
     if(!superAdmin)Object.keys(views).forEach(kind=>views[kind]='active');
   }
   function viewUrl(path,kind) { return superAdmin && views[kind]==='archived' ? path+(path.includes('?')?'&':'?')+'archive_view=true' : path; }
+  function archiveReason() {
+    return new Promise(resolve => {
+      const dialog=document.createElement('dialog');
+      dialog.className='archive-dialog';dialog.setAttribute('aria-labelledby','archiveActionTitle');
+      dialog.innerHTML=`<form><h3 id="archiveActionTitle">Archive this record?</h3><p class="archive-muted">This record will leave the active list and be retained for SuperAdmin review. Your name and the archive date will be recorded.</p><div class="archive-pagination"><button type="button" class="btn btn-outline" data-cancel autofocus>Cancel</button><button type="submit" class="btn btn-gold">Archive record</button></div></form>`;
+      let result=null;
+      dialog.querySelector('form').onsubmit=event=>{event.preventDefault();result='';dialog.close();};
+      dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
+      dialog.onclose=()=>{dialog.remove();resolve(result);};
+      document.body.append(dialog);dialog.showModal();
+    });
+  }
   async function toggle(kind,id,reload) {
     const archived=keys.has(`${kind}:${id}`);
-    const reason=archived ? '' : prompt('Reason for archiving (retained in the staff audit history):');
+    const reason=archived ? '' : await archiveReason();
     if (!archived && reason === null) return;
-    if (!archived && (reason.trim().length < 3 || reason.trim().length > 500)) {
-      toast('Enter an archive reason between 3 and 500 characters.','warning');return;
-    }
     try {
       await api(`/archives/${kind}/${encodeURIComponent(id)}?`+new URLSearchParams({archived:!archived,reason} ),{method:'PUT'});
       await refresh();
@@ -56,7 +65,7 @@
   function visible(kind,id) { return keys.has(`${kind}:${id}`) === (views[kind]==='archived'); }
   function button(kind,id,reload) {
     const b=document.createElement('button');b.type='button';b.className='btn btn-outline btn-sm';
-    const entry=keys.get(`${kind}:${id}`);b.textContent=entry?'Restore':'Archive';b.title=entry?entry.reason:'Archive with a reason';
+    const entry=keys.get(`${kind}:${id}`);b.textContent=entry?'Restore':'Archive';b.title=entry?entry.reason:'Archive record';
     b.onclick=async()=>{b.disabled=true;try{await toggle(kind,id,reload);}finally{b.disabled=false;}};return b;
   }
   function exports(kind,parent) {

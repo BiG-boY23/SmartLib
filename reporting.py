@@ -223,6 +223,7 @@ def export_report(report, format, paper="long"):
     if format == "csv":
         output=io.StringIO(newline=""); writer=csv.writer(output)
         safe = spreadsheet_cell
+        writer.writerow(["EASTERN VISAYAS STATE UNIVERSITY", "Ormoc Campus"])
         writer.writerow(["Library circulation report", CAMPUS])
         writer.writerow(["From", report["start"], "To", report["end"], "Timezone", report["timezone"]])
         writer.writerow(["Audience", report["filters"]["role"], "Department", safe(report["filters"]["department"]), "Course", safe(report["filters"]["course"])])
@@ -294,6 +295,7 @@ def export_weekly_book_trends(report, format, paper="long"):
     if format == "csv":
         stream = io.StringIO(newline="")
         writer = csv.writer(stream)
+        writer.writerow(["EASTERN VISAYAS STATE UNIVERSITY", "Ormoc Campus"])
         writer.writerow([title, CAMPUS])
         writer.writerow(["Week", report["week_start"], "To", report["week_end"]])
         writer.writerow(["Previous week", report["previous_week_start"], "To", report["previous_week_end"]])
@@ -328,6 +330,10 @@ def export_weekly_book_trends(report, format, paper="long"):
 def export_queue_report(title, columns, rows, format, metadata, paper="long"):
     if format == "csv":
         stream = io.StringIO(newline=""); writer = csv.writer(stream)
+        writer.writerow(["EASTERN VISAYAS STATE UNIVERSITY", "Ormoc Campus"])
+        writer.writerow([spreadsheet_cell(title)])
+        writer.writerows([[spreadsheet_cell(item)] for item in metadata])
+        writer.writerow([])
         writer.writerow(columns)
         writer.writerows([[spreadsheet_cell(value) for value in row] for row in rows])
         return stream.getvalue().encode("utf-8-sig")
@@ -359,6 +365,7 @@ def export_loan_extensions(report, format, paper="long"):
     values = [[row[key] or "" for key, _ in EXTENSION_COLUMNS] for row in report["rows"]]
     if format == "csv":
         stream = io.StringIO(newline=""); writer = csv.writer(stream)
+        writer.writerow(["EASTERN VISAYAS STATE UNIVERSITY", "Ormoc Campus"])
         writer.writerow([title])
         writer.writerows([[spreadsheet_cell(item)] for item in metadata])
         writer.writerow([])

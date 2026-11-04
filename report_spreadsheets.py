@@ -12,6 +12,7 @@ import math
 import re
 import unicodedata
 import zipfile
+from pathlib import Path
 from copy import deepcopy
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -167,7 +168,9 @@ def _widths(columns, rows, requested):
         sizes = [float(value) for value in requested]
         if any(not math.isfinite(value) or not 8 <= value <= 80 for value in sizes):
             raise ValueError("Report column widths must be between 8 and 80 characters.")
-        return sizes
+        # Explicit widths are layout hints; expand them when content needs more room.
+        automatic = _widths(columns, rows, None)
+        return [max(base, fitted) for base, fitted in zip(sizes, automatic)]
     result = []
     for index, heading in enumerate(columns):
         values = [row[index] for row in rows if row[index] is not None]
@@ -280,10 +283,10 @@ def _worksheet(title, metadata, spec):
         continued = continued or count > 1
         for index in range(count):
             fitted_rows.append([parts[index] if index < len(parts) else None for parts in chunks])
-    notes = list(metadata)
+    notes = ["EASTERN VISAYAS STATE UNIVERSITY", "Ormoc Campus · Library & Information Services"] + list(metadata)
     if continued:
         notes.append("Long text continues on the following row. Counts appear once per record.")
-    header_row = len(notes) + 3
+    header_row = len(notes) + 8
     last_row = header_row + max(1, len(fitted_rows))
     if last_row > 1048576:
         raise ValueError("This report exceeds Excel's 1,048,576-row limit.")
@@ -301,9 +304,11 @@ def _worksheet(title, metadata, spec):
     for index, width in enumerate(widths, start=1):
         _element(column_settings, "col", {"min": str(index), "max": str(index), "width": str(width), "customWidth": "1"})
     data = _element(root, "sheetData")
+    for number in range(1, 6):
+        _element(data, "row", {"r": str(number), "ht": "24", "customHeight": "1"})
     merges = []
-    for index, (value, style) in enumerate([(title, 1)] + [(note, 2) for note in notes], start=1):
-        height = _row_height([value], [sum(widths)], minimum=32 if index == 1 else 23)
+    for index, (value, style) in enumerate([(title, 1)] + [(note, 2) for note in notes], start=6):
+        height = _row_height([value], [sum(widths)], minimum=32 if index == 6 else 23)
         row = _element(data, "row", {"r": str(index), "ht": str(height), "customHeight": "1"})
         _write_cell(row, f"A{index}", value, style)
         if len(columns) > 1:
@@ -330,6 +335,7 @@ def _worksheet(title, metadata, spec):
     _element(root, "printOptions", {"gridLines": "0"})
     _element(root, "pageMargins", {"left": "0.3", "right": "0.3", "top": "0.5", "bottom": "0.5", "header": "0.2", "footer": "0.2"})
     _element(root, "pageSetup", {"paperSize": "9", "orientation": "landscape", "fitToWidth": "1", "fitToHeight": "0"})
+    _element(root, "drawing", {f"{{{REL}}}id": "rIdLetterhead"})
     return root, header_row
 
 
@@ -368,10 +374,24 @@ def export_workbook(title: str, metadata: list[str], sheets: list[dict]) -> byte
     ET.SubElement(relationships, f"{{{PACKAGE_REL}}}Relationship", {"Id": f"rId{len(sheets) + 1}", "Type": REL + "/styles", "Target": "styles.xml"})
     ET.SubElement(types, f"{{{CONTENT_TYPES}}}Override", {"PartName": "/xl/workbook.xml", "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"})
     ET.SubElement(types, f"{{{CONTENT_TYPES}}}Override", {"PartName": "/xl/styles.xml", "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"})
+    ET.SubElement(types, f"{{{CONTENT_TYPES}}}Default", {"Extension": "jpeg", "ContentType": "image/jpeg"})
+    for index in range(1, len(sheets) + 1):
+        ET.SubElement(types, f"{{{CONTENT_TYPES}}}Override", {"PartName": f"/xl/drawings/drawing{index}.xml", "ContentType": "application/vnd.openxmlformats-officedocument.drawing+xml"})
     package = ET.Element(f"{{{PACKAGE_REL}}}Relationships")
     ET.SubElement(package, f"{{{PACKAGE_REL}}}Relationship", {"Id": "rId1", "Type": REL + "/officeDocument", "Target": "xl/workbook.xml"})
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(Path(__file__).parent / "templates/reports/letterhead.jpeg", "xl/media/letterhead.jpeg")
+        for index, spec in enumerate(sheets, 1):
+            widths = _widths(spec["columns"], spec.get("rows", []), spec.get("widths"))
+            width = min(960, sum(widths) * 7)
+            # Display the original letterhead header without altering the source image.
+            height = width * (3627 * .105 / 2372)
+            cx, cy = int(width * 9525), int(height * 9525)
+            drawing = f'''<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="{REL}"><xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="{cx}" cy="{cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="1" name="EVSU and Bagong Pilipinas letterhead"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdImage"/><a:srcRect b="89500"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>'''
+            archive.writestr(f"xl/drawings/drawing{index}.xml", drawing)
+            archive.writestr(f"xl/worksheets/_rels/sheet{index}.xml.rels", f'<Relationships xmlns="{PACKAGE_REL}"><Relationship Id="rIdLetterhead" Type="{REL}/drawing" Target="../drawings/drawing{index}.xml"/></Relationships>')
+            archive.writestr(f"xl/drawings/_rels/drawing{index}.xml.rels", f'<Relationships xmlns="{PACKAGE_REL}"><Relationship Id="rIdImage" Type="{REL}/image" Target="../media/letterhead.jpeg"/></Relationships>')
         archive.writestr("[Content_Types].xml", _xml(types))
         archive.writestr("_rels/.rels", _xml(package))
         archive.writestr("xl/workbook.xml", _xml(workbook))

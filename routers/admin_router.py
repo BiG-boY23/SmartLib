@@ -931,8 +931,6 @@ def archive_staff_record(kind: Literal["acquisitions", "announcements", "message
     record = db.query(model).filter(column == record_id).first()
     if not record or (kind == "messages" and record.recipient_role != _support_recipient_role(current_user) and current_user.role != UserRole.SUPERADMIN):
         raise HTTPException(404, "Record not found.")
-    if archived and len(reason.strip()) < 3:
-        raise HTTPException(422, "Enter an archive reason of at least 3 characters.")
     key = f"{kind}:{record_id}"
     entry = db.get(StaffArchive, key)
     if archived and not entry:

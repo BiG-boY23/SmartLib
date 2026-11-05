@@ -18,6 +18,7 @@ from schemas import (
     BookResponse,
     BookCopyResponse,
     BookCopiesPrintedRequest,
+    BookCopiesAddRequest,
     BorrowRecordResponse,
     BorrowStatusUpdate,
     LoanExtensionRequest,
@@ -26,6 +27,7 @@ from schemas import (
     AcquisitionStatusUpdate,
     UserResponse,
     UserStaffCreate,
+    RegisterRequest,
     FeedbackResponse,
     AuditLogResponse,
     SmtpLogResponse,
@@ -66,7 +68,11 @@ def create_new_book(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    return crud.create_book(db, book_data)
+    try:
+        return crud.create_book(db, book_data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc))
 
 
 @router.get("/books", response_model=List[BookResponse])
@@ -158,6 +164,19 @@ def list_book_copy_qr_records(
     if not book or (book.is_archived and current_user.role != UserRole.SUPERADMIN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
     return crud.get_book_copies(db, book_id, unprinted_only=unprinted_only)
+
+
+@router.post("/books/{book_id}/copies", response_model=BookResponse, status_code=201)
+def add_book_inventory_copies(
+    book_id: int,
+    request_data: BookCopiesAddRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_staff),
+):
+    book = crud.add_book_copies(db, book_id, request_data.quantity, current_user.username)
+    if book is None:
+        raise HTTPException(404, "Active book not found")
+    return book
 
 
 @router.post("/books/{book_id}/copies/mark-printed", response_model=List[BookCopyResponse])
@@ -275,6 +294,13 @@ def get_all_borrow_requests(
     sort: Literal["newest", "oldest", "due", "patron"] = "newest",
     skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100),
 ):
+    # Refresh elapsed loans before filtering so OVERDUE results include them.
+    db.query(BorrowRecord).filter(
+        BorrowRecord.status == BorrowStatus.CHECKED_OUT,
+        BorrowRecord.return_date.is_(None),
+        BorrowRecord.due_date <= datetime.utcnow(),
+    ).update({BorrowRecord.status: BorrowStatus.OVERDUE}, synchronize_session=False)
+    db.commit()
     query = db.query(BorrowRecord).join(User, BorrowRecord.user_id == User.id).join(Book, BorrowRecord.book_id == Book.id)
     if status_filter:
         query = query.filter(BorrowRecord.status == status_filter)
@@ -862,6 +888,38 @@ def list_all_users(
     current_user: User = Depends(admin_or_staff),
 ):
     return crud.get_users(db, skip=skip, limit=limit)
+
+
+@router.post("/users/patrons", response_model=UserResponse, status_code=201)
+def register_patron_by_staff(
+    request: RegisterRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.SUPERADMIN, UserRole.LIBRARIAN])),
+):
+    from security import get_password_hash
+    from sqlalchemy.exc import IntegrityError
+    username = request.username.strip()
+    email = str(request.email).strip().lower()
+    if not username:
+        raise HTTPException(400, "Student or staff ID is required")
+    if db.query(User).filter(or_(User.username == username, func.lower(User.email) == email)).first():
+        raise HTTPException(409, "An account with this ID or email already exists")
+    patron = User(username=username, email=email,
+        first_name=request.first_name, middle_name=request.middle_name, last_name=request.last_name,
+        full_name=" ".join(filter(None, [request.first_name, request.middle_name, request.last_name])),
+        role=request.account_type, department=request.department, course=request.course,
+        hashed_password=get_password_hash(request.password), is_active=True,
+        email_verified=True)  # Staff attests to institutional identity in person.
+    db.add(patron)
+    db.add(AuditLog(user_name=current_user.username,
+        event=f"Staff-assisted registration: {username} ({request.account_type.value})", status="Saved"))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "An account with this ID or email already exists")
+    db.refresh(patron)
+    return patron
 
 
 @router.post("/users/staff", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

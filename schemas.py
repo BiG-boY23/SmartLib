@@ -242,12 +242,13 @@ class BookBase(BaseModel):
 
 class BookCreate(BookBase):
     total_copies: int = Field(default=1, ge=1, le=500)
-    accession_no: Optional[str] = None  # Ignored: allocated by the server.
+    accession_no: Optional[str] = Field(default=None, max_length=60, pattern=r"^[0-9]+(?:-[0-9]+)*$")
     # Covers are stored through the validated multipart upload endpoint, not an arbitrary client URL.
     cover_url: Optional[str] = Field(default=None, exclude=True)
 
 
 class BookUpdate(BaseModel):
+    accession_no: Optional[str] = Field(default=None, max_length=60, pattern=r"^[0-9]+(?:-[0-9]+)*$")
     title: Optional[str] = None
     author: Optional[str] = None
     publisher: Optional[str] = None
@@ -279,6 +280,10 @@ class BookCopyResponse(BaseModel):
     qr_printed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BookCopiesAddRequest(BaseModel):
+    quantity: int = Field(ge=1, le=500, strict=True)
 
 
 class BookCopiesPrintedRequest(BaseModel):

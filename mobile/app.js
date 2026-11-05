@@ -34,7 +34,11 @@
 
   async function api(path, options = {}) {
     const headers = { ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...options.headers };
-    const response = await fetch(path, { ...options, headers });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let response;
+    try { response = await fetch(path, { ...options, headers, signal: controller.signal }); }
+    finally { clearTimeout(timeout); }
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) { state.token = null; state.user = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); renderAuth(); }
@@ -142,9 +146,15 @@
     if (tab === 'catalog') document.getElementById('book-search')?.focus({ preventScroll: true });
   }
 
+  function renderOffline() {
+    root.innerHTML = '<section style="max-width:520px;margin:60px auto;padding:28px;text-align:center"><h1>EVSU SmartLib</h1><h2>Ormoc Campus Library</h2><p>You’re offline or the library server is unavailable.</p><p>Connect to access your account, browse books, and make requests. Visit the circulation desk for assistance.</p><button id="offlineRetry" type="button">Try connecting again</button></section>';
+    document.getElementById('offlineRetry').onclick = () => startApp();
+  }
+  window.addEventListener('offline', renderOffline);
   async function startApp() {
+    if (!navigator.onLine) { renderOffline(); return; }
     try { state.user = await api('/auth/me'); }
-    catch { state.token = null; state.user = null; localStorage.removeItem('smartlib_token'); }
+    catch { if (state.token) { renderOffline(); return; } }
     if (!state.user) { renderAuth(); return; }
     resetIdleTimer();
     await renderTab(state.tab);

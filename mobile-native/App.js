@@ -232,11 +232,14 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   const request = useCallback(async (path, options = {}, authToken = token, base = apiBase) => {
     const headers = { Accept: 'application/json', ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}), ...options.headers };
     let response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
     try {
-      response = await fetch(`${base.replace(/\/+$/, '')}${path}`, { ...options, headers });
+      response = await fetch(`${base.replace(/\/+$/, '')}${path}`, { ...options, headers, signal: controller.signal });
     } catch {
+      setScreen('offline');
       throw new Error('Can’t connect to EVSU SmartLib right now. Check your connection and try again.');
-    }
+    } finally { clearTimeout(timeout); }
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (sessionEnded.current) throw new Error('This session has ended. Sign in again to continue.');
     if (!response.ok) {
@@ -264,9 +267,8 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
           const me = await request('/auth/me', {}, savedToken, savedBase || DEFAULT_API);
           if (!alive) return;
           setToken(savedToken); setUser(me); setTab([...TABS.map((item) => item.id), 'profile', 'messages'].includes(savedTab) ? savedTab : 'home'); setScreen('app');
-        } catch {
-          await SecureStore.deleteItemAsync(TOKEN_KEY);
-          if (alive) setScreen('auth');
+        } catch (error) {
+          if (alive && !sessionEnded.current) setScreen(error.status === 401 ? 'auth' : 'offline');
         }
       } else setScreen('auth');
     })();
@@ -794,8 +796,33 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
     if (screen === 'auth' && authMode === 'register') loadSignupOptions();
   }, [screen, authMode, loadSignupOptions]);
 
-  if (screen === 'loading') return <View style={styles.loading}><StatusBar barStyle="dark-content" /><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} accessibilityLabel="EVSU OC SmartLib logo" /><ActivityIndicator color={COLORS.wine} size="large" /><Text style={styles.helperText}>Opening your library…</Text></View>;
-  if (screen === 'auth') return <AuthScreen apiBase={apiDraft} onApiChange={setApiDraft} onSubmit={submitAuth} mode={authMode} setMode={(mode) => { setAuthMode(mode); setAuthError(''); }} onRegistrationFailed={() => setAuthMode('register')} error={authError} busy={busy} signupOptions={signupOptions} signupOptionsError={signupOptionsError} signupOptionsLoading={signupOptionsLoading} onRefreshSignupOptions={loadSignupOptions} />;
+  async function reconnect() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const savedToken = token || await SecureStore.getItemAsync(TOKEN_KEY);
+      if (savedToken) {
+        const me = await request('/auth/me', {}, savedToken);
+        setToken(savedToken); setUser(me); setScreen('app');
+      } else {
+        await request('/public/app-releases', {}, null);
+        setScreen('auth');
+      }
+    } catch (error) {
+      if (!sessionEnded.current) setScreen('offline');
+    } finally { setBusy(false); }
+  }
+  if (screen === 'offline') return <View style={[styles.loading, { padding: 28 }]}>
+    <StatusBar barStyle="dark-content" />
+    <Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} />
+    <Text style={{ fontSize: 26, fontWeight: '700', color: COLORS.wine }}>EVSU SmartLib</Text>
+    <Text style={styles.helperText}>Ormoc Campus Library</Text>
+    <Text style={[styles.helperText, { marginVertical: 20 }]}>You’re offline or the library server is unavailable. You can keep the app open. Connect to access your account, browse books, or make requests.</Text>
+    <Text style={styles.helperText}>Visit the library circulation desk for assistance. Transactions are available online only; no requests are queued here.</Text>
+    <Button title={busy ? 'Connecting…' : 'Try connecting again'} onPress={reconnect} disabled={busy} />
+  </View>;
+  if (screen === 'loading') return <View style={styles.loading}><StatusBar barStyle="dark-content" /><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} accessibilityLabel="EVSU OC SmartLib logo" /><ActivityIndicator color={COLORS.wine} size="large" /><Text style={styles.helperText}>Opening your library…</Text><Button title="Open offline" onPress={() => setScreen('offline')} /></View>;
+  if (screen === 'auth') return <View style={{flex:1}}><Button title="Open offline" secondary onPress={() => setScreen('offline')} /><AuthScreen apiBase={apiDraft} onApiChange={setApiDraft} onSubmit={submitAuth} mode={authMode} setMode={(mode) => { setAuthMode(mode); setAuthError(''); }} onRegistrationFailed={() => setAuthMode('register')} error={authError} busy={busy} signupOptions={signupOptions} signupOptionsError={signupOptionsError} signupOptionsLoading={signupOptionsLoading} onRefreshSignupOptions={loadSignupOptions} /></View>;
 
   const firstName = (user?.full_name || 'reader').trim().split(/\s+/)[0];
   const currentTabLabel = TABS.find((item) => item.id === tab)?.label || (tab === 'messages' ? 'Messages' : 'Profile');

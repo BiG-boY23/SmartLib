@@ -341,10 +341,41 @@ def checkout_due_date(value):
     return due
 
 
+def catalog_accession(db, requested=None, exclude_id=None):
+    # The global allocator serializes catalog and copy allocations in one transaction.
+    fallback = next_accession(db)
+    if requested:
+        candidate = requested
+    else:
+        latest = db.query(Book).order_by(Book.id.desc()).first()
+        seed = latest.accession_no if latest else fallback
+        if latest and re.fullmatch(r"[0-9]+(?:-[0-9]+)*", seed):
+            prefix, separator, suffix = seed.rpartition('-')
+            number = int(suffix) + 1
+            candidate = prefix + separator + str(number).zfill(len(suffix))
+        else:
+            candidate = fallback
+    def identity(value):
+        if value and re.fullmatch(r"[0-9]+(?:-[0-9]+)*", value):
+            return tuple(int(part) for part in value.split('-'))
+        return value
+    catalog = db.query(Book.accession_no).filter(Book.id != exclude_id) if exclude_id is not None else db.query(Book.accession_no)
+    used = {identity(value) for (value,) in catalog.all()}
+    used.update(identity(value) for (value,) in db.query(BookCopy.accession_no).all())
+    while True:
+        occupied = identity(candidate) in used
+        if not occupied:
+            return candidate
+        if requested:
+            raise ValueError("Accession number already exists. Enter a unique number.")
+        prefix, separator, suffix = candidate.rpartition('-')
+        candidate = prefix + separator + str(int(suffix) + 1).zfill(len(suffix))
+
+
 def create_book(db: Session, book_data: BookCreate):
     values = book_data.model_dump(exclude={"accession_no"})
     values["available_copies"] = values["total_copies"]
-    values["accession_no"] = next_accession(db)
+    values["accession_no"] = catalog_accession(db, book_data.accession_no)
     db_book = Book(**values)
     db.add(db_book)
     db.flush()
@@ -360,11 +391,36 @@ def create_book(db: Session, book_data: BookCreate):
     return db_book
 
 
+def add_book_copies(db: Session, book_id: int, quantity: int, actor: str):
+    """Serialize stock additions and persist copy identifiers and audit together."""
+    from sqlalchemy import update
+    result = db.execute(update(Book).where(Book.id == book_id, Book.is_archived.is_(False))
+        .values(total_copies=Book.total_copies + quantity,
+                available_copies=Book.available_copies + quantity)
+        .returning(Book.id))
+    if result.scalar_one_or_none() is None:
+        return None
+    book = db.get(Book, book_id)
+    db.refresh(book)
+    last = db.query(func.max(BookCopy.copy_number)).filter(BookCopy.book_id == book_id).scalar() or 0
+    for number in range(last + 1, last + quantity + 1):
+        db.add(_new_book_copy(db, book, number))
+    db.add(AuditLog(user_name=actor, event=f"Added {quantity} copies to {book.accession_no}; total {book.total_copies}", status="Saved"))
+    db.commit()
+    db.refresh(book)
+    return book
+
+
 def update_book(db: Session, book_id: int, book_update: BookUpdate):
     db_book = get_book(db, book_id)
     if not db_book:
         return None
     changes = book_update.model_dump(exclude_unset=True, exclude={"available_copies"})
+    if "accession_no" in changes:
+        if not changes["accession_no"]:
+            raise ValueError("Accession number cannot be blank.")
+        if changes["accession_no"] != db_book.accession_no:
+            changes["accession_no"] = catalog_accession(db, changes["accession_no"], book_id)
     new_total = changes.get("total_copies", db_book.total_copies)
     if new_total is None or new_total < 1:
         raise ValueError("The copy count must be at least one.")

@@ -438,8 +438,8 @@
           <input type="hidden" id="editBookId">
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
             <div class="form-group">
-              <label><i class="fa-solid fa-hashtag" style="color:var(--evsu-gold);"></i> Accession No. <span style="color:var(--text-muted); font-size:11px;">(read-only)</span></label>
-              <input type="text" id="editBookAcc" class="form-control" readonly style="opacity:.65; cursor:not-allowed;">
+              <label><i class="fa-solid fa-hashtag" style="color:var(--evsu-gold);"></i> Accession No. <span style="color:var(--text-muted); font-size:11px;">(unique)</span></label>
+              <input type="text" id="editBookAcc" class="form-control" required pattern="[0-9]+(-[0-9]+)*">
             </div>
             <div class="form-group">
               <label><i class="fa-solid fa-barcode" style="color:var(--evsu-gold);"></i> Call Number</label>
@@ -471,7 +471,7 @@
             </div>
             <div class="form-group">
               <label><i class="fa-solid fa-layer-group" style="color:var(--evsu-gold);"></i> No. of Copies <span style="color:#e55;">*</span></label>
-              <input type="number" id="editBookCopies" class="form-control" min="1" required>
+              <input type="number" id="editBookCopies" class="form-control" readonly>
             </div>
             <div class="form-group">
               <label><i class="fa-solid fa-star-half-stroke" style="color:var(--evsu-gold);"></i> Condition</label>
@@ -528,12 +528,12 @@
       </div>
       <div style="padding: 10px 24px; background: var(--bg-card); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
         <div style="font-size: 13px;">
-          <span style="color:var(--text-muted);">Accession:</span> <strong id="qrModalAcc" style="color:var(--evsu-gold);">—</strong> &nbsp;|&nbsp; 
+          <span style="color:var(--text-muted);">Catalog accession:</span> <strong id="qrModalAcc" style="color:var(--evsu-gold);">—</strong> &nbsp;|&nbsp; 
           <span style="color:var(--text-muted);">Call No:</span> <strong id="qrModalCallNum">—</strong> &nbsp;|&nbsp;
           <span style="color:var(--text-muted);">Total Copies:</span> <span class="badge badge-success" id="qrModalCopiesCount">0 Copies</span>
         </div>
         <div style="font-size: 11px; color: var(--text-muted);">
-          <i class="fa-solid fa-circle-info text-gold"></i> Each copy has a unique QR barcode suffix (-C01, -C02...)
+          <i class="fa-solid fa-circle-info text-gold"></i> QR codes identify individual copies; the catalog accession is shown separately.
         </div>
       </div>
 
@@ -571,6 +571,9 @@
       </button>
       <button class="nav-item-btn" id="navInventory" onclick="switchNav('inventory')">
         <i class="fa-solid fa-book-bookmark"></i> Book Records &amp; QR Labels
+      </button>
+      <button type="button" class="nav-item-btn" id="navRegisterPatron" onclick="openPatronRegistration()" aria-haspopup="dialog">
+        <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Register Student / Instructor
       </button>
       <button class="nav-item-btn" id="navCirc" onclick="switchNav('circ')">
         <i class="fa-solid fa-arrow-right-arrow-left"></i> Circulation Desk
@@ -684,7 +687,7 @@
               <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 14px;">
                 <div class="form-group">
                   <label>Accession No.</label>
-                  <input type="text" id="catAcc" class="form-control" placeholder="Assigned automatically when saved" readonly>
+                  <input type="text" id="catAcc" class="form-control" placeholder="Automatic, or enter e.g. 0001-0001" pattern="[0-9]+(-[0-9]+)*">
                 </div>
                 <div class="form-group">
                   <label>Call Number</label>
@@ -845,7 +848,7 @@
             <!-- BORROW MODE VIEW -->
             <div id="circBorrowView">
               <div class="card-head">
-                <h3><i class="fa-solid fa-book-bookmark text-gold"></i> Step 1: Scan Student / Patron ID</h3>
+                <h3><i class="fa-solid fa-book-bookmark text-gold"></i> Step 1: Scan Student / Patron ID</h3><button class="btn btn-outline btn-sm" type="button" onclick="openPatronRegistration()">Register student / faculty</button>
                 <span style="font-size:11px; color:var(--text-muted);"><i class="fa-solid fa-wand-magic-sparkles text-gold"></i> Auto-advance on beep</span>
               </div>
               <div class="card-body">
@@ -958,7 +961,7 @@
             <div style="padding:16px;display:flex;gap:12px;flex-wrap:wrap"><label>Status <select id="queueStatus" onchange="loadBorrowQueue(true)"><option value="">All statuses</option><option>PENDING</option><option>APPROVED</option><option>CHECKED_OUT</option><option>OVERDUE</option><option>RETURNED</option><option>REJECTED</option><option>CANCELLED</option></select></label><label>Sort <select id="queueSort" onchange="loadBorrowQueue(true)"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due">Due date</option><option value="patron">Patron name</option></select></label><label>Search <input id="queueSearch" type="search" placeholder="Patron, title, request ID" oninput="scheduleQueueSearch()"></label><span id="queueCount" aria-live="polite"></span><button id="queuePrevious" class="btn btn-outline btn-sm" onclick="queueOffset=Math.max(0,queueOffset-100);loadBorrowQueue()" disabled>Previous</button><button id="queueNext" class="btn btn-outline btn-sm" onclick="queueOffset+=100;loadBorrowQueue()">Next</button></div>
             <div class="table-responsive">
               <table id="borrowQueueTable">
-                <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Due date / time remaining</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody></tbody>
               </table>
             </div>
@@ -990,6 +993,9 @@
   <script src="/static/staff-reports.js?v=20261103"></script>
   <script src="/static/staff-chat.js?v=20261020-activity-archive"></script>
   <script src="/static/staff-updates.js?v=20261020-activity-archive"></script>
+  <script src="/static/loan-deadlines.js?v=20261104-1"></script>
+  <script src="/static/patron-registration.js?v=20261105-2"></script>
+  <script src="/static/book-copies.js?v=20261104-1"></script>
   <script src="/static/staff-records.js?v=20261104-2"></script>
   <script src="/static/staff-archives.js?v=20261103"></script>
   <script src="/static/staff-notifications.js?v=20261020-activity-archive"></script>
@@ -1235,6 +1241,7 @@
             </button>
           </td>
           <td style="text-align:center; white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openAddCopiesModal(${Number(b.id)})">Add Copies</button>
             <button class="btn btn-sm" style="background:var(--evsu-maroon); color:#fff; margin-bottom:3px;" onclick="openEditBookModal(${b.id})" title="Edit book details">
               <i class="fa-solid fa-pen-to-square"></i> Edit
             </button>
@@ -1247,6 +1254,12 @@
     }
 
     // ── EDIT BOOK ──────────────────────────────────────────────────
+    function openAddCopiesModal(bookId) {
+      showAddCopiesDialog(cachedInventoryBooks.find(b => b.id === bookId), {
+        base: API_BASE, headers: getAuthHeaders, refresh: loadInventoryBooks, toast
+      });
+    }
+
     function openEditBookModal(bookId) {
       const book = cachedInventoryBooks.find(b => b.id === bookId);
       if (!book) return toast('Book not found in cache', 'danger');
@@ -1271,8 +1284,8 @@
     async function handleUpdateBook(e) {
       e.preventDefault();
       const bookId = document.getElementById('editBookId').value;
-      const copies = parseInt(document.getElementById('editBookCopies').value) || 1;
       const payload = {
+        accession_no: document.getElementById('editBookAcc').value.trim(),
         title: document.getElementById('editBookTitle').value.trim(),
         author: document.getElementById('editBookAuthor').value.trim(),
         publisher: document.getElementById('editBookPublisher').value.trim() || null,
@@ -1280,7 +1293,6 @@
         isbn: document.getElementById('editBookIsbn').value.trim() || null,
         category: document.getElementById('editBookCat').value.trim(),
         call_number: document.getElementById('editBookCallNum').value.trim() || null,
-        total_copies: copies,
         condition: document.getElementById('editBookCondition').value
       };
       try {
@@ -1486,6 +1498,7 @@
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({
+            accession_no: document.getElementById('catAcc').value.trim() || null,
             title: title,
             author: author,
             publisher: publisher || null,
@@ -1623,7 +1636,8 @@
             <div class="qr-copy-title" title="${escapeHtml(currentQrBook.title)}">${escapeHtml(currentQrBook.title)}</div>
             <div class="qr-copy-meta">${escapeHtml(currentQrBook.call_number || currentQrBook.category || 'General Collection')}</div>
             <div class="qr-canvas-holder" id="${cardId}"></div>
-            <div class="qr-copy-code">${escapeHtml(code)}</div>
+            <div class="qr-copy-meta">Catalog accession: ${escapeHtml(currentQrBook.accession_no)}</div>
+            <div class="qr-copy-code">Copy ID: ${escapeHtml(code)}</div>
             <div class="qr-copy-badge">Copy ${String(copy.copy_number).padStart(2, '0')} of ${String(currentQrBook.total_copies || currentQrCopies.length).padStart(2, '0')}</div>
           `;
           container.appendChild(card);
@@ -2097,6 +2111,7 @@
       } catch (err) { toast('Could not load borrowing requests.', 'danger'); }
     }
     function renderBorrowQueue() {
+      borrowQueueRows.forEach(r => { if (r.status === 'CHECKED_OUT' && loanDueTime(r.due_date) <= Date.now()) r.status = 'OVERDUE'; });
         const status = document.getElementById('queueStatus').value;
         const search = document.getElementById('queueSearch').value.trim().toLowerCase();
         const sort = document.getElementById('queueSort').value;
@@ -2111,7 +2126,7 @@
             <td><strong>${escapeHtml(r.req_id)}</strong></td>
             <td>${escapeHtml(r.user_name || 'Patron')}</td>
             <td>${escapeHtml(r.accession_no)}<br><small style="color:var(--text-muted);">${escapeHtml(r.book_title || '')}</small></td>
-            <td>${escapeHtml(r.pickup_date || 'N/A')}</td>
+            <td>${escapeHtml(r.pickup_date || 'N/A')}</td><td>${loanDeadlineCell(r)}</td>
             <td>${escapeHtml(r.request_date.substring(0, 10))}</td>
             <td><span class="badge ${r.status === 'APPROVED' ? 'badge-success' : r.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(r.status)}</span></td>
             <td>

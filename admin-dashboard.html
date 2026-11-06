@@ -600,6 +600,7 @@
       <button class="nav-item-btn" id="navCirc" onclick="switchNav('circ')">
         <i class="fa-solid fa-arrow-right-arrow-left"></i> Circulation Desk
       </button>
+      <button class="nav-item-btn" id="navFines" onclick="switchNav('fines')" style="display:none"><i class="fa-solid fa-coins"></i> Fines &amp; Returns</button>
       <button class="nav-item-btn" id="navBorrowReq" onclick="switchNav('borrowreq')">
         <i class="fa-solid fa-hand-holding-hand"></i> Borrow Requests Queue
       </button>
@@ -1043,13 +1044,14 @@
               <button id="queueNext" class="btn btn-outline btn-sm" onclick="queueOffset+=100;loadBorrowQueue()">Next</button>
             </div>
             <div class="table-responsive"><table id="borrowQueueTable">
-              <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Due date / time remaining</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Due date / time remaining</th><th>Return Date / Time</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody></tbody>
             </table></div>
           </div>
         </div>
       </div>
 
+      <div class="screen-panel" id="panelFines"><div id="staffFinesRoot"></div></div>
       <div class="screen-panel" id="panelLogs">
         <div class="grid-2">
           <div class="card">
@@ -1102,7 +1104,7 @@
   <script src="/static/staff-reports.js?v=20261103"></script>
   <script src="/static/staff-chat.js?v=20261020-activity-archive"></script>
   <script src="/static/staff-updates.js?v=20261020-activity-archive"></script>
-  <script src="/static/loan-deadlines.js?v=20261104-1"></script>
+  <script src="/static/loan-deadlines.js?v=20261106-1"></script>
   <script src="/static/patron-registration.js?v=20261105-2"></script>
   <script src="/static/book-copies.js?v=20261104-1"></script>
   <script src="/static/staff-records.js?v=20261104-2"></script>
@@ -1248,6 +1250,7 @@
         'books': ['Book Inventory & Cataloging', 'Add catalog holdings and view location rack numbers'],
         'circ': ['Circulation Desk (Borrow & Return Counter)', 'Verify both scans and confirm checkout; returns require an active loan'],
         'borrowreq': ['Online Borrow Requests Queue', 'Review requests, manage active loans, and export queue records'],
+        'fines': ['Fines & Returns', 'Review late returns and record fine payments'],
         'logs': ['Security Audit & Email Logs', 'Full security events trail and automated SMTP dispatch logs'],
         'feedback': ['Visitor Feedback & Inquiries', 'Submissions received from the public landing page suggestion box'],
         'messages': ['Patron Messages', 'Read and reply to student and faculty conversations']
@@ -1280,6 +1283,10 @@
         document.getElementById('navBorrowReq').classList.add('active');
         document.getElementById('panelBorrowReq').classList.add('active');
         await loadBorrowQueue(true);
+      } else if (key === 'fines') {
+        document.getElementById('navFines').classList.add('active');
+        document.getElementById('panelFines').classList.add('active');
+        await window.SmartLibFines.load(API_BASE, getAuthHeaders, toast);
       } else if (key === 'logs') {
         document.getElementById('navLogs').classList.add('active');
         document.getElementById('panelLogs').classList.add('active');
@@ -2387,12 +2394,12 @@
       document.getElementById('queueCount').textContent = requests.length ? `Showing ${queueOffset + 1}-${queueOffset + requests.length}` : 'No matching requests';
       const body = document.getElementById('borrowQueueTable').getElementsByTagName('tbody')[0];
       body.innerHTML = '';
-      if (!requests.length) body.innerHTML = '<tr><td colspan="8">No requests match the selected filters.</td></tr>';
+      if (!requests.length) body.innerHTML = '<tr><td colspan="9">No requests match the selected filters.</td></tr>';
       requests.forEach(request => {
         const row = body.insertRow();
         row.innerHTML = `<td><strong>${escapeHtml(request.req_id)}</strong></td><td>${escapeHtml(request.user_name || 'Patron')}</td>
           <td>${escapeHtml(request.accession_no)}<br><small>${escapeHtml(request.book_title || '')}</small></td>
-          <td>${escapeHtml(request.pickup_date || 'N/A')}</td><td>${loanDeadlineCell(request)}</td><td>${escapeHtml(request.request_date.substring(0,10))}</td>
+          <td>${escapeHtml(request.pickup_date || 'N/A')}</td><td>${loanDeadlineCell(request)}</td><td>${loanReturnDateCell(request)}</td><td>${escapeHtml(request.request_date.substring(0,10))}</td>
           <td><span class="badge ${request.status === 'APPROVED' ? 'badge-success' : request.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(request.status)}</span></td>
           <td>${['CHECKED_OUT','OVERDUE'].includes(request.status) ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="SmartLibUpdates.extend(this.dataset.requestId)">Extend loan</button> ` : ''}
           ${request.status === 'PENDING' ? `<button class="btn btn-maroon btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="approveReq(this.dataset.requestId)">Approve</button> <button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="rejectReq(this.dataset.requestId)">Reject</button>` : request.approval_email_status === 'failed' ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="retryApprovalEmail(this.dataset.requestId)">Retry email</button>` : '<span class="badge badge-secondary">Processed</span>'}</td>`;
@@ -2502,6 +2509,7 @@
         if (!['superadmin', 'admin'].includes(role)) throw new Error('Forbidden');
         currentAdminRole = role;
         document.getElementById('signupOptionsAdmin').style.display = role === 'superadmin' ? '' : 'none';
+        document.getElementById('navFines').style.display = role === 'superadmin' ? '' : 'none';
       } catch (authErr) {
         console.error('Admin authentication guard failed:', authErr);
         handleLogout();
@@ -2516,5 +2524,6 @@
     })();
   </script>
 <script src="/static/staff-attendance.js?v=20261103"></script>
+  <script src="/static/staff-fines.js?v=20261106-2"></script>
 </body>
 </html>

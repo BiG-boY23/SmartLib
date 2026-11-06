@@ -65,6 +65,27 @@ async def lifespan(app: FastAPI):
     if "cover_url" not in book_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE books ADD COLUMN cover_url VARCHAR")
+    fine_columns = {column["name"] for column in inspect(engine).get_columns("fines")}
+    if "paid_by_username" not in fine_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE fines ADD COLUMN paid_by_username VARCHAR")
+    # Backfill a single full-payment entry for fines paid before payment amounts
+    # were tracked, so their balances remain zero after upgrading.
+    from models import Fine, FinePayment
+    migration_db = SessionLocal()
+    try:
+        paid_fines = migration_db.query(Fine).filter(Fine.is_paid.is_(True)).all()
+        for fine in paid_fines:
+            if not fine.payments:
+                migration_db.add(FinePayment(
+                    fine_id=fine.id,
+                    amount=fine.amount,
+                    actor_username=fine.paid_by_username or "system",
+                    recorded_at=fine.paid_at or fine.created_at,
+                ))
+        migration_db.commit()
+    finally:
+        migration_db.close()
     borrow_columns = {column["name"] for column in inspect(engine).get_columns("borrow_records")}
     if "copy_accession_no" not in borrow_columns:
         with engine.begin() as connection:

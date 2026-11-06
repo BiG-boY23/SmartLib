@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 import re
 from typing import Optional, List, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator, field_validator, field_serializer
@@ -337,6 +338,11 @@ class BorrowRecordResponse(BaseModel):
 
 
 # Fine Schemas
+class FinePaymentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    amount: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+
+
 class FineResponse(BaseModel):
     id: int
     borrow_record_id: int

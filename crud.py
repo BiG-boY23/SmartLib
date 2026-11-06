@@ -231,7 +231,7 @@ def get_book_by_accession(db: Session, accession_no: str):
 def _active_copy_records(db: Session, book: Book):
     return db.query(BorrowRecord).filter(
         BorrowRecord.book_id == book.id,
-        BorrowRecord.status == BorrowStatus.CHECKED_OUT,
+        BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
     ).all()
 
 
@@ -592,7 +592,7 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, per
             return None, "No available copy can be checked out for this request."
         record.status = new_status
     elif new_status == BorrowStatus.RETURNED:
-        if record.status != BorrowStatus.CHECKED_OUT:
+        if record.status not in {BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE}:
             return None, "This request has no active checkout. No return was recorded."
         now = datetime.utcnow()
         record.return_date = now
@@ -653,7 +653,7 @@ def get_circulation_patron_info(db: Session, patron_identifier: str):
         db.query(BorrowRecord)
         .filter(
             BorrowRecord.user_id == patron.id,
-            BorrowRecord.status == BorrowStatus.CHECKED_OUT
+            BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE])
         )
         .all()
     )
@@ -825,7 +825,7 @@ def execute_circulation(
             db.query(BorrowRecord)
             .filter(
                 BorrowRecord.user_id == patron.id,
-                BorrowRecord.status == BorrowStatus.CHECKED_OUT,
+                BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
             )
             .count()
         )
@@ -886,7 +886,7 @@ def execute_circulation(
         # Never fall back to another copy of the same title.
         loan_q = db.query(BorrowRecord).filter(
             BorrowRecord.book_id == book.id,
-            BorrowRecord.status == BorrowStatus.CHECKED_OUT,
+            BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
         )
         if patron_username:
             patron = get_user_by_username(db, patron_username)

@@ -238,9 +238,34 @@ class Fine(Base):
     is_paid = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     paid_at = Column(DateTime, nullable=True)
+    paid_by_username = Column(String, nullable=True)
 
     borrow_record = relationship("BorrowRecord", back_populates="fines")
     user = relationship("User", back_populates="fines")
+    payment_events = relationship("FinePaymentEvent", back_populates="fine", order_by="FinePaymentEvent.recorded_at")
+    payments = relationship("FinePayment", back_populates="fine", order_by="FinePayment.recorded_at", cascade="all, delete-orphan")
+
+
+class FinePayment(Base):
+    __tablename__ = "fine_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fine_id = Column(Integer, ForeignKey("fines.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    actor_username = Column(String, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    fine = relationship("Fine", back_populates="payments")
+
+
+class FinePaymentEvent(Base):
+    __tablename__ = "fine_payment_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    fine_id = Column(Integer, ForeignKey("fines.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_paid = Column(Boolean, nullable=False)
+    actor_username = Column(String, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fine = relationship("Fine", back_populates="payment_events")
 
 
 class AcquisitionSuggestion(Base):

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (
     Announcement, Notification, SupportMessage, SupportThread, User,
-    UserRole, Book, BorrowRecord, BorrowStatus,
+    UserRole, Book, BorrowRecord, BorrowStatus, Fine,
 )
 from schemas import (
     BookResponse,
@@ -81,6 +81,34 @@ def get_my_borrowings(
     current_user: User = Depends(patron_roles),
 ):
     return crud.get_borrow_records(db, user_id=current_user.id)
+
+
+@router.get("/my-fines")
+def get_my_fines(db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
+    fines = db.query(Fine).filter(Fine.user_id == current_user.id).order_by(Fine.created_at.desc()).all()
+    items = []
+    for fine in fines:
+        payments = [{
+            "amount": payment.amount,
+            "recorded_at": payment.recorded_at,
+        } for payment in fine.payments]
+        amount_cents = round(fine.amount * 100)
+        paid_cents = min(amount_cents, round(sum(payment["amount"] for payment in payments) * 100))
+        balance_cents = max(0, amount_cents - paid_cents)
+        items.append({
+            "id": fine.id, "borrow_record_id": fine.borrow_record_id,
+            "book_title": fine.borrow_record.book.title if fine.borrow_record and fine.borrow_record.book else "Library item",
+            "accession_no": fine.borrow_record.copy_accession_no if fine.borrow_record else None,
+            "due_date": fine.borrow_record.due_date if fine.borrow_record else None,
+            "return_date": fine.borrow_record.return_date if fine.borrow_record else None,
+            "amount": amount_cents / 100, "amount_paid": paid_cents / 100,
+            "balance": balance_cents / 100,
+            "payment_status": "paid" if balance_cents == 0 else "partial" if paid_cents else "pending",
+            "is_paid": balance_cents == 0, "created_at": fine.created_at,
+            "paid_at": fine.paid_at, "payments": payments,
+        })
+    outstanding_cents = sum(round(item["balance"] * 100) for item in items)
+    return {"total_outstanding": outstanding_cents / 100, "items": items}
 
 
 @router.post("/borrow/{borrow_id}/cancel", response_model=BorrowRecordResponse)

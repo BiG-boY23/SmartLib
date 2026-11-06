@@ -18,3 +18,13 @@ setInterval(() => {
   const table = document.getElementById('borrowQueueTable');
   if (table && table.getClientRects().length && typeof renderBorrowQueue === 'function') renderBorrowQueue();
 }, 30000);
+
+function loanReturnDateCell(record) {
+  if (!record.return_date) return ['RETURNED', 'OVERDUE'].includes(record.status) ? 'Not recorded' : '—';
+  const time = loanDueTime(record.return_date);
+  if (!Number.isFinite(time)) return 'Not recorded';
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit'
+  }).format(time) + ' (PHT)';
+}

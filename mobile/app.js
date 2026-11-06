@@ -1,7 +1,7 @@
 (() => {
   const root = document.getElementById('app');
   const toast = document.getElementById('toast');
-  const state = { token: localStorage.getItem('smartlib_token') || sessionStorage.getItem('smartlib_token'), user: null, tab: localStorage.getItem('smartlib_active_tab') || 'home', authMode: 'login', signupOptions: { departments: [], courses: [] }, books: [], borrowings: [], digitalId: null, search: '', category: 'All', installPrompt: null, editingProfile: false };
+  const state = { token: localStorage.getItem('smartlib_token') || sessionStorage.getItem('smartlib_token'), user: null, tab: localStorage.getItem('smartlib_active_tab') || 'home', authMode: 'login', signupOptions: { departments: [], courses: [] }, books: [], borrowings: [], fines: [], totalOutstandingFines: 0, digitalId: null, search: '', category: 'All', installPrompt: null, editingProfile: false };
   let pullStart = null;
   let pulling = false;
   let pullRefreshing = false;
@@ -98,7 +98,8 @@
 
   function borrowingView() {
     const entries = [...state.borrowings].sort((a, b) => new Date(b.request_date) - new Date(a.request_date));
-    return `<section class="greeting"><div><span class="eyebrow">Your library activity</span><h1>My books</h1><p>Borrow requests and current loans in one place.</p></div></section><div class="section-head"><h2>Borrowing history</h2></div><section class="list-stack">${entries.length ? entries.map((entry) => { const status = (entry.status || 'PENDING').toLowerCase(); return `<article class="list-card"><span class="quick-icon" style="margin:0;flex:none">▤</span><div class="grow"><h3>${escapeHtml(entry.book_title || `Book ${entry.book_id}`)}</h3><p>${escapeHtml(entry.req_id)} · Pickup ${escapeHtml(entry.pickup_date || 'To be arranged')}</p></div><span class="status ${status}">${escapeHtml(entry.status || 'PENDING').replaceAll('_', ' ')}</span></article>`; }).join('') : `<div class="empty"><span class="empty-icon">▤</span><b>No requests yet</b>Your requested books will appear here.<br><button class="text-button" data-tab="catalog">Browse the catalog →</button></div>`}</section>`;
+    const formatDate = (value) => { if (!value) return ''; const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${String(value).replace(' ', 'T')}Z`; const date = new Date(normalized); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(); };
+    return `<section class="greeting"><div><span class="eyebrow">Your library activity</span><h1>My books</h1><p>Borrow requests, loan history, and fine balance.</p></div></section><article class="profile-card"><div class="section-head"><h2>Outstanding fines</h2><strong>₱${Number(state.totalOutstandingFines || 0).toFixed(2)}</strong></div><p class="helper">Fine payments are recorded by the library staff. Contact the circulation desk to settle any remaining balance.</p></article><div class="section-head"><h2>Borrowing history</h2></div><section class="list-stack">${entries.length ? entries.map((entry) => { const status = (entry.status || 'PENDING').toLowerCase(); const fineItems = state.fines.filter((fine) => fine.borrow_record_id === entry.id); const due = formatDate(entry.due_date); const returned = formatDate(entry.return_date); return `<article class="list-card"><span class="quick-icon" style="margin:0;flex:none">▤</span><div class="grow"><h3>${escapeHtml(entry.book_title || `Book ${entry.book_id}`)}</h3><p>${escapeHtml(entry.req_id)} · Pickup ${escapeHtml(entry.pickup_date || 'To be arranged')}</p>${due ? `<p>Due ${escapeHtml(due)}</p>` : ''}${returned ? `<p>Returned ${escapeHtml(returned)}</p>` : ''}${fineItems.map((fine) => `<p style="${fine.is_paid ? '' : 'color:#9b2335;font-weight:700'}">Fine ${Number(fine.amount || 0).toFixed(2)} · paid ${Number(fine.amount_paid || 0).toFixed(2)} · remaining ${Number(fine.balance || 0).toFixed(2)} · ${fine.payment_status === 'paid' ? 'Paid' : fine.payment_status === 'partial' ? 'Partially paid' : 'Pending'}</p>${(fine.payments || []).map((payment) => `<p class="helper">Payment ${Number(payment.amount || 0).toFixed(2)} · ${escapeHtml(formatDate(payment.recorded_at))}</p>`).join('')}`).join('')}</div><span class="status ${status}">${escapeHtml(entry.status || 'PENDING').replaceAll('_', ' ')}</span></article>`; }).join('') : `<div class="empty"><span class="empty-icon">▤</span><b>No requests yet</b>Your requested books will appear here.<br><button class="text-button" data-tab="catalog">Browse the catalog →</button></div>`}</section>`;
   }
 
   function idView() {
@@ -122,7 +123,12 @@
     if (search) params.set('search', search);
     state.books = await api(`/mobile/books?${params}`);
   }
-  async function loadBorrowings() { state.borrowings = await api('/mobile/my-borrowings'); }
+  async function loadBorrowings() {
+    const [borrowings, summary] = await Promise.all([api('/mobile/my-borrowings'), api('/mobile/my-fines')]);
+    state.borrowings = borrowings;
+    state.fines = summary.items || [];
+    state.totalOutstandingFines = Number(summary.total_outstanding || 0);
+  }
   async function loadDigitalId() { state.digitalId = await api('/mobile/profile/digital-id'); }
 
   async function renderTab(tab = 'home') {

@@ -580,6 +580,7 @@
       </button>
 
       <div class="menu-label">Queues &amp; Approvals</div>
+      <button class="nav-item-btn" id="navFines" onclick="switchNav('fines')"><i class="fa-solid fa-coins"></i> Fines &amp; Returns</button>
       <button class="nav-item-btn" id="navBorrowReq" onclick="switchNav('borrowreq')">
         <i class="fa-solid fa-hand-holding-hand"></i> Borrow Requests Queue
       </button>
@@ -961,7 +962,7 @@
             <div style="padding:16px;display:flex;gap:12px;flex-wrap:wrap"><label>Status <select id="queueStatus" onchange="loadBorrowQueue(true)"><option value="">All statuses</option><option>PENDING</option><option>APPROVED</option><option>CHECKED_OUT</option><option>OVERDUE</option><option>RETURNED</option><option>REJECTED</option><option>CANCELLED</option></select></label><label>Sort <select id="queueSort" onchange="loadBorrowQueue(true)"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due">Due date</option><option value="patron">Patron name</option></select></label><label>Search <input id="queueSearch" type="search" placeholder="Patron, title, request ID" oninput="scheduleQueueSearch()"></label><span id="queueCount" aria-live="polite"></span><button id="queuePrevious" class="btn btn-outline btn-sm" onclick="queueOffset=Math.max(0,queueOffset-100);loadBorrowQueue()" disabled>Previous</button><button id="queueNext" class="btn btn-outline btn-sm" onclick="queueOffset+=100;loadBorrowQueue()">Next</button></div>
             <div class="table-responsive">
               <table id="borrowQueueTable">
-                <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Due date / time remaining</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Req ID</th><th>Patron</th><th>Book Accession</th><th>Pickup Date</th><th>Due date / time remaining</th><th>Return Date / Time</th><th>Request Date</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody></tbody>
               </table>
             </div>
@@ -970,6 +971,7 @@
       </div>
 
       <!-- PANEL 5: ACQUISITION SUGGESTIONS -->
+      <div class="screen-panel" id="panelFines"><div id="staffFinesRoot"></div></div>
       <div class="screen-panel" id="panelAcquisitions">
         <div class="card">
           <div class="card-head"><h3><i class="fa-solid fa-cart-flatbed text-gold"></i> Book Acquisition Suggestions Queue</h3></div>
@@ -993,7 +995,7 @@
   <script src="/static/staff-reports.js?v=20261103"></script>
   <script src="/static/staff-chat.js?v=20261020-activity-archive"></script>
   <script src="/static/staff-updates.js?v=20261020-activity-archive"></script>
-  <script src="/static/loan-deadlines.js?v=20261104-1"></script>
+  <script src="/static/loan-deadlines.js?v=20261106-1"></script>
   <script src="/static/patron-registration.js?v=20261105-2"></script>
   <script src="/static/book-copies.js?v=20261104-1"></script>
   <script src="/static/staff-records.js?v=20261104-2"></script>
@@ -1134,6 +1136,7 @@
         'inventory': ['Book Catalog Records & QR Labels', 'Comprehensive library holdings, catalog search, and multi-copy 2D QR label printing'],
         'circ': ['Circulation Desk (Borrow & Return Counter)', 'Verify both scans and confirm checkout; returns require an active loan'],
         'borrowreq': ['Borrow Requests Queue', 'Review student online borrowing reservations'],
+        'fines': ['Fines & Returns', 'Review late returns and record fine payments'],
         'acquisitions': ['Book Acquisition Suggestions', 'Review student and faculty book collection recommendations'],
         'messages': ['Patron Messages', 'Read and reply to student and faculty conversations']
       };
@@ -1163,6 +1166,10 @@
         document.getElementById('navBorrowReq').classList.add('active');
         document.getElementById('panelBorrowReq').classList.add('active');
         await loadBorrowQueue();
+      } else if (key === 'fines') {
+        document.getElementById('navFines').classList.add('active');
+        document.getElementById('panelFines').classList.add('active');
+        await window.SmartLibFines.load(API_BASE, getAuthHeaders, toast);
       } else if (key === 'acquisitions') {
         document.getElementById('navAcquisitions').classList.add('active');
         document.getElementById('panelAcquisitions').classList.add('active');
@@ -2126,7 +2133,7 @@
             <td><strong>${escapeHtml(r.req_id)}</strong></td>
             <td>${escapeHtml(r.user_name || 'Patron')}</td>
             <td>${escapeHtml(r.accession_no)}<br><small style="color:var(--text-muted);">${escapeHtml(r.book_title || '')}</small></td>
-            <td>${escapeHtml(r.pickup_date || 'N/A')}</td><td>${loanDeadlineCell(r)}</td>
+            <td>${escapeHtml(r.pickup_date || 'N/A')}</td><td>${loanDeadlineCell(r)}</td><td>${loanReturnDateCell(r)}</td>
             <td>${escapeHtml(r.request_date.substring(0, 10))}</td>
             <td><span class="badge ${r.status === 'APPROVED' ? 'badge-success' : r.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(r.status)}</span></td>
             <td>
@@ -2265,5 +2272,6 @@
     })();
   </script>
 <script src="/static/staff-attendance.js?v=20261103"></script>
+  <script src="/static/staff-fines.js?v=20261106-2"></script>
 </body>
 </html>

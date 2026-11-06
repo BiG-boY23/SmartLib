@@ -138,3 +138,22 @@ def test_legacy_copy_alias_resolves_same_numeric_copy(data):
     due = datetime.now(timezone.utc)+timedelta(days=2)
     assert crud.execute_circulation(db, 'borrow', patron.username, alias, due_date=due)['status'] == 'success'
     assert crud.execute_circulation(db, 'borrow', patron.username, copy.accession_no, due_date=due)['status'] != 'success'
+def test_overdue_checkout_can_be_returned_and_fine_is_calculated(data):
+    db, staff, patron = data
+    b = book(db, total_copies=1, available_copies=0)
+    copy = db.query(BookCopy).filter_by(book_id=b.id).one()
+    due = datetime.utcnow() - timedelta(days=1, hours=2)
+    record = BorrowRecord(req_id='OVERDUE-RETURN', user_id=patron.id, book_id=b.id,
+        copy_accession_no=copy.accession_no, status=BorrowStatus.OVERDUE,
+        issue_date=due-timedelta(days=2), due_date=due)
+    db.add(record); db.commit()
+    result = crud.execute_circulation(db, 'return', None, copy.accession_no, actor=staff.username)
+    assert result['status'] == 'warning'
+    assert result['fine'] == crud.calculate_overdue_fine(due, datetime.utcnow())
+    assert record.status == BorrowStatus.RETURNED and record.return_date is not None
+    assert b.available_copies == 1
+    from models import Fine
+    assert db.query(Fine).filter_by(borrow_record_id=record.id, is_paid=False).count() == 1
+    again = crud.execute_circulation(db, 'return', None, copy.accession_no, actor=staff.username)
+    assert again['status'] == 'error'
+    assert db.query(Fine).filter_by(borrow_record_id=record.id).count() == 1

@@ -9,7 +9,7 @@ from sqlalchemy import and_, func, or_
 
 from database import get_db
 from models import (
-    StaffArchive, User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, AcquisitionSuggestion, SignupOption,
+    StaffArchive, User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, FinePayment, FinePaymentEvent, AcquisitionSuggestion, SignupOption,
     AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread, BorrowApprovalEmail, LibraryEmail, LoanExtensionEvent,
 )
 from schemas import (
@@ -38,6 +38,7 @@ from schemas import (
     SignupOptionCreate,
     SignupOptionUpdate,
     SignupOptionResponse,
+    FinePaymentCreate,
 )
 import crud
 from email_service import send_email
@@ -59,6 +60,88 @@ def get_dashboard_stats(
 ):
     from reporting import dashboard_stats
     return dashboard_stats(db)
+
+
+@router.get("/fines")
+def list_return_fines(db: Session = Depends(get_db), current_user: User = Depends(require_roles([UserRole.SUPERADMIN, UserRole.LIBRARIAN]))):
+    rows = (
+        db.query(BorrowRecord, Fine)
+        .join(User, BorrowRecord.user_id == User.id)
+        .join(Book, BorrowRecord.book_id == Book.id)
+        .outerjoin(Fine, Fine.borrow_record_id == BorrowRecord.id)
+        .filter(BorrowRecord.status == BorrowStatus.RETURNED, BorrowRecord.return_date.isnot(None))
+        .order_by(BorrowRecord.return_date.desc(), Fine.created_at.desc())
+        .all()
+    )
+    result = []
+    for record, fine in rows:
+        payments = [{
+            "id": payment.id, "amount": payment.amount,
+            "actor_username": payment.actor_username, "recorded_at": payment.recorded_at,
+        } for payment in (fine.payments if fine else [])]
+        amount_cents = round(fine.amount * 100) if fine else 0
+        paid_cents = min(amount_cents, round(sum(payment["amount"] for payment in payments) * 100))
+        balance_cents = max(0, amount_cents - paid_cents)
+        result.append({
+            "id": fine.id if fine else None, "borrow_record_id": record.id, "req_id": record.req_id,
+            "user_id": record.user_id, "patron_name": record.user.full_name, "patron_username": record.user.username,
+            "book_title": record.book.title, "accession_no": record.book.accession_no,
+            "copy_accession_no": record.copy_accession_no,
+            "due_date": record.due_date, "return_date": record.return_date,
+            "returned_late": bool(record.due_date and record.return_date and record.return_date > record.due_date),
+            "amount": fine.amount if fine else 0,
+            "amount_paid": paid_cents / 100, "balance": balance_cents / 100,
+            "payment_status": "paid" if fine and balance_cents == 0 else "partial" if paid_cents else "pending" if fine else None,
+            "is_paid": bool(fine and balance_cents == 0), "payments": payments,
+            "created_at": fine.created_at if fine else None,
+            "paid_at": fine.paid_at if fine else None, "paid_by_username": fine.paid_by_username if fine else None,
+        })
+    return result
+
+
+@router.post("/fines/{fine_id}/payments")
+def record_fine_payment(fine_id: int, payment_data: FinePaymentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_roles([UserRole.SUPERADMIN, UserRole.LIBRARIAN]))):
+    fine = db.query(Fine).filter(Fine.id == fine_id).with_for_update().first()
+    if not fine:
+        raise HTTPException(404, "Fine not found")
+    paid_cents = round(sum(item.amount for item in fine.payments) * 100)
+    amount_cents = round(fine.amount * 100)
+    remaining_cents = max(0, amount_cents - paid_cents)
+    payment_cents = round(payment_data.amount * 100)
+    if payment_cents <= 0:
+        raise HTTPException(422, "Payment must be at least ₱0.01")
+    if payment_cents > remaining_cents:
+        raise HTTPException(422, f"Payment exceeds the remaining balance of ₱{remaining_cents / 100:.2f}")
+
+    was_paid = remaining_cents == 0
+    db.add(FinePayment(
+        fine_id=fine.id, amount=payment_cents / 100,
+        actor_username=current_user.username,
+    ))
+    remaining_cents -= payment_cents
+    fine.is_paid = remaining_cents == 0
+    fine.paid_at = datetime.utcnow() if fine.is_paid else None
+    fine.paid_by_username = current_user.username if fine.is_paid else None
+    if was_paid != fine.is_paid:
+        db.add(FinePaymentEvent(fine_id=fine.id, is_paid=fine.is_paid, actor_username=current_user.username))
+    db.add(AuditLog(
+        user_name=current_user.username,
+        event=f"Fine {fine.id} payment received ({payment_cents / 100:.2f}); remaining balance {remaining_cents / 100:.2f}",
+        status="Paid" if fine.is_paid else "Partially paid" if remaining_cents < amount_cents else "Pending",
+    ))
+    db.commit()
+    return {
+        "id": fine.id, "amount": amount_cents / 100,
+        "amount_paid": (amount_cents - remaining_cents) / 100,
+        "balance": remaining_cents / 100,
+        "payment_status": "paid" if fine.is_paid else "partial" if remaining_cents < amount_cents else "pending",
+        "is_paid": fine.is_paid, "paid_at": fine.paid_at, "paid_by_username": fine.paid_by_username,
+    }
+
+
+@router.put("/fines/{fine_id}/payment")
+def reject_legacy_fine_toggle(fine_id: int, current_user: User = Depends(require_roles([UserRole.SUPERADMIN, UserRole.LIBRARIAN]))):
+    raise HTTPException(410, "Direct paid/pending toggles are no longer supported. Record a payment amount instead.")
 
 
 # Book Management

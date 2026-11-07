@@ -24,6 +24,18 @@ def test_multilingual_model_payload(monkeypatch):
         assert payload['store'] is False
 
 
+def test_model_http_error_logs_safe_provider_status(monkeypatch, caplog):
+    from urllib.error import HTTPError
+
+    monkeypatch.setenv('OPENAI_API_KEY', 'test-key')
+    error_body = BytesIO(json.dumps({'error': {'message': 'private provider details', 'code': 'insufficient_quota'}}).encode())
+    provider_error = HTTPError(ai_service.RESPONSES_URL, 429, 'Too Many Requests', {}, error_body)
+    with patch.object(ai_service, 'urlopen', side_effect=provider_error):
+        assert ai_service.answer_library_question('Hello', [], {}) is None
+    assert 'HTTP 429 (insufficient_quota)' in caplog.text
+    assert 'private provider details' not in caplog.text
+
+
 def test_public_assistant_model_fallback_validation_and_rate_limit():
     engine = create_engine('sqlite:///:memory:', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)

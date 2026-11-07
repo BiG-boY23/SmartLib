@@ -57,7 +57,7 @@ test('book views distinguish returns and borrowing and weekly requests carry aud
   assert.ok(el('reportTrendOutput').innerHTML.includes('-1'));
 });
 
-test('circulation and weekly downloads use selected filters, Excel, and PDF / Word paper', async () => {
+test('circulation and weekly downloads use selected filters without a paper-size control', async () => {
   const elements = new Map(), buttons = [], requests = [], downloads = [];
   const el = id => {
     if (!elements.has(id)) elements.set(id, {value:'', innerHTML:'', textContent:'', options:[], classList:{add(){}, remove(){}}});
@@ -84,7 +84,8 @@ test('circulation and weekly downloads use selected filters, Excel, and PDF / Wo
   assert.ok(markup.includes('Export Excel (.xlsx)'));
   assert.ok(markup.includes('Export weekly Excel (.xlsx)'));
   assert.ok(markup.includes('CSV has no cell formatting.'));
-  assert.ok(markup.includes('<option value="long">Long bond (8.5 × 13 in)</option><option value="a4">A4</option>'));
+  assert.ok(!markup.includes('PDF / Word paper'));
+  assert.ok(!markup.includes('reportPaper'));
   for(const [id, value] of Object.entries({reportStart:'2026-10-01', reportEnd:'2026-10-19', reportWeek:'2026-10-12', reportDepartment:'Engineering', reportCourse:'Civil Engineering', reportRole:'student', reportSort:'course', reportDirection:'desc'}))el(id).value=value;
   for(const [dataset, endpoint] of [['export','/admin/reports/circulation'], ['trendExport','/admin/reports/book-trends']]) {
     assert.deepEqual(buttons.filter(b=>b.dataset[dataset]).map(b=>b.dataset[dataset]), ['xlsx','csv','pdf','docx']);
@@ -103,23 +104,20 @@ test('circulation and weekly downloads use selected filters, Excel, and PDF / Wo
       assert.equal(query.searchParams.get('sort'), 'course');
       assert.equal(query.searchParams.get('direction'), 'desc');
     } else assert.equal(query.searchParams.get('week'), '2026-10-12');
-    el('reportPaper').value='';
     await buttons.find(b=>b.dataset[dataset]==='pdf').onclick();
-    assert.equal(new URL(requests.at(-1), 'http://localhost').searchParams.get('paper'), 'long', 'Long bond is the default');
-    el('reportPaper').value='a4';
     for(const format of ['pdf','docx']) {
       await buttons.find(b=>b.dataset[dataset]===format).onclick();
       const paperQuery=new URL(requests.at(-1), 'http://localhost');
       assert.equal(paperQuery.pathname, endpoint);
       assert.equal(paperQuery.searchParams.get('format'), format);
-      assert.equal(paperQuery.searchParams.get('paper'), 'a4');
+      assert.equal(paperQuery.searchParams.has('paper'), false);
       assert.equal(paperQuery.searchParams.get('role'), 'student');
       assert.ok(downloads.at(-1).endsWith(`.${format}`));
     }
   }
 });
 
-test('SuperAdmin queue exports retain filters, independent paper sizes, and separate archive views by kind', async () => {
+test('SuperAdmin queue exports retain filters and separate archive views without paper-size controls', async () => {
   class Element {
     constructor(tag){this.tag=tag;this.children=[];this.dataset={};this.style={};this.value='';}
     append(...children){this.children.push(...children);}
@@ -149,14 +147,9 @@ test('SuperAdmin queue exports retain filters, independent paper sizes, and sepa
   for(const [kind,parent] of [['acquisitions',acquisitions],['borrow-requests',queue]]) {
     assert.deepEqual(parent.querySelectorAll('button').map(b=>b.textContent), ['Export Excel (.xlsx)','Export CSV','Export PDF','Export Word']);
     assert.ok(parent.querySelectorAll('p').some(p=>p.textContent.includes('CSV has no cell formatting.')));
+    assert.ok(!parent.querySelectorAll('label').some(label=>label.textContent.includes('PDF / Word paper:')));
   }
   const selector=acquisitions.querySelector('[data-archive-view="acquisitions"]');selector.value='archived';selector.onchange();
-  const acquisitionPaper=acquisitions.querySelector('[data-export-paper="acquisitions"]');
-  const queuePaper=queue.querySelector('[data-export-paper="borrow-requests"]');
-  assert.equal(acquisitionPaper.value,'long');assert.equal(queuePaper.value,'long');
-  assert.notEqual(acquisitionPaper.id,queuePaper.id);
-  acquisitionPaper.value='a4';
-  assert.equal(queuePaper.value,'long','Each export bar has an independent paper choice');
   for(const [kind,parent] of [['acquisitions',acquisitions],['borrow-requests',queue]]) {
     await parent.querySelectorAll('button')[0].onclick();
     const query=new URL(requests.at(-1),'http://localhost');
@@ -170,13 +163,11 @@ test('SuperAdmin queue exports retain filters, independent paper sizes, and sepa
       assert.equal(query.searchParams.get('status'),'CHECKED_OUT');
       assert.equal(query.searchParams.get('search'),'Two words');
     }
-    const paper=kind==='acquisitions'?acquisitionPaper:queuePaper;
     for(const format of ['pdf','docx']) {
-      paper.value='a4';
       await parent.querySelectorAll('button').find(button=>button.textContent===`Export ${format==='pdf'?'PDF':'Word'}`).onclick();
       const paperQuery=new URL(requests.at(-1),'http://localhost');
       assert.equal(paperQuery.searchParams.get('format'),format);
-      assert.equal(paperQuery.searchParams.get('paper'),'a4');
+      assert.equal(paperQuery.searchParams.has('paper'),false);
       assert.equal(paperQuery.searchParams.get('kind'),kind);
       assert.equal(paperQuery.searchParams.get('archived'),kind==='acquisitions'?'true':'false');
     }

@@ -34,7 +34,7 @@ PostgreSQL stores records, NOT profile/cover image files. Those need a persisten
 
 ## Workflow changes
 - Staff selects a future due date and time at checkout (Philippine time). Actual return time is recorded when an item is returned.
-- Library Attendance uses a keyboard-style Library ID QR scanner or manual institutional ID. It records visits, counts unique visitors, and exports CSV/Excel/PDF/Word with A4/long paper options.
+- Library Attendance uses a keyboard-style Library ID QR scanner or manual institutional ID. It records visits, counts unique visitors, supports date, department, and course filters plus sorting, and exports CSV/Excel/PDF/Word.
 - New catalog and copy identifiers are numeric, server-generated, unique and padded to five digits. Existing labels remain usable to preserve old QR codes and loan references. Renumbering legacy holdings requires a separate label migration.
 
 References:

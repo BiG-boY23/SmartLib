@@ -22,6 +22,7 @@ import * as Brightness from 'expo-brightness';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
+import * as Network from 'expo-network';
 import { isRunningInExpoGo } from 'expo';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import QRCode from 'react-native-qrcode-svg';
@@ -51,6 +52,7 @@ const COLORS = {
 const TOKEN_KEY = 'smartlib_access_token';
 const API_KEY = 'smartlib_api_base';
 const TAB_KEY = 'smartlib_active_tab';
+const OFFLINE_CACHE_PATH = `${FileSystem.documentDirectory}smartlib-offline-cache.json`;
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_BASE_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:8000' : 'http://127.0.0.1:8000');
 const ANDROID_STATUS_BAR_HEIGHT = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0;
@@ -62,6 +64,10 @@ const TABS = [
   { id: 'updates', icon: '♧', label: 'Updates' },
   { id: 'digital-id', icon: '▣', label: 'Library ID' },
 ];
+
+function isNetworkOffline(state) {
+  return state?.isConnected === false || state?.isInternetReachable === false;
+}
 
 function formatLocalDate(value) {
   const date = new Date(value);
@@ -157,6 +163,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [screen, setScreen] = useState('loading');
+  const [offlineMode, setOfflineMode] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [resetToken, setResetToken] = useState('');
   const [tab, setTab] = useState('home');
@@ -211,13 +218,15 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   const messageListVersion = useRef(0);
   const activeMessageId = useRef(null);
   const sessionEnded = useRef(false);
+  const cacheWriteQueue = useRef(Promise.resolve());
 
   const clearPrivateSession = useCallback(async () => {
     if (sessionEnded.current) return;
     sessionEnded.current = true;
     if (idleTimer.current) clearTimeout(idleTimer.current);
     try {
-      await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(TAB_KEY)]);
+      await cacheWriteQueue.current.catch(() => {});
+      await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(TAB_KEY), FileSystem.deleteAsync(OFFLINE_CACHE_PATH, { idempotent: true })]);
     } catch {
       Alert.alert('Session locked', 'The phone could not clear secure storage. Check the device before sharing it with another person.');
     } finally {
@@ -232,6 +241,11 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   }, [onSessionEnd]);
 
   const request = useCallback(async (path, options = {}, authToken = token, base = apiBase) => {
+    if (offlineMode) {
+      const network = await Network.getNetworkStateAsync().catch(() => null);
+      if (isNetworkOffline(network)) throw new Error('You’re viewing saved information offline. Reconnect to use library services.');
+      setOfflineMode(false);
+    }
     const headers = { Accept: 'application/json', ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}), ...options.headers };
     let response;
     const controller = new AbortController();
@@ -239,8 +253,14 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
     try {
       response = await fetch(`${base.replace(/\/+$/, '')}${path}`, { ...options, headers, signal: controller.signal });
     } catch {
-      setScreen('offline');
-      throw new Error('Can’t connect to EVSU SmartLib right now. Check your connection and try again.');
+      const network = await Network.getNetworkStateAsync().catch(() => null);
+      if (isNetworkOffline(network)) {
+        if (token && user) { setOfflineMode(true); setTab(current => current === 'messages' ? 'home' : current); setScreen('app'); }
+        else { setAuthError('You’re offline. Sign-in requires an internet connection.'); setScreen('auth'); }
+      }
+      throw new Error(isNetworkOffline(network)
+        ? 'You’re offline. Reconnect to access your account and library services.'
+        : 'Can’t reach the library server right now. Please try again.');
     } finally { clearTimeout(timeout); }
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (sessionEnded.current) throw new Error('This session has ended. Sign in again to continue.');
@@ -256,7 +276,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
       throw error;
     }
     return data;
-  }, [apiBase, token, clearPrivateSession]);
+  }, [apiBase, token, offlineMode, clearPrivateSession]);
 
   useEffect(() => {
     let alive = true;
@@ -270,12 +290,43 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
           if (!alive) return;
           setToken(savedToken); setUser(me); setTab([...TABS.map((item) => item.id), 'profile', 'messages'].includes(savedTab) ? savedTab : 'home'); setScreen('app');
         } catch (error) {
-          if (alive && !sessionEnded.current) setScreen(error.status === 401 ? 'auth' : 'offline');
+          if (alive && !sessionEnded.current) {
+            const network = await Network.getNetworkStateAsync().catch(() => null);
+            if (isNetworkOffline(network)) {
+              const cacheFile = await FileSystem.getInfoAsync(OFFLINE_CACHE_PATH);
+              const cache = cacheFile.exists ? await FileSystem.readAsStringAsync(OFFLINE_CACHE_PATH).then(JSON.parse).catch(() => null) : null;
+              if (cache?.user) {
+                setToken(savedToken); setUser(cache.user); setBooks(cache.books || []); setBorrowings(cache.borrowings || []); setFines(cache.fines || []);
+                setTotalOutstandingFines(Number(cache.totalOutstandingFines || 0)); setDigitalId(cache.digitalId || null);
+                setAnnouncements(cache.announcements || []); setNotifications(cache.notifications || []);
+                setTab([...TABS.map((item) => item.id), 'profile'].includes(cache.tab || savedTab) ? (cache.tab || savedTab) : 'home');
+                setOfflineMode(true); setScreen('app');
+              } else { setAuthError('You’re offline and there is no saved session on this device. Sign in when you reconnect.'); setScreen('auth'); }
+            }
+            else { setAuthError(error.message); setScreen('auth'); }
+          }
         }
       } else setScreen('auth');
     })();
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const applyNetworkState = (network) => {
+      if (!alive) return;
+      if (isNetworkOffline(network)) {
+        if (token && user) { setOfflineMode(true); setTab(current => current === 'messages' ? 'home' : current); setScreen('app'); }
+        else { setAuthError('You’re offline. Sign-in requires an internet connection.'); setScreen('auth'); }
+      } else {
+        setOfflineMode(false);
+        setScreen(current => current === 'offline' ? (token ? 'app' : 'auth') : current);
+      }
+    };
+    Network.getNetworkStateAsync().then(applyNetworkState).catch(() => {});
+    const subscription = Network.addNetworkStateListener(applyNetworkState);
+    return () => { alive = false; subscription.remove(); };
+  }, [token, user]);
 
   useEffect(() => {
     if (screen === 'app') SecureStore.setItemAsync(TAB_KEY, tab).catch(() => {});
@@ -357,7 +408,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   }, [request, isStaff, closeMessageThread, loadMessageThreads]);
 
   useEffect(() => {
-    if (screen !== 'app' || !token) return;
+    if (screen !== 'app' || !token || offlineMode) return;
     let alive = true;
     const timer = setTimeout(async () => {
       setBusy(true);
@@ -370,21 +421,32 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
       finally { if (alive) setBusy(false); }
     }, tab === 'catalog' ? 220 : 0);
     return () => { alive = false; clearTimeout(timer); };
-  }, [screen, tab, token, query, loadBooks, loadBorrowings, loadDigitalId, loadLibraryUpdates]);
+  }, [screen, tab, token, query, offlineMode, loadBooks, loadBorrowings, loadDigitalId, loadLibraryUpdates]);
 
   useEffect(() => {
-    if (screen !== 'app' || tab !== 'messages') return;
+    if (screen !== 'app' || !token || !user) return;
+    if (!books.length && !borrowings.length && !digitalId && !announcements.length) return;
+    const snapshot = JSON.stringify({ user, books, borrowings, fines, totalOutstandingFines, digitalId, announcements, notifications, tab, savedAt: new Date().toISOString() });
+    cacheWriteQueue.current = cacheWriteQueue.current.catch(() => {}).then(async () => {
+      const rememberedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+      if (rememberedToken === token) await FileSystem.writeAsStringAsync(OFFLINE_CACHE_PATH, snapshot);
+    });
+    cacheWriteQueue.current.catch(() => {});
+  }, [screen, token, user, books, borrowings, fines, totalOutstandingFines, digitalId, announcements, notifications, tab]);
+
+  useEffect(() => {
+    if (screen !== 'app' || tab !== 'messages' || offlineMode) return;
     const refresh = () => (activeThread ? loadMessageThread(activeThread.id) : loadMessageThreads()).catch((error) => Alert.alert('Messages unavailable', error.message));
     refresh();
     const timer = setInterval(refresh, 10000);
     return () => clearInterval(timer);
-  }, [screen, tab, activeThread?.id, loadMessageThread, loadMessageThreads]);
+  }, [screen, tab, activeThread?.id, offlineMode, loadMessageThread, loadMessageThreads]);
 
   useEffect(() => {
-    if (screen !== 'app') return;
+    if (screen !== 'app' || offlineMode) return;
     const timer = setInterval(() => loadLibraryUpdates().catch(() => {}), 30000);
     return () => clearInterval(timer);
-  }, [screen, loadLibraryUpdates]);
+  }, [screen, offlineMode, loadLibraryUpdates]);
 
   const categories = useMemo(() => ['All', ...new Set(books.map((book) => book.category).filter(Boolean))], [books]);
   const visibleBooks = useMemo(() => books.filter((book) => (category === 'All' || book.category === category) && (availabilityFilter === 'All' || (availabilityFilter === 'Available' ? Number(book.available_copies) > 0 : Number(book.available_copies) <= 0))), [books, category, availabilityFilter]);
@@ -487,11 +549,11 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
         }
       }
       if (authMode === 'register') {
-        if (!form.department_id || !form.course_id) { setAuthError('Choose a department and course before continuing.'); return false; }
+        if (!form.department_id || (form.account_type !== 'faculty' && !form.course_id)) { setAuthError(form.account_type === 'faculty' ? 'Choose your department before continuing.' : 'Choose a department and course before continuing.'); return false; }
         const body = {
           first_name: form.first_name.trim(), middle_name: form.middle_name.trim() || null, last_name: form.last_name.trim(), username: form.username.trim(),
           email: form.email.trim(), password: form.password, confirm_password: form.confirm_password,
-          account_type: form.account_type, department_id: form.department_id, course_id: form.course_id,
+          account_type: form.account_type, department_id: form.department_id, course_id: form.account_type === 'faculty' ? null : form.course_id,
         };
         await request('/auth/register/request-otp', { method: 'POST', body: JSON.stringify(body) }, null, base);
         setAuthMode('register-otp'); setAuthError('We sent a 6-digit code to your email. Enter it to create your account.');
@@ -502,7 +564,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
         const body = authMode === 'register-otp' ? {
           first_name: form.first_name.trim(), middle_name: form.middle_name.trim() || null, last_name: form.last_name.trim(), username: form.username.trim(),
           email: form.email.trim(), password: form.password, confirm_password: form.confirm_password,
-          account_type: form.account_type, department_id: form.department_id, course_id: form.course_id,
+          account_type: form.account_type, department_id: form.department_id, course_id: form.account_type === 'faculty' ? null : form.course_id,
         } : { email: form.email.trim() };
         const data = await request(path, { method: 'POST', body: JSON.stringify(body) }, null, base);
         setAuthError(data.message || 'A new code has been sent.');
@@ -530,6 +592,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
       }
       const data = await request('/auth/login', { method: 'POST', body: JSON.stringify({ username: form.username.trim(), password: form.password, remember_me: form.remember_me }) }, null, base);
       const profile = await request('/auth/me', {}, data.access_token, base);
+      await FileSystem.deleteAsync(OFFLINE_CACHE_PATH, { idempotent: true });
       if (form.remember_me) await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
       else await SecureStore.deleteItemAsync(TOKEN_KEY);
       setToken(data.access_token); setUser(profile); setTab('home'); setScreen('app');
@@ -569,6 +632,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   }
 
   function openBorrowRequest(book) {
+    if (offlineMode) { Alert.alert('Request unavailable offline', 'Reconnect to the internet to request a book. No request has been queued.'); return; }
     const nextDay = new Date(); nextDay.setDate(nextDay.getDate() + 1); nextDay.setHours(9, 0, 0, 0);
     setPickupAt(nextDay); setPickupDateChosen(false); setPickupTimeChosen(false); setSelectedBook(book);
     if (Platform.OS === 'ios') setIosPickerMode('datetime');
@@ -775,6 +839,7 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
   }
 
   function changeTab(nextTab) {
+    if (offlineMode && nextTab === 'messages') { Alert.alert('Messages need internet', 'Reconnect to view or send messages. Your saved dashboard is still available.'); return; }
     setCategory('All'); setTab(nextTab);
     if (nextTab === 'catalog') { setQuery(''); }
   }
@@ -813,7 +878,11 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
         setScreen('auth');
       }
     } catch (error) {
-      if (!sessionEnded.current) setScreen('offline');
+      if (!sessionEnded.current) {
+        const network = await Network.getNetworkStateAsync().catch(() => null);
+        if (isNetworkOffline(network)) setScreen('offline');
+        else { setAuthError(error.message); setScreen(token ? 'app' : 'auth'); }
+      }
     } finally { setBusy(false); }
   }
   if (screen === 'offline') return <View style={[styles.loading, { padding: 28 }]}>
@@ -821,22 +890,23 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
     <Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} />
     <Text style={{ fontSize: 26, fontWeight: '700', color: COLORS.wine }}>EVSU SmartLib</Text>
     <Text style={styles.helperText}>Ormoc Campus Library</Text>
-    <Text style={[styles.helperText, { marginVertical: 20 }]}>You’re offline or the library server is unavailable. You can keep the app open. Connect to access your account, browse books, or make requests.</Text>
-    <Text style={styles.helperText}>Visit the library circulation desk for assistance. Transactions are available online only; no requests are queued here.</Text>
+    <Text style={[styles.helperText, { marginVertical: 20 }]}>No internet connection detected. First-time sign-in needs internet. If you previously signed in with “Remember me,” SmartLib can open your last saved dashboard.</Text>
+    <Text style={styles.helperText}>Saved information may be out of date. Requests, payments, messages, and other transactions are unavailable offline.</Text>
     <Button title={busy ? 'Connecting…' : 'Try connecting again'} onPress={reconnect} disabled={busy} />
   </View>;
-  if (screen === 'loading') return <View style={styles.loading}><StatusBar barStyle="dark-content" /><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} accessibilityLabel="EVSU OC SmartLib logo" /><ActivityIndicator color={COLORS.wine} size="large" /><Text style={styles.helperText}>Opening your library…</Text><Button title="Open offline" onPress={() => setScreen('offline')} /></View>;
-  if (screen === 'auth') return <View style={{flex:1}}><Button title="Open offline" secondary onPress={() => setScreen('offline')} /><AuthScreen apiBase={apiDraft} onApiChange={setApiDraft} onSubmit={submitAuth} mode={authMode} setMode={(mode) => { setAuthMode(mode); setAuthError(''); }} onRegistrationFailed={() => setAuthMode('register')} error={authError} busy={busy} signupOptions={signupOptions} signupOptionsError={signupOptionsError} signupOptionsLoading={signupOptionsLoading} onRefreshSignupOptions={loadSignupOptions} /></View>;
+  if (screen === 'loading') return <View style={styles.loading}><StatusBar barStyle="dark-content" /><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.splashLogo} accessibilityLabel="EVSU OC SmartLib logo" /><ActivityIndicator color={COLORS.wine} size="large" /><Text style={styles.helperText}>Opening your library…</Text></View>;
+  if (screen === 'auth') return <AuthScreen apiBase={apiDraft} onApiChange={setApiDraft} onSubmit={submitAuth} mode={authMode} setMode={(mode) => { setAuthMode(mode); setAuthError(''); }} onRegistrationFailed={() => setAuthMode('register')} error={authError} busy={busy} signupOptions={signupOptions} signupOptionsError={signupOptionsError} signupOptionsLoading={signupOptionsLoading} onRefreshSignupOptions={loadSignupOptions} />;
 
   const firstName = (user?.full_name || 'reader').trim().split(/\s+/)[0];
   const currentTabLabel = TABS.find((item) => item.id === tab)?.label || (tab === 'messages' ? 'Messages' : 'Profile');
   const unreadNotifications = notifications.filter((item) => !item.read).length;
   return <View style={[styles.app, Platform.OS === 'ios' && { paddingTop: safeArea.top }]} onTouchStart={resetIdleTimer}><StatusBar barStyle={Platform.OS === 'android' ? 'light-content' : 'dark-content'} backgroundColor="#000000" translucent={Platform.OS === 'android'} />{Platform.OS === 'android' ? <View style={styles.statusBarSpacer} /> : null}<View style={styles.topbar}><View style={styles.brandLine}><Image source={require('./assets/evsu-smartlib-logo.jpg')} style={styles.brandLogoImage} accessibilityLabel="EVSU OC SmartLib logo" /><View><Text style={styles.brandText}>SmartLib</Text><Text style={styles.topCurrent}>{currentTabLabel}</Text></View></View><View style={styles.topbarActions}><Pressable style={[styles.headerAction, tab === 'messages' && styles.headerActionActive]} accessibilityLabel="Open messages" accessibilityState={{ selected: tab === 'messages' }} onPress={() => { closeMessageThread(); changeTab('messages'); }}><Text style={styles.headerActionGlyph}>✉</Text></Pressable><Pressable style={[styles.headerAction, assistantVisible && styles.headerActionActive]} accessibilityLabel="Ask the library assistant" accessibilityState={{ selected: assistantVisible }} onPress={() => setAssistantVisible(true)}><Text style={styles.headerActionGlyph}>✦</Text></Pressable><Pressable style={[styles.headerAction, tab === 'updates' && styles.headerActionActive]} accessibilityLabel="Open notifications" accessibilityState={{ selected: tab === 'updates' }} onPress={() => changeTab('updates')}><Text style={styles.headerActionGlyph}>♧</Text>{unreadNotifications > 0 && <View style={styles.unreadDot} />}</Pressable><Pressable style={[styles.avatar, tab === 'profile' && styles.avatarActive]} accessibilityLabel="Open profile" accessibilityState={{ selected: tab === 'profile' }} onPress={() => setTab('profile')}>{user?.profile_picture_url ? <Image source={{ uri: `${apiBase.replace(/\/+$/, '')}${user.profile_picture_url}` }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{(user?.full_name || 'S').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</Text>}</Pressable></View></View>
+    {offlineMode && <View style={styles.offlineBanner}><Text style={styles.offlineBannerText}>Offline view · Saved information may be out of date. Requests and transactions are unavailable.</Text></View>}
     <ScrollView keyboardShouldPersistTaps="handled" alwaysBounceVertical refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshCurrentScreen} tintColor={COLORS.wine} colors={[COLORS.wine]} />} contentContainerStyle={styles.scrollContent}>
       {tab === 'home' && <HomeScreen apiBase={apiBase} firstName={firstName} user={user} books={books} borrowings={borrowings} announcements={announcements} busy={busy} onExplore={() => changeTab('catalog')} onTab={changeTab} onBorrow={openBorrowRequest} onAssistant={() => setAssistantVisible(true)} onMessages={() => { closeMessageThread(); changeTab('messages'); }} />}
       {tab === 'catalog' && <CatalogScreen apiBase={apiBase} books={visibleBooks} categories={categories} category={category} onCategory={setCategory} query={query} onQuery={setQuery} availabilityFilter={availabilityFilter} setAvailabilityFilter={setAvailabilityFilter} busy={busy} onBorrow={openBorrowRequest} />}
       {tab === 'borrowings' && <BorrowingsScreen borrowings={borrowings} fines={fines} totalOutstandingFines={totalOutstandingFines} busy={busy} onRefresh={loadBorrowings} onExplore={() => changeTab('catalog')} onSelect={setSelectedBorrowing} />}
-      {tab === 'digital-id' && <DigitalIdScreen user={user} digitalId={digitalId} busy={busy} onRefresh={loadDigitalId} apiBase={apiBase} token={token} />}
+      {tab === 'digital-id' && <DigitalIdScreen user={user} digitalId={digitalId} busy={busy} offlineMode={offlineMode} onRefresh={loadDigitalId} apiBase={apiBase} token={token} />}
       {tab === 'updates' && <UpdatesScreen announcements={announcements} notifications={notifications} isStaff={isStaff} onPublish={() => setShowAnnouncementEditor(true)} onRead={markNotificationRead} onRefresh={loadLibraryUpdates} />}
       {tab === 'messages' && <MessagesScreen user={user} isStaff={isStaff} threads={messageThreads} activeThread={activeThread} messages={threadMessages} draft={messageDraft} setDraft={setMessageDraft} onOpen={loadMessageThread} onBack={() => { closeMessageThread(); loadMessageThreads(); }} onSend={sendThreadReply} onCompose={() => setShowComposeMessage(true)} onDelete={confirmMessageDeletion} busy={messageBusy} />}
       {tab === 'profile' && <ProfileScreen user={user} apiBase={apiBase} onEdit={openEditProfile} onSuggest={() => setShowSuggestion(true)} onMessages={() => { closeMessageThread(); changeTab('messages'); }} onUpdates={() => changeTab('updates')} onDigitalId={() => changeTab('digital-id')} onSignOut={() => Alert.alert('Sign out?', 'You will need to sign in again to access your account.', [{ text: 'Stay signed in', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: signOut }])} onChangePassword={() => setShowChangePassword(true)} onChangeApi={() => { setApiDraft(apiBase); setScreen('server-settings'); }} />}
@@ -963,9 +1033,9 @@ function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, onRegistrat
             <AuthField label="Student or staff ID" icon="card" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your institutional ID" autoCapitalize="characters" />
             <AuthField label="EVSU email" icon="mail" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" autoComplete="email" />
             <Text style={[styles.label, styles.authLabel]}>Account type</Text>
-            <View style={styles.choiceRow}>{['student', 'faculty'].map((role) => <Pressable key={role} accessibilityRole="radio" accessibilityState={{ checked: form.account_type === role }} onPress={() => update('account_type', role)} style={[styles.choice, styles.authAccountChoice, form.account_type === role && styles.choiceSelected]}><Text style={[styles.choiceText, form.account_type === role && styles.choiceTextSelected]}>{role === 'student' ? 'Student' : 'Faculty'}</Text></Pressable>)}</View>
+            <View style={styles.choiceRow}>{['student', 'faculty'].map((role) => <Pressable key={role} accessibilityRole="radio" accessibilityState={{ checked: form.account_type === role }} onPress={() => { update('account_type', role); if (role === 'faculty') update('course_id', null); }} style={[styles.choice, styles.authAccountChoice, form.account_type === role && styles.choiceSelected]}><Text style={[styles.choiceText, form.account_type === role && styles.choiceTextSelected]}>{role === 'student' ? 'Student' : 'Faculty'}</Text></Pressable>)}</View>
             <SelectField label="Department" value={signupOptions.departments.find((item) => item.id === form.department_id)?.name} options={signupOptions.departments} placeholder={signupOptionsLoading ? 'Loading departments…' : signupOptionsError ? 'Could not load departments' : 'Choose your department'} disabled={signupOptionsLoading || !signupOptions.departments.length} onSelect={(item) => { update('department_id', item.id); update('course_id', null); }} />
-            <SelectField label="Course" value={signupOptions.courses.find((item) => item.id === form.course_id)?.name} options={signupOptions.courses.filter((item) => item.department_id === form.department_id)} placeholder={form.department_id ? 'Choose your course' : 'Select a department first'} disabled={signupOptionsLoading || !form.department_id || !signupOptions.courses.some((item) => item.department_id === form.department_id)} onSelect={(item) => update('course_id', item.id)} />
+            {form.account_type !== 'faculty' ? <SelectField label="Course" value={signupOptions.courses.find((item) => item.id === form.course_id)?.name} options={signupOptions.courses.filter((item) => item.department_id === form.department_id)} placeholder={form.department_id ? 'Choose your course' : 'Select a department first'} disabled={signupOptionsLoading || !form.department_id || !signupOptions.courses.some((item) => item.department_id === form.department_id)} onSelect={(item) => update('course_id', item.id)} /> : null}
             {signupOptionsError ? <Pressable accessibilityRole="button" onPress={onRefreshSignupOptions} style={styles.authSwitch}><Text style={styles.authSwitchAction}>Retry loading departments and courses</Text></Pressable> : !signupOptionsLoading && !signupOptions.departments.length ? <Text style={styles.serverHint}>No department options are available yet. Ask the superAdmin to add them in the Admin Portal.</Text> : null}
             <AuthField label="Password" icon="lock" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–12 characters" autoComplete="new-password" />
             <PasswordStrengthIndicator password={form.password} />
@@ -1068,10 +1138,10 @@ function BorrowingsScreen({ borrowings, fines, totalOutstandingFines, busy, onRe
   const [statusFilter, setStatusFilter] = useState('All');
   const statuses = ['All', 'PENDING', 'APPROVED', 'CANCELLED', 'CHECKED_OUT', 'RETURNED', 'OVERDUE', 'REJECTED'];
   const entries = borrowings.filter((entry) => statusFilter === 'All' || entry.status === statusFilter).sort((a, b) => new Date(b.request_date) - new Date(a.request_date));
-  return <><Greeting eyebrow="Your library activity" title="My books" subtitle="Borrow requests, due dates, and return reminders." /><View style={styles.reminderNote}><Text style={styles.reminderGlyph}>₱</Text><View style={styles.flex}><Text style={[styles.reminderCopy, { fontWeight: '800', color: COLORS.ink }]}>Outstanding fines: ₱{Number(totalOutstandingFines || 0).toFixed(2)}</Text><Text style={styles.reminderCopy}>Fine and payment details appear with returned items below.</Text></View></View><View style={styles.reminderNote}><Text style={styles.reminderGlyph}>♧</Text><Text style={styles.reminderCopy}>Return reminders are scheduled for the day before and the due date when notifications are enabled.</Text></View><Text style={styles.filterLabel}>Filter by status</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>{statuses.map((status) => <Pressable key={status} accessibilityRole="button" accessibilityState={{ selected: statusFilter === status }} onPress={() => setStatusFilter(status)} style={[styles.chip, statusFilter === status && styles.chipActive]}><Text style={[styles.chipText, statusFilter === status && styles.chipTextActive]}>{status === 'All' ? 'All' : status.replaceAll('_', ' ')}</Text></Pressable>)}</ScrollView><SectionTitle title={busy ? 'Updating…' : 'Borrowing history'} action={`${entries.length} shown`} />{entries.length ? <View style={styles.listStack}>{entries.map((entry) => { const status = entry.status || 'PENDING'; const tone = ['PENDING', 'APPROVED'].includes(status) ? 'amber' : ['REJECTED', 'OVERDUE', 'CANCELLED'].includes(status) ? 'red' : 'green'; const due = entry.due_date ? parseServerTimestamp(entry.due_date) : null; const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0); const dueDay = due ? new Date(due.getFullYear(), due.getMonth(), due.getDate()) : null; const daysLeft = dueDay ? Math.ceil((dueDay - dayStart) / 86400000) : null; const dueLabel = !due ? 'Due date not set' : daysLeft < 0 ? `Overdue by ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'}` : daysLeft === 0 ? 'Due today' : `Due in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`; const fineItems = fines.filter((fine) => fine.borrow_record_id === entry.id); const returnLabel = entry.return_date ? `Returned ${parseServerTimestamp(entry.return_date).toLocaleString()}` : null; return <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${entry.book_title || 'borrow request'}; ${status}`} key={entry.id} style={({ pressed }) => [styles.listCard, pressed && styles.listCardPressed]} onPress={() => onSelect(entry)}><Text style={styles.listIcon}>▤</Text><View style={styles.listContent}><Text style={styles.listTitle}>{entry.book_title || `Book ${entry.book_id}`}</Text><Text style={styles.listSub}>{entry.req_id} · {borrowingActivityLabel(entry)}</Text>{['CHECKED_OUT', 'OVERDUE'].includes(status) && <Text style={[styles.dueDateText, (daysLeft !== null && daysLeft <= 0) && styles.dueDateLate]}>{dueLabel}{due ? ` · ${due.toLocaleDateString()}` : ''}</Text>}{returnLabel && <Text style={styles.listSub}>{returnLabel}</Text>}{fineItems.map((fine) => <View key={fine.id} style={{ marginTop: 5 }}><Text style={[styles.dueDateText, fine.balance > 0 && styles.dueDateLate]}>Fine ₱{Number(fine.amount || 0).toFixed(2)} · paid ₱{Number(fine.amount_paid || 0).toFixed(2)} · remaining ₱{Number(fine.balance || 0).toFixed(2)} · {fine.payment_status === 'paid' ? 'Paid' : fine.payment_status === 'partial' ? 'Partially paid' : 'Pending'}</Text>{(fine.payments || []).map((payment, index) => <Text key={`${fine.id}-${index}`} style={styles.listSub}>Payment ₱{Number(payment.amount || 0).toFixed(2)} · {parseServerTimestamp(payment.recorded_at).toLocaleDateString()}</Text>)}</View>)}</View><Badge tone={tone}>{status.replaceAll('_', ' ')}</Badge><Text style={styles.settingsChevron}>›</Text></Pressable>; })}</View> : <EmptyState icon="▤" title={statusFilter === 'All' ? 'No requests yet' : 'No matching requests'} message={statusFilter === 'All' ? 'Requested books will appear here.' : 'Try another status to see your borrowing history.'}><Button title={statusFilter === 'All' ? 'Browse the catalog' : 'Show all'} secondary onPress={statusFilter === 'All' ? onExplore : () => setStatusFilter('All')} /></EmptyState>}</>;
+  return <><Greeting eyebrow="Your library activity" title="My books" subtitle="Borrow requests, due dates, and fine balance." /><View style={styles.fineBalanceCard}><Text style={styles.fineBalanceLabel}>Balance</Text><Text style={styles.fineBalanceAmount}>₱{Number(totalOutstandingFines || 0).toFixed(2)}</Text></View><Text style={styles.filterLabel}>Filter by status</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>{statuses.map((status) => <Pressable key={status} accessibilityRole="button" accessibilityState={{ selected: statusFilter === status }} onPress={() => setStatusFilter(status)} style={[styles.chip, statusFilter === status && styles.chipActive]}><Text style={[styles.chipText, statusFilter === status && styles.chipTextActive]}>{status === 'All' ? 'All' : status.replaceAll('_', ' ')}</Text></Pressable>)}</ScrollView><SectionTitle title={busy ? 'Updating…' : 'Borrowing history'} action={`${entries.length} shown`} />{entries.length ? <View style={styles.listStack}>{entries.map((entry) => { const status = entry.status || 'PENDING'; const tone = ['PENDING', 'APPROVED'].includes(status) ? 'amber' : ['REJECTED', 'OVERDUE', 'CANCELLED'].includes(status) ? 'red' : 'green'; const due = entry.due_date ? parseServerTimestamp(entry.due_date) : null; const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0); const dueDay = due ? new Date(due.getFullYear(), due.getMonth(), due.getDate()) : null; const daysLeft = dueDay ? Math.ceil((dueDay - dayStart) / 86400000) : null; const dueLabel = !due ? 'Due date not set' : daysLeft < 0 ? `Overdue by ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'}` : daysLeft === 0 ? 'Due today' : `Due in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`; const fineItems = fines.filter((fine) => fine.borrow_record_id === entry.id); const returnLabel = entry.return_date ? `Returned ${parseServerTimestamp(entry.return_date).toLocaleString()}` : null; return <Pressable accessibilityRole="button" accessibilityLabel={`Details for ${entry.book_title || 'borrow request'}; ${status}`} key={entry.id} style={({ pressed }) => [styles.listCard, pressed && styles.listCardPressed]} onPress={() => onSelect(entry)}><Text style={styles.listIcon}>▤</Text><View style={styles.listContent}><Text style={styles.listTitle}>{entry.book_title || `Book ${entry.book_id}`}</Text><Text style={styles.listSub}>{entry.req_id} · {borrowingActivityLabel(entry)}</Text>{['CHECKED_OUT', 'OVERDUE'].includes(status) && <Text style={[styles.dueDateText, (daysLeft !== null && daysLeft <= 0) && styles.dueDateLate]}>{dueLabel}{due ? ` · ${due.toLocaleDateString()}` : ''}</Text>}{returnLabel && <Text style={styles.listSub}>{returnLabel}</Text>}{fineItems.map((fine) => <View key={fine.id} style={{ marginTop: 5 }}><Text style={[styles.dueDateText, fine.balance > 0 && styles.dueDateLate]}>Fine ₱{Number(fine.amount || 0).toFixed(2)} · paid ₱{Number(fine.amount_paid || 0).toFixed(2)} · remaining ₱{Number(fine.balance || 0).toFixed(2)} · {fine.payment_status === 'paid' ? 'Paid' : fine.payment_status === 'partial' ? 'Partially paid' : 'Pending'}</Text>{(fine.payments || []).map((payment, index) => <Text key={`${fine.id}-${index}`} style={styles.listSub}>Payment ₱{Number(payment.amount || 0).toFixed(2)} · {parseServerTimestamp(payment.recorded_at).toLocaleDateString()}</Text>)}</View>)}</View><Badge tone={tone}>{status.replaceAll('_', ' ')}</Badge><Text style={styles.settingsChevron}>›</Text></Pressable>; })}</View> : <EmptyState icon="▤" title={statusFilter === 'All' ? 'No requests yet' : 'No matching requests'} message={statusFilter === 'All' ? 'Requested books will appear here.' : 'Try another status to see your borrowing history.'}><Button title={statusFilter === 'All' ? 'Browse the catalog' : 'Show all'} secondary onPress={statusFilter === 'All' ? onExplore : () => setStatusFilter('All')} /></EmptyState>}</>;
 }
 
-function DigitalIdScreen({ user, digitalId, busy, onRefresh, apiBase, token }) {
+function DigitalIdScreen({ user, digitalId, busy, offlineMode, onRefresh, apiBase, token }) {
   const photoUrl = user?.profile_picture_url || digitalId?.profile_picture_url;
   const [saving, setSaving] = useState(false);
   const imageUrl = `${apiBase.replace(/\/+$/, '')}/mobile/profile/digital-id/image`;
@@ -1098,7 +1168,7 @@ function DigitalIdScreen({ user, digitalId, busy, onRefresh, apiBase, token }) {
     } catch (error) { Alert.alert('Could not save Library ID', error.message); }
     finally { if (localUri) await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {}); setSaving(false); }
   }
-  if (!digitalId) return <><Greeting eyebrow="Ormoc Campus" title="Library ID" subtitle="Your digital library membership." /><ActivityIndicator color={COLORS.wine} /><Text style={styles.serverHint}>Pull down to reload your library ID.</Text></>;
+  if (!digitalId) return <><Greeting eyebrow="Ormoc Campus" title="Library ID" subtitle="Your digital library membership." />{offlineMode ? <EmptyState icon="▣" title="Library ID not saved offline" message="Connect to the internet and open this screen once to load your ID. SmartLib can then keep the ID details available for offline viewing." /> : busy ? <><ActivityIndicator color={COLORS.wine} /><Text style={styles.serverHint}>Loading your library ID…</Text></> : <EmptyState icon="▣" title="Library ID unavailable" message="Connect to the library server and try loading your ID again."><Button title="Try again" onPress={onRefresh} /></EmptyState>}</>;
   return <>
     <Greeting eyebrow="EVSU · Ormoc Campus" title="Library ID" subtitle="Present your QR code at the circulation desk." />
     <View style={styles.libraryIdCard}>
@@ -1251,6 +1321,8 @@ const styles = StyleSheet.create({
   statusBarSpacer: { height: ANDROID_STATUS_BAR_HEIGHT, backgroundColor: '#000000' },
   loading: { flex: 1, backgroundColor: COLORS.canvas, alignItems: 'center', justifyContent: 'center', gap: 14 },
   helperText: { color: COLORS.muted, fontSize: 13 },
+  offlineBanner: { paddingHorizontal: 16, paddingVertical: 11, backgroundColor: COLORS.amberBg, borderBottomWidth: 1, borderBottomColor: '#ead9a7' },
+  offlineBannerText: { color: COLORS.amber, fontSize: 12, fontWeight: '700', textAlign: 'center' },
   splashLogo: { width: 148, height: 148, borderRadius: 74, marginBottom: 8 },
   topbar: { minHeight: 70, backgroundColor: COLORS.paper, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: COLORS.line },
   topbarActions: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 'auto' },
@@ -1343,9 +1415,9 @@ const styles = StyleSheet.create({
   listSub: { color: COLORS.muted, fontSize: 10, marginTop: 4 },
   dueDateText: { color: COLORS.green, fontSize: 10, fontWeight: '800', marginTop: 5, lineHeight: 15 },
   dueDateLate: { color: COLORS.red },
-  reminderNote: { flexDirection: 'row', gap: 9, alignItems: 'center', padding: 12, borderRadius: 13, backgroundColor: COLORS.soft, marginBottom: 16 },
-  reminderGlyph: { color: COLORS.wine, fontSize: 18 },
-  reminderCopy: { flex: 1, color: COLORS.wine, fontSize: 10, lineHeight: 15 },
+  fineBalanceCard: { backgroundColor: COLORS.wine, borderRadius: 18, paddingHorizontal: 22, paddingVertical: 20, marginBottom: 22 },
+  fineBalanceLabel: { color: '#f6dce2', fontSize: 14, fontWeight: '700', letterSpacing: 0.4 },
+  fineBalanceAmount: { color: COLORS.paper, fontSize: 32, fontWeight: '900', marginTop: 5 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32, paddingHorizontal: 20, borderRadius: 17, borderWidth: 1, borderStyle: 'dashed', borderColor: '#e6ded8', backgroundColor: COLORS.paper, gap: 9 },
   emptyIcon: { fontSize: 27, color: COLORS.wine },
   emptyTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '800', textAlign: 'center' },

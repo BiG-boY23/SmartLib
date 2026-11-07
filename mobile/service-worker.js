@@ -1,4 +1,4 @@
-const CACHE_NAME = "smartlib-shell-v7";
+const CACHE_NAME = "smartlib-shell-v9";
 const SHELL = ["/mobile/", "/mobile-assets/app.css", "/mobile-assets/app.js", "/mobile-assets/evsu-smartlib-logo.jpg", "/mobile-assets/evsu-smartlib-icon.png", "/mobile-manifest.json"];
 const PAGES = ["/app", "/mobile", "/mobile/"];
 self.addEventListener("install", event => {
@@ -13,7 +13,7 @@ self.addEventListener("fetch", event => {
   const request = event.request, url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
   if (!PAGES.includes(url.pathname) && !SHELL.includes(url.pathname)) return;
-  // Only public application resources are cached, never account data or transactions.
+  // Cache public app resources only; authenticated data is kept in the app's local storage snapshot.
   const key = PAGES.includes(url.pathname) ? '/mobile/' : url.pathname;
   event.respondWith((async () => {
     const controller = new AbortController();

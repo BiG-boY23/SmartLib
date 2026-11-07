@@ -223,8 +223,12 @@ def request_registration_otp(req: RegisterRequest, request: Request, db: Session
     course = db.query(SignupOption).filter(
         SignupOption.id == req.course_id, SignupOption.kind == "course", SignupOption.is_active.is_(True)
     ).first() if req.course_id else None
-    if not department or not course or course.department_id != department.id:
-        raise HTTPException(status_code=400, detail="Choose a valid department and a course offered by that department.")
+    if not department:
+        raise HTTPException(status_code=400, detail="Choose a valid department.")
+    if req.account_type == UserRole.STUDENT and (not course or course.department_id != department.id):
+        raise HTTPException(status_code=400, detail="Choose a course offered by your department.")
+    if req.account_type == UserRole.FACULTY:
+        course = None
     try:
         ensure_smtp_configured()
     except EmailConfigurationError:
@@ -243,7 +247,7 @@ def request_registration_otp(req: RegisterRequest, request: Request, db: Session
         last_name=req.last_name,
         role=req.account_type,
         department=department.name,
-        course=course.name,
+        course=course.name if course else None,
         otp_hash=_hash_action_token(f"{email}:{otp}"),
         expires_at=datetime.utcnow() + timedelta(minutes=10),
         attempts=0,

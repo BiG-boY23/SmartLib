@@ -1,7 +1,7 @@
 (() => {
   const root = document.getElementById('app');
   const toast = document.getElementById('toast');
-  const state = { token: localStorage.getItem('smartlib_token') || sessionStorage.getItem('smartlib_token'), user: null, tab: localStorage.getItem('smartlib_active_tab') || 'home', authMode: 'login', signupOptions: { departments: [], courses: [] }, books: [], borrowings: [], fines: [], totalOutstandingFines: 0, digitalId: null, search: '', category: 'All', installPrompt: null, editingProfile: false };
+  const state = { token: localStorage.getItem('smartlib_token') || sessionStorage.getItem('smartlib_token'), user: null, tab: localStorage.getItem('smartlib_active_tab') || 'home', authMode: 'login', signupOptions: { departments: [], courses: [] }, books: [], borrowings: [], fines: [], totalOutstandingFines: 0, digitalId: null, search: '', category: 'All', installPrompt: null, editingProfile: false, offlineMode: false };
   let pullStart = null;
   let pulling = false;
   let pullRefreshing = false;
@@ -33,6 +33,7 @@
   const initials = (name = '') => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || 'S';
 
   async function api(path, options = {}) {
+    if (!navigator.onLine) throw new Error('You’re offline. No requests or transactions have been sent.');
     const headers = { ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...options.headers };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
@@ -41,7 +42,7 @@
     finally { clearTimeout(timeout); }
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (!response.ok) {
-      if (response.status === 401) { state.token = null; state.user = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); renderAuth(); }
+      if (response.status === 401) { state.token = null; state.user = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; renderAuth(); }
       const detail = Array.isArray(data?.detail) ? data.detail.map((item) => item.msg).filter(Boolean).join('; ') : data?.detail;
       throw new Error(detail || 'Something went wrong. Please try again.');
     }
@@ -54,7 +55,7 @@
     idleTimer = setTimeout(() => {
       api('/auth/logout', { method: 'POST' }).catch(() => {});
       state.token = null; state.user = null; state.digitalId = null;
-      localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); renderAuth();
+      localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; renderAuth();
     }, 15 * 60 * 1000);
   }
   function authError(message) { const node = document.getElementById('auth-error'); if (node) { node.textContent = message; node.hidden = false; } }
@@ -65,7 +66,7 @@
     const departments = state.signupOptions.departments || [];
     const courses = state.signupOptions.courses || [];
     const nameFields = `<div class="field"><label for="first-name">First name</label><input id="first-name" name="first_name" autocomplete="given-name" required maxlength="80"></div><div class="field"><label for="middle-name">Middle name (optional)</label><input id="middle-name" name="middle_name" autocomplete="additional-name" maxlength="80"></div><div class="field"><label for="last-name">Last name</label><input id="last-name" name="last_name" autocomplete="family-name" required maxlength="80"></div>`;
-    const registrationFields = `${nameFields}<div class="field"><label for="reg-username">Student or staff ID</label><input id="reg-username" name="username" autocomplete="username" required></div><div class="field"><label for="email">EVSU email</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="account-type">Account type</label><select id="account-type" name="account_type"><option value="student">Student</option><option value="faculty">Faculty</option></select></div><div class="field"><label for="department">Department</label><select id="department" name="department_id" required><option value="">Choose a department</option>${departments.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}</select></div><div class="field"><label for="course">Course</label><select id="course" name="course_id" required disabled><option value="">Select a department first</option></select></div><div class="field"><label for="reg-password">Password</label><div class="password-input-wrap"><input id="reg-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="12" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="reg-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><div class="field"><label for="confirm-password">Confirm password</label><div class="password-input-wrap"><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="12" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="confirm-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>`;
+    const registrationFields = `${nameFields}<div class="field"><label for="reg-username">Student or staff ID</label><input id="reg-username" name="username" autocomplete="username" required></div><div class="field"><label for="email">EVSU email</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="account-type">Account type</label><select id="account-type" name="account_type"><option value="student">Student</option><option value="faculty">Faculty</option></select></div><div class="field"><label for="department">Department</label><select id="department" name="department_id" required><option value="">Choose a department</option>${departments.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}</select></div><div class="field" id="course-field"><label for="course">Course</label><select id="course" name="course_id" required disabled><option value="">Select a department first</option></select></div><div class="field"><label for="reg-password">Password</label><div class="password-input-wrap"><input id="reg-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="12" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="reg-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><div class="field"><label for="confirm-password">Confirm password</label><div class="password-input-wrap"><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="12" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="confirm-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>`;
     const loginFields = `<div class="field"><label for="username">Institutional ID or email</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">Password</label><div class="password-input-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><label class="remember-option"><input type="checkbox" name="remember_me"> Remember me</label><button class="text-button" type="button" data-action="forgot-password">Forgot password?</button>`;
     root.innerHTML = `<section class="auth-page fade-in"><div class="auth-art"><div class="brand"><img class="brand-mark-img small" src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"><span>EVSU-OC SmartLib</span></div><div><h1>Your campus library, wherever you are.</h1><p>Find your next read, request a copy, and keep your library card close at hand.</p></div><div class="art-bottom">Eastern Visayas State University &middot; Ormoc Campus</div></div><form class="auth-card" id="auth-form"><button class="back-link" type="button" data-action="public-home">&larr; SmartLib home</button><h2>${verify ? 'Verify your email' : register ? 'Create your account' : 'Welcome back'}</h2><p class="subheading">${verify ? `Enter the 6-digit code sent to ${escapeHtml(state.pendingRegistration?.email || 'your email')}.` : register ? 'Join your EVSU library community.' : 'Sign in with your institutional account.'}</p><div id="auth-error" class="auth-error" hidden></div>${verify ? '<div class="field"><label for="otp">Email code</label><input id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>' : register ? registrationFields : loginFields}<button class="primary wide" type="submit">${verify ? 'Verify and create account' : register ? 'Send email code' : 'Sign in'}</button><p class="switch-auth"><button type="button" data-action="toggle-auth">${verify || register ? 'Back to sign in' : 'Create account'}</button></p></form></section>`;
   }
@@ -75,7 +76,7 @@
     const tabs = [['home', '\u2302', 'Home'], ['catalog', '\u2315', 'Explore'], ['borrowings', '\u25a4', 'My books'], ['digital-id', '\u25a3', 'Library ID']];
     const activeLabel = tabs.find(([id]) => id === active)?.[2] || 'Profile';
     const avatar = state.user?.profile_picture_url ? `<img src="${escapeHtml(state.user.profile_picture_url)}" alt="" class="top-avatar-photo">` : escapeHtml(initials(state.user?.full_name));
-    root.innerHTML = `<header class="topbar"><div class="top-brand"><img class="brand-mark-img" src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"><span>EVSU-OC SmartLib</span></div><nav class="top-links" aria-label="Page navigation">${tabs.map(([id,,label]) => `<button class="top-link ${active === id ? 'active' : ''}" data-tab="${id}" ${active === id ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</nav><div class="top-actions"><span class="top-current" aria-live="polite">${activeLabel}</span>${showInstall ? '<button class="install-button" data-action="install">&#43; <span class="install-label">Install</span></button>' : ''}<button class="avatar ${active === 'profile' ? 'active' : ''}" aria-label="Open profile" ${active === 'profile' ? 'aria-current="page"' : ''} data-tab="profile">${avatar}</button></div></header><main class="page fade-in">${content}</main><nav class="bottom-nav" aria-label="Main navigation"><div class="nav-inner">${tabs.map(([id,icon,label]) => `<button class="nav-item ${active === id ? 'active' : ''}" data-tab="${id}" ${active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('')}</div></nav>`;
+    root.innerHTML = `<header class="topbar"><div class="top-brand"><img class="brand-mark-img" src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"><span>EVSU-OC SmartLib</span></div><nav class="top-links" aria-label="Page navigation">${tabs.map(([id,,label]) => `<button class="top-link ${active === id ? 'active' : ''}" data-tab="${id}" ${active === id ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</nav><div class="top-actions"><span class="top-current" aria-live="polite">${activeLabel}</span>${showInstall ? '<button class="install-button" data-action="install">&#43; <span class="install-label">Install</span></button>' : ''}<button class="avatar ${active === 'profile' ? 'active' : ''}" aria-label="Open profile" ${active === 'profile' ? 'aria-current="page"' : ''} data-tab="profile">${avatar}</button></div></header>${state.offlineMode ? '<div class="offline-banner">Offline view · Saved information may be out of date. Requests and transactions are unavailable.</div>' : ''}<main class="page fade-in">${content}</main><nav class="bottom-nav" aria-label="Main navigation"><div class="nav-inner">${tabs.map(([id,icon,label]) => `<button class="nav-item ${active === id ? 'active' : ''}" data-tab="${id}" ${active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('')}</div></nav>`;
   }
 
   function bookCard(book, index = 0) {
@@ -99,7 +100,7 @@
   function borrowingView() {
     const entries = [...state.borrowings].sort((a, b) => new Date(b.request_date) - new Date(a.request_date));
     const formatDate = (value) => { if (!value) return ''; const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${String(value).replace(' ', 'T')}Z`; const date = new Date(normalized); return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(); };
-    return `<section class="greeting"><div><span class="eyebrow">Your library activity</span><h1>My books</h1><p>Borrow requests, loan history, and fine balance.</p></div></section><article class="profile-card"><div class="section-head"><h2>Outstanding fines</h2><strong>₱${Number(state.totalOutstandingFines || 0).toFixed(2)}</strong></div><p class="helper">Fine payments are recorded by the library staff. Contact the circulation desk to settle any remaining balance.</p></article><div class="section-head"><h2>Borrowing history</h2></div><section class="list-stack">${entries.length ? entries.map((entry) => { const status = (entry.status || 'PENDING').toLowerCase(); const fineItems = state.fines.filter((fine) => fine.borrow_record_id === entry.id); const due = formatDate(entry.due_date); const returned = formatDate(entry.return_date); return `<article class="list-card"><span class="quick-icon" style="margin:0;flex:none">▤</span><div class="grow"><h3>${escapeHtml(entry.book_title || `Book ${entry.book_id}`)}</h3><p>${escapeHtml(entry.req_id)} · Pickup ${escapeHtml(entry.pickup_date || 'To be arranged')}</p>${due ? `<p>Due ${escapeHtml(due)}</p>` : ''}${returned ? `<p>Returned ${escapeHtml(returned)}</p>` : ''}${fineItems.map((fine) => `<p style="${fine.is_paid ? '' : 'color:#9b2335;font-weight:700'}">Fine ${Number(fine.amount || 0).toFixed(2)} · paid ${Number(fine.amount_paid || 0).toFixed(2)} · remaining ${Number(fine.balance || 0).toFixed(2)} · ${fine.payment_status === 'paid' ? 'Paid' : fine.payment_status === 'partial' ? 'Partially paid' : 'Pending'}</p>${(fine.payments || []).map((payment) => `<p class="helper">Payment ${Number(payment.amount || 0).toFixed(2)} · ${escapeHtml(formatDate(payment.recorded_at))}</p>`).join('')}`).join('')}</div><span class="status ${status}">${escapeHtml(entry.status || 'PENDING').replaceAll('_', ' ')}</span></article>`; }).join('') : `<div class="empty"><span class="empty-icon">▤</span><b>No requests yet</b>Your requested books will appear here.<br><button class="text-button" data-tab="catalog">Browse the catalog →</button></div>`}</section>`;
+    return `<section class="greeting"><div><span class="eyebrow">Your library activity</span><h1>My books</h1><p>Borrow requests, loan history, and fine balance.</p></div></section><article class="fine-balance-card"><span class="fine-balance-label">Balance</span><strong class="fine-balance-amount">₱${Number(state.totalOutstandingFines || 0).toFixed(2)}</strong></article><div class="section-head"><h2>Borrowing history</h2></div><section class="list-stack">${entries.length ? entries.map((entry) => { const status = (entry.status || 'PENDING').toLowerCase(); const fineItems = state.fines.filter((fine) => fine.borrow_record_id === entry.id); const due = formatDate(entry.due_date); const returned = formatDate(entry.return_date); return `<article class="list-card"><span class="quick-icon" style="margin:0;flex:none">▤</span><div class="grow"><h3>${escapeHtml(entry.book_title || `Book ${entry.book_id}`)}</h3><p>${escapeHtml(entry.req_id)} · Pickup ${escapeHtml(entry.pickup_date || 'To be arranged')}</p>${due ? `<p>Due ${escapeHtml(due)}</p>` : ''}${returned ? `<p>Returned ${escapeHtml(returned)}</p>` : ''}${fineItems.map((fine) => `<p style="${fine.is_paid ? '' : 'color:#9b2335;font-weight:700'}">Fine ${Number(fine.amount || 0).toFixed(2)} · paid ${Number(fine.amount_paid || 0).toFixed(2)} · remaining ${Number(fine.balance || 0).toFixed(2)} · ${fine.payment_status === 'paid' ? 'Paid' : fine.payment_status === 'partial' ? 'Partially paid' : 'Pending'}</p>${(fine.payments || []).map((payment) => `<p class="helper">Payment ${Number(payment.amount || 0).toFixed(2)} · ${escapeHtml(formatDate(payment.recorded_at))}</p>`).join('')}`).join('')}</div><span class="status ${status}">${escapeHtml(entry.status || 'PENDING').replaceAll('_', ' ')}</span></article>`; }).join('') : `<div class="empty"><span class="empty-icon">▤</span><b>No requests yet</b>Your requested books will appear here.<br><button class="text-button" data-tab="catalog">Browse the catalog →</button></div>`}</section>`;
   }
 
   function idView() {
@@ -135,15 +136,17 @@
     state.tab = tab;
     if (tab !== 'profile') state.editingProfile = false;
     localStorage.setItem('smartlib_active_tab', tab);
-    if (tab === 'profile') { shell(profileView(), tab); return; }
+    if (tab === 'profile') { shell(profileView(), tab); saveOfflineCache(); return; }
     try {
+      if (state.offlineMode) throw new Error('offline cache');
       if (tab === 'home' || tab === 'catalog') await loadBooks(state.search);
       if (tab === 'home') await loadBorrowings();
       if (tab === 'borrowings') await loadBorrowings();
       if (tab === 'digital-id') await loadDigitalId();
-    } catch (error) { notify(error.message); }
+    } catch (error) { if (!state.offlineMode) notify(error.message); }
     const view = { home: homeView, catalog: catalogView, borrowings: borrowingView, 'digital-id': idView }[tab] || homeView;
     shell(view(), tab);
+    if (!state.offlineMode) saveOfflineCache();
     if (tab === 'digital-id' && state.digitalId?.qr_payload) {
       const qrTarget = document.getElementById('qr-display');
       if (window.QRCode && qrTarget) new QRCode(qrTarget, { text: state.digitalId.qr_payload, width: 128, height: 128, colorDark: '#241d20', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
@@ -153,14 +156,28 @@
   }
 
   function renderOffline() {
-    root.innerHTML = '<section style="max-width:520px;margin:60px auto;padding:28px;text-align:center"><h1>EVSU SmartLib</h1><h2>Ormoc Campus Library</h2><p>You’re offline or the library server is unavailable.</p><p>Connect to access your account, browse books, and make requests. Visit the circulation desk for assistance.</p><button id="offlineRetry" type="button">Try connecting again</button></section>';
+    root.innerHTML = '<section style="max-width:520px;margin:60px auto;padding:28px;text-align:center"><h1>EVSU SmartLib</h1><h2>Ormoc Campus Library</h2><p>No internet connection detected.</p><p>First-time sign-in requires internet. A returning user with a saved sign-in can open the last saved dashboard.</p><p>Transactions are unavailable offline.</p><button id="offlineRetry" type="button">Try connecting again</button></section>';
     document.getElementById('offlineRetry').onclick = () => startApp();
   }
-  window.addEventListener('offline', renderOffline);
+  function saveOfflineCache() {
+    if (!state.user || localStorage.getItem('smartlib_token') !== state.token) return;
+    const snapshot = { user: state.user, tab: state.tab, books: state.books, borrowings: state.borrowings, fines: state.fines, totalOutstandingFines: state.totalOutstandingFines, digitalId: state.digitalId, savedAt: new Date().toISOString() };
+    try { localStorage.setItem('smartlib_offline_cache', JSON.stringify(snapshot)); } catch { /* Keep the online session usable when browser storage is full. */ }
+  }
+  function enterOffline() {
+    let cache = null;
+    try { if (state.token && localStorage.getItem('smartlib_token') === state.token) cache = JSON.parse(localStorage.getItem('smartlib_offline_cache') || 'null'); } catch { cache = null; }
+    if (cache?.user) Object.assign(state, { ...cache, offlineMode: true });
+    else if (state.user && state.token) state.offlineMode = true;
+    else { renderOffline(); return; }
+    renderTab(state.tab || 'home');
+  }
+  window.addEventListener('offline', enterOffline);
+  window.addEventListener('online', () => { state.offlineMode = false; startApp(); });
   async function startApp() {
-    if (!navigator.onLine) { renderOffline(); return; }
+    if (!navigator.onLine) { enterOffline(); return; }
     try { state.user = await api('/auth/me'); }
-    catch { if (state.token) { renderOffline(); return; } }
+    catch { if (state.token) { if (!navigator.onLine) renderOffline(); else { notify('The library server is unavailable. Please try again shortly.'); renderAuth(); } return; } }
     if (!state.user) { renderAuth(); return; }
     resetIdleTimer();
     await renderTab(state.tab);
@@ -209,7 +226,7 @@
       }
     }
     if (action === 'public-home') { window.location.assign('/'); }
-    if (action === 'logout') { window.confirmSignOut(() => { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.token = null; state.user = null; state.digitalId = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); state.authMode = 'login'; renderAuth(); }); }
+    if (action === 'logout') { window.confirmSignOut(() => { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.token = null; state.user = null; state.digitalId = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; state.authMode = 'login'; renderAuth(); }); }
     if (action === 'refresh-borrowings') await renderTab('borrowings');
     if (action === 'refresh-id') { await renderTab('digital-id'); notify('Library ID refreshed.'); }
     if (action === 'copy-id' && state.digitalId?.qr_payload) { try { await navigator.clipboard.writeText(state.digitalId.qr_payload); notify('Digital ID copied.'); } catch { notify(state.digitalId.qr_payload); } }
@@ -229,15 +246,16 @@
           state.pendingRegistration = null; state.authMode = 'login'; renderAuth(); notify(result.message);
         } else if (state.authMode === 'register') {
           if (formData.password !== formData.confirm_password) throw new Error('Passwords do not match.');
-          const payload = { ...formData, middle_name: formData.middle_name || null, department_id: Number(formData.department_id), course_id: Number(formData.course_id) };
+          const payload = { ...formData, middle_name: formData.middle_name || null, department_id: Number(formData.department_id), course_id: formData.course_id ? Number(formData.course_id) : null };
           await api('/auth/register/request-otp', { method: 'POST', body: JSON.stringify(payload) });
           state.pendingRegistration = payload; state.authMode = 'register-otp'; renderAuth(); notify('Check your email for the 6-digit code.');
         } else {
           const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ username: formData.username, password: formData.password, remember_me: formData.remember_me === 'on' }) });
           state.token = data.access_token;
+          localStorage.removeItem('smartlib_offline_cache');
           localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token');
           (formData.remember_me === 'on' ? localStorage : sessionStorage).setItem('smartlib_token', data.access_token);
-          state.tab = 'home'; localStorage.setItem('smartlib_active_tab', 'home'); await startApp();
+          state.offlineMode = false; state.tab = 'home'; localStorage.setItem('smartlib_active_tab', 'home'); await startApp();
         }
       } catch (error) { authError(error.message); button.disabled = false; }
     }
@@ -275,8 +293,24 @@
   });
 
   root.addEventListener('change', (event) => {
+    if (event.target.id === 'account-type') {
+      const course = document.getElementById('course');
+      const courseField = document.getElementById('course-field');
+      if (course) {
+        course.value = '';
+        const isFaculty = event.target.value === 'faculty';
+        const departmentId = Number(document.getElementById('department')?.value);
+        const options = state.signupOptions.courses.filter((item) => item.department_id === departmentId);
+        course.required = !isFaculty;
+        course.disabled = isFaculty || !departmentId || !options.length;
+        course.innerHTML = isFaculty ? '<option value="">Not applicable for faculty</option>' : `<option value="">${departmentId ? 'Choose a course' : 'Select a department first'}</option>${options.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}`;
+      }
+      if (courseField) courseField.hidden = event.target.value === 'faculty';
+      return;
+    }
     if (event.target.id !== 'department') return;
     const course = document.getElementById('course');
+    if (document.getElementById('account-type')?.value === 'faculty') return;
     const options = state.signupOptions.courses.filter((item) => item.department_id === Number(event.target.value));
     course.innerHTML = `<option value="">Choose a course</option>${options.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}`;
     course.disabled = !options.length;

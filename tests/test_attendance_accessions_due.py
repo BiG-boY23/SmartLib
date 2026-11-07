@@ -84,6 +84,9 @@ def test_attendance_repeated_scans_and_philippine_boundaries(data):
     day = datetime(2026,10,30).date()
     report = attendance_report(day, day, 'json', 'long', db, staff)
     assert report['visits'] == 2 and report['unique_visitors'] == 1
+    filtered = attendance_report(day, day, 'json', 'long', db, staff,
+        department='No matching department', sort='department', direction='asc')
+    assert filtered['visits'] == 0 and filtered['rows'] == []
     export = attendance_report(day, day, 'csv', 'long', db, staff)
     assert b'Student' in export.body
 

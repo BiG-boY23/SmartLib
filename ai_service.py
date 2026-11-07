@@ -53,7 +53,19 @@ def answer_library_question(question: str, history: list[dict], context: dict, l
     try:
         with urlopen(request, timeout=15) as response:
             result = json.load(response)
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+    except HTTPError as exc:
+        # Keep provider diagnostics actionable without logging request headers or secrets.
+        provider_error = "provider_error"
+        try:
+            details = json.loads(exc.read().decode("utf-8"))
+            error = details.get("error", {}) if isinstance(details, dict) else {}
+            if isinstance(error, dict):
+                provider_error = error.get("code") or error.get("type") or provider_error
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+            pass
+        logger.warning("Library assistant model unavailable: HTTP %s (%s)", exc.code, provider_error)
+        return None
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
         logger.warning("Library assistant model unavailable: %s", type(exc).__name__)
         return None
 

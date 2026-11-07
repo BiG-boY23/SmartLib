@@ -22,9 +22,9 @@
       <div class="attendance-stats" aria-label="Selected period totals"><div class="attendance-card attendance-stat"><strong id="attendanceVisits">—</strong><span>Total visits</span></div><div class="attendance-card attendance-stat"><strong id="attendancePeople">—</strong><span>Unique visitors</span></div></div>
       <section class="attendance-card" aria-labelledby="attendanceReportTitle">
         <div class="attendance-report-head"><div><h2 id="attendanceReportTitle">Attendance history</h2><p>Entry times are shown in Philippine time.</p></div>
-          <div class="attendance-export"><label for="attendancePaper" class="sr-only">Paper size</label><select id="attendancePaper" aria-label="Paper size"><option value="long">Long bond</option><option value="a4">A4</option></select><select id="attendanceFormat" aria-label="Export format"><option value="xlsx">Excel</option><option value="csv">CSV</option><option value="pdf">PDF</option><option value="docx">Word</option></select><button class="btn btn-outline" id="attendanceExport">Export report</button></div>
+          <div class="attendance-export"><select id="attendanceFormat" aria-label="Export format"><option value="xlsx">Excel</option><option value="csv">CSV</option><option value="pdf">PDF</option><option value="docx">Word</option></select><button class="btn btn-outline" id="attendanceExport">Export report</button></div>
         </div>
-        <form class="attendance-filters" id="attendanceFilters"><div><label for="attendanceStart">From</label><input type="date" id="attendanceStart" required></div><div><label for="attendanceEnd">To</label><input type="date" id="attendanceEnd" required></div><button class="btn btn-maroon" id="attendanceGenerate">Apply dates</button><button class="btn btn-outline" id="attendanceToday" type="button">Today</button></form>
+        <form class="attendance-filters" id="attendanceFilters"><div><label for="attendanceStart">From</label><input type="date" id="attendanceStart" required></div><div><label for="attendanceEnd">To</label><input type="date" id="attendanceEnd" required></div><div><label for="attendanceDepartment">Department</label><select id="attendanceDepartment"><option value="">All departments</option></select></div><div><label for="attendanceCourse">Course</label><select id="attendanceCourse"><option value="">All courses</option></select></div><div><label for="attendanceSort">Sort by</label><select id="attendanceSort"><option value="date">Entry time</option><option value="department">Department</option><option value="course">Course</option></select></div><div><label for="attendanceDirection">Order</label><select id="attendanceDirection"><option value="desc">Descending</option><option value="asc">Ascending</option></select></div><button class="btn btn-maroon" id="attendanceGenerate">Apply filters</button><button class="btn btn-outline" id="attendanceToday" type="button">Today</button></form>
         <p id="attendanceSummary" role="status" aria-live="polite"></p><div class="attendance-table-wrap"><table aria-label="Library attendance records"><thead id="attendanceHead"></thead><tbody id="attendanceRows"></tbody></table></div>
       </section></div>`;
     existing.parentElement.appendChild(panel);
@@ -32,6 +32,21 @@
     document.getElementById('attendanceStart').value=today;document.getElementById('attendanceEnd').value=today;
     const message=document.getElementById('attendanceMessage');
     let reportVersion=0;
+    let options={departments:[],courses:[]};
+    function refreshCourses() {
+      const department=document.getElementById('attendanceDepartment').value;
+      const course=document.getElementById('attendanceCourse');
+      const previous=course.value;
+      const names=[...new Set(options.courses.filter(item=>!department||item.department===department).map(item=>item.name))].sort((a,b)=>a.localeCompare(b));
+      course.innerHTML='<option value="">All courses</option>'+names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
+      course.value=names.includes(previous)?previous:'';
+    }
+    request('/admin/reports/options').then(response=>response.json()).then(data=>{
+      options=data;
+      document.getElementById('attendanceDepartment').innerHTML='<option value="">All departments</option>'+options.departments.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
+      refreshCourses();
+    }).catch(error=>{document.getElementById('attendanceSummary').textContent=error.message;document.getElementById('attendanceSummary').dataset.error='true';});
+    document.getElementById('attendanceDepartment').onchange=refreshCourses;
     async function report(format='json') {
       const version = format==='json' ? ++reportVersion : reportVersion;
       const status=document.getElementById('attendanceSummary');
@@ -41,7 +56,8 @@
       const action=document.getElementById(format==='json'?'attendanceGenerate':'attendanceExport');action.disabled=true;
       if(format==='json')status.textContent='Loading attendance…';
       try {
-        const query=new URLSearchParams({start:document.getElementById('attendanceStart').value,end:document.getElementById('attendanceEnd').value,format,paper:document.getElementById('attendancePaper').value});
+        const query=new URLSearchParams({start:document.getElementById('attendanceStart').value,end:document.getElementById('attendanceEnd').value,format,sort:document.getElementById('attendanceSort').value,direction:document.getElementById('attendanceDirection').value});
+        for(const [key,id] of Object.entries({department:'attendanceDepartment',course:'attendanceCourse'})){const value=document.getElementById(id).value;if(value)query.set(key,value);}
         const response=await request('/admin/reports/attendance?'+query);
         if(format!=='json') {const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.download='library-attendance.'+format;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
         const data=await response.json();if(version!==reportVersion)return;

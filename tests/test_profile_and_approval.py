@@ -83,6 +83,33 @@ def test_registration_middle_name_optional_and_saved(api, monkeypatch):
             assert user.middle_name == (middle or None)
 
 
+def test_faculty_registration_does_not_require_or_save_course(api, monkeypatch):
+    client, factory, _, (department_id, _) = api
+    codes = {}
+    monkeypatch.setattr(auth_router, "ensure_smtp_configured", lambda: None)
+    monkeypatch.setattr(auth_router, "_send_otp", lambda email, purpose, code: codes.__setitem__(email, code))
+    payload = {"username": "faculty-no-course", "email": "faculty-no-course@evsu.edu.ph", "password": "Strong1!",
+               "confirm_password": "Strong1!", "first_name": "Faculty", "last_name": "Santos",
+               "account_type": "faculty", "department_id": department_id, "course_id": None}
+    assert client.post("/auth/register/request-otp", json=payload).status_code == 202
+    assert client.post("/auth/register/verify-otp", json={"email": payload["email"], "otp": codes[payload["email"]]}).status_code == 201
+    with factory() as db:
+        user = db.query(User).filter_by(username=payload["username"]).one()
+        assert user.role == UserRole.FACULTY
+        assert user.department
+        assert user.course is None
+
+
+def test_student_registration_still_requires_course(api, monkeypatch):
+    client, _, _, (department_id, _) = api
+    payload = {"username": "student-no-course", "email": "student-no-course@evsu.edu.ph", "password": "Strong1!",
+               "confirm_password": "Strong1!", "first_name": "Student", "last_name": "Santos",
+               "account_type": "student", "department_id": department_id, "course_id": None}
+    response = client.post("/auth/register/request-otp", json=payload)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Choose a course offered by your department."
+
+
 def test_own_profile_update_and_photo(api):
     client, factory, headers, _ = api
     original = client.get("/auth/me", headers=headers["reader"]).json()

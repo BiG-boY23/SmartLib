@@ -3,7 +3,6 @@
   let keys = new Map();
   const views = {};
   const reloaders = {};
-  let exportBarSequence=0;
   let superAdmin=false;
   let profileRequest=null;
   async function api(path, options={}) {
@@ -72,22 +71,17 @@
     if(parent.querySelector(`[data-queue-exports="${kind}"]`))return;
     const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;padding:12px;flex-wrap:wrap';
     bar.dataset.queueExports=kind;
-    const paperLabel=document.createElement('label');paperLabel.textContent='PDF / Word paper: ';paperLabel.style.cssText='display:flex;align-items:center;gap:8px;margin:0';
-    const paper=document.createElement('select');paper.id=`queueExportPaper-${kind}-${++exportBarSequence}`;paper.dataset.exportPaper=kind;paper.className='form-select';paper.style.width='auto';
-    paper.innerHTML='<option value="long">Long bond (8.5 × 13 in)</option><option value="a4">A4</option>';paper.value='long';
-    paperLabel.htmlFor=paper.id;paperLabel.append(paper);bar.append(paperLabel);
     for(const format of ['xlsx','csv','pdf','docx']) {
       const b=document.createElement('button');b.type='button';b.className='btn btn-outline btn-sm';b.textContent='Export '+({xlsx:'Excel (.xlsx)',csv:'CSV',pdf:'PDF',docx:'Word'}[format]);
       b.onclick=async()=>{b.disabled=true;try {
         const p=new URLSearchParams({kind,format,archived:views[kind]==='archived'});
-        if(format==='pdf'||format==='docx')p.set('paper',paper.value);
         if(kind==='borrow-requests') {p.set('status',document.getElementById('queueStatus')?.value||'');p.set('search',document.getElementById('queueSearch')?.value||'');}
         const r=await api('/reports/queue?'+p);const url=URL.createObjectURL(await r.blob());
         const a=document.createElement('a');a.href=url;a.download=`SmartLib-${kind}.${format}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       } catch(e){toast(e.message,'danger');}finally{b.disabled=false;}};bar.append(b);
     }
     const note=document.createElement('p');note.className='report-note';note.style.cssText='flex-basis:100%;margin:0;font-size:12px;color:var(--text-muted)';
-    note.textContent='A4 scales the full letterhead to fit; long bond preserves original size. For wrapped text and fitted rows, choose Excel. CSV has no cell formatting.';bar.append(note);
+    note.textContent='For wrapped text and fitted rows, choose Excel. CSV has no cell formatting.';bar.append(note);
     parent.prepend(bar);
   }
   async function mountAcquisitions(parent,books,reload) {

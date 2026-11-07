@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const test = require('node:test');
 
-test('extension history shows audit details and exports the same dates, audience, and paper', async () => {
+test('extension history shows audit details and exports the same dates and audience without paper controls', async () => {
   const elements=new Map(), buttons=[], requests=[], downloads=[];
   const el=id=>{if(!elements.has(id))elements.set(id,{value:'',innerHTML:'',textContent:'',options:[],classList:{add(){},remove(){}}});return elements.get(id);};
   let install, markup='';
@@ -35,7 +35,7 @@ test('extension history shows audit details and exports the same dates, audience
   vm.runInContext(fs.readFileSync('static/staff-reports.js','utf8'),context);install();
   assert.ok(markup.includes('Loan extension history'));
   for(const [id,value] of Object.entries({reportStart:'2026-07-07',reportEnd:'2026-07-07',reportWeek:'2026-07-07',
-    reportRole:'student',reportSort:'course',reportDirection:'desc',reportCourse:'BSIT',reportPaper:'a4',reportActivity:'all',reportBookActivity:'all'}))el(id).value=value;
+    reportRole:'student',reportSort:'course',reportDirection:'desc',reportCourse:'BSIT',reportActivity:'all',reportBookActivity:'all'}))el(id).value=value;
   await context.window.SmartLibStaff.openReports();await new Promise(resolve=>setImmediate(resolve));
   assert.ok(el('reportExtensionOutput').innerHTML.includes('&lt;Reader&gt;'));
   assert.ok(el('reportExtensionOutput').innerHTML.includes('&lt;Research extension&gt;'));
@@ -48,7 +48,7 @@ test('extension history shows audit details and exports the same dates, audience
     assert.equal(query.searchParams.get('start'),'2026-07-07');assert.equal(query.searchParams.get('end'),'2026-07-07');
     assert.equal(query.searchParams.get('role'),'student');assert.equal(query.searchParams.get('sort'),'course');
     assert.equal(query.searchParams.get('direction'),'desc');assert.equal(query.searchParams.get('format'),button.dataset.extensionExport);
-    assert.equal(query.searchParams.get('paper'),['pdf','docx'].includes(button.dataset.extensionExport)?'a4':null);
+    assert.equal(query.searchParams.has('paper'),false);
     assert.ok(downloads.at(-1).endsWith(`.${button.dataset.extensionExport}`));
   }
 });

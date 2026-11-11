@@ -18,6 +18,8 @@ COPY --chown=smartlib:smartlib routers ./routers
 COPY --chown=smartlib:smartlib templates ./templates
 COPY --chown=smartlib:smartlib static ./static
 COPY --chown=smartlib:smartlib mobile ./mobile
-USER smartlib
+# Start as root only long enough for container_start.py to prepare mounted
+# persistent storage; the entrypoint drops privileges before launching uvicorn.
+USER root
 EXPOSE 8000
 CMD ["python", "container_start.py"]

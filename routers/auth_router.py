@@ -521,15 +521,28 @@ async def upload_profile_photo(
     filename = f"{secrets.token_hex(20)}.{extension}"
     from storage import PROFILE_PHOTOS
     destination = PROFILE_PHOTOS
-    destination.mkdir(parents=True, exist_ok=True)
-    (destination / filename).write_bytes(content)
+    photo_path = destination / filename
+    temporary_path = destination / f".{filename}.tmp"
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_bytes(content)
+        temporary_path.replace(photo_path)
+    except OSError as exc:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Profile photo storage is unavailable. Check that SMARTLIB_UPLOAD_DIR is mounted and writable, then try again.",
+        ) from exc
     current_user.profile_picture_url = f"/profile-photos/{filename}"
     try:
         db.commit()
         db.refresh(current_user)
     except Exception:
         db.rollback()
-        (destination / filename).unlink(missing_ok=True)
+        photo_path.unlink(missing_ok=True)
         raise
     return current_user
 

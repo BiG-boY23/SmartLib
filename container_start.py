@@ -4,8 +4,8 @@ from pathlib import Path
 
 
 def main():
-    # Railway mounts new volumes as root. RAILWAY_RUN_UID=0 lets this tiny
-    # initializer assign the known volume directories before dropping privileges.
+    # Render and Railway may mount volumes as root. Start this initializer as
+    # root so it can prepare the known data directories before dropping privileges.
     if os.geteuid() == 0:
         for path in (Path("/var/data"), Path("/var/data/uploads"),
                      Path("/var/data/uploads/book-covers"), Path("/var/data/uploads/profile-photos")):

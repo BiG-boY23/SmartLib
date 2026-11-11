@@ -167,10 +167,11 @@ def get_digital_student_id(
 
     qr_payload = f"EVSU-CARD-2026::{current_user.username}::{current_user.role.value}"
     issued_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    from photo_security import signed_photo_url
 
     return {
         "patron_id": current_user.username,
-        "profile_picture_url": current_user.profile_picture_url,
+        "profile_picture_url": signed_photo_url(current_user.profile_picture_url),
         "full_name": current_user.full_name,
         "role": current_user.role.value.upper(),
         "department": current_user.department or "EVSU Ormoc Campus",

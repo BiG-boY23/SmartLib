@@ -16,7 +16,7 @@ from database import Base, get_db
 from email_service import EmailDeliveryError
 from models import (Book, BorrowApprovalEmail, BorrowRecord, BorrowStatus,
                     Notification, SignupOption, User, UserRole, UserSession)
-from routers import admin_router, auth_router
+from routers import admin_router, auth_router, mobile_router
 from security import create_access_token, get_password_hash
 
 
@@ -28,6 +28,7 @@ def api(tmp_path, monkeypatch):
     app = FastAPI()
     app.include_router(auth_router.router)
     app.include_router(admin_router.router)
+    app.include_router(mobile_router.router)
 
     def db_session():
         with factory() as db:
@@ -131,6 +132,29 @@ def test_own_profile_update_and_photo(api):
     with factory() as db:
         assert db.query(User).filter_by(username="reader").one().profile_picture_url == response.json()["profile_picture_url"].split("?", 1)[0]
     assert "signature=" in response.json()["profile_picture_url"]
+    digital_id = client.get("/mobile/profile/digital-id", headers=headers["reader"])
+    assert digital_id.status_code == 200
+    photo_url = digital_id.json()["profile_picture_url"]
+    assert photo_url.startswith("/profile-photos/") and "signature=" in photo_url
+
+
+def test_profile_photo_storage_failure_reports_configuration(api, tmp_path, monkeypatch):
+    client, _, headers, _ = api
+    blocked_path = tmp_path / "not-a-directory"
+    blocked_path.write_text("blocking the upload directory", encoding="utf-8")
+    import storage
+    monkeypatch.setattr(storage, "PROFILE_PHOTOS", blocked_path)
+    image = Image.new("RGB", (32, 32), "#730d24")
+    content = io.BytesIO()
+    image.save(content, format="JPEG")
+
+    response = client.post(
+        "/auth/me/profile-photo",
+        files={"photo": ("avatar.jpg", content.getvalue(), "image/jpeg")},
+        headers=headers["reader"],
+    )
+    assert response.status_code == 503
+    assert "SMARTLIB_UPLOAD_DIR" in response.json()["detail"]
 
 
 def test_approval_email_failure_retry_and_no_duplicate(api, monkeypatch):

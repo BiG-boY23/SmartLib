@@ -5,6 +5,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -87,6 +88,25 @@ function formatPickupLabel(value) {
 function parseServerTimestamp(value) {
   if (!value) return null;
   return new Date(/(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`);
+}
+
+function useAndroidKeyboardOverlap() {
+  const { height } = useWindowDimensions();
+  const [keyboardScreenY, setKeyboardScreenY] = useState(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const shown = Keyboard.addListener('keyboardDidShow', (event) => {
+      const screenY = event.endCoordinates?.screenY;
+      setKeyboardScreenY(Number.isFinite(screenY) ? screenY : Math.max(0, height - (event.endCoordinates?.height || 0)));
+    });
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardScreenY(null));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+
+  // Some Android modal windows resize with the keyboard and some overlay it.
+  // The overlap is zero in the first case and lifts the content above it in the second.
+  return keyboardScreenY === null ? 0 : Math.max(0, height - keyboardScreenY);
 }
 
 function borrowingActivityLabel(entry) {
@@ -1142,7 +1162,9 @@ function BorrowingsScreen({ borrowings, fines, totalOutstandingFines, busy, onRe
 }
 
 function DigitalIdScreen({ user, digitalId, busy, offlineMode, onRefresh, apiBase, token }) {
-  const photoUrl = user?.profile_picture_url || digitalId?.profile_picture_url;
+  const photoUrl = digitalId?.profile_picture_url || user?.profile_picture_url;
+  const [photoFailed, setPhotoFailed] = useState(false);
+  useEffect(() => setPhotoFailed(false), [photoUrl]);
   const [saving, setSaving] = useState(false);
   const imageUrl = `${apiBase.replace(/\/+$/, '')}/mobile/profile/digital-id/image`;
   async function downloadImage(share = false) {
@@ -1182,7 +1204,7 @@ function DigitalIdScreen({ user, digitalId, busy, offlineMode, onRefresh, apiBas
         <QRCode value={digitalId.qr_payload} size={224} quietZone={10} color="#111111" backgroundColor="#ffffff" />
         <Text style={styles.libraryQrHint}>Scan at the circulation desk</Text>
       </View>
-      {photoUrl ? <Image source={{ uri: `${apiBase.replace(/\/+$/, '')}${photoUrl}` }} style={styles.libraryIdPhoto} accessibilityLabel="Member profile photo" /> : <View style={[styles.libraryIdPhoto, { alignItems: 'center', justifyContent: 'center' }]}><Text>No profile photo</Text></View>}
+      {photoUrl && !photoFailed ? <Image source={{ uri: `${apiBase.replace(/\/+$/, '')}${photoUrl}` }} style={styles.libraryIdPhoto} accessibilityLabel="Member profile photo" onError={() => setPhotoFailed(true)} /> : <View style={[styles.libraryIdPhoto, { alignItems: 'center', justifyContent: 'center' }]}><Text>{photoFailed ? 'Photo unavailable' : 'No profile photo'}</Text></View>}
       <Text style={styles.libraryIdName}>{digitalId.full_name}</Text>
       <Text style={styles.libraryIdNumber}>{digitalId.patron_id}</Text>
       <Text style={styles.libraryIdRole}>{digitalId.role} · {digitalId.is_active ? 'Active member' : 'Inactive member'}</Text>
@@ -1240,8 +1262,11 @@ function MessagesScreen({ user, isStaff, threads, activeThread, messages, draft,
 
 
 function ComposeMessageModal({ visible, value, onChange, onClose, onSubmit, busy, isStaff }) {
+  const { height } = useWindowDimensions();
+  const keyboardOverlap = useAndroidKeyboardOverlap();
   const set = (key, text) => onChange((current) => ({ ...current, [key]: text }));
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.modalShade}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalWrap}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalCard}><View style={styles.modalHandle} /><Text style={styles.modalTitle}>{isStaff ? 'Message a patron' : 'Message the library'}</Text><Text style={styles.modalSub}>{isStaff ? 'The student or faculty member will see this in Messages.' : 'An admin or librarian can follow up here in the app.'}</Text>{isStaff && <Field label="Student or faculty ID" value={value.recipient_username} onChangeText={(text) => set('recipient_username', text)} placeholder="Institutional ID" autoCapitalize="none" />}<>{!isStaff && <View><Text style={styles.modalSub}>Send to</Text><View style={{ flexDirection: 'row', gap: 8 }}>{['librarian', 'admin'].map((role) => <Button key={role} title={role === 'librarian' ? 'Librarian' : 'Admin'} secondary={value.recipient_role !== role} onPress={() => set('recipient_role', role)} />)}</View><Text style={styles.modalSub}>Only the selected staff team can see this conversation.</Text></View>}</><Field label="Subject" value={value.subject} onChangeText={(text) => set('subject', text)} placeholder="What do you need help with?" /><Field label="Your message" value={value.message} onChangeText={(text) => set('message', text)} placeholder="Type your question…" multiline /><Button title={busy ? 'Sending…' : 'Send message'} onPress={onSubmit} disabled={busy} /><Button title="Cancel" secondary onPress={onClose} style={styles.modalCancel} /></ScrollView></KeyboardAvoidingView></View></Modal>;
+  const availableHeight = Math.max(180, height - keyboardOverlap);
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={[styles.modalShade, Platform.OS === 'android' && keyboardOverlap > 0 && { paddingBottom: keyboardOverlap }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.modalWrap, { maxHeight: keyboardOverlap > 0 ? availableHeight : height * 0.92 }]}><ScrollView style={styles.modalScrollView} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modalCard}><View style={styles.modalHandle} /><Text style={styles.modalTitle}>{isStaff ? 'Message a patron' : 'Message the library'}</Text><Text style={styles.modalSub}>{isStaff ? 'The student or faculty member will see this in Messages.' : 'An admin or librarian can follow up here in the app.'}</Text>{isStaff && <Field label="Student or faculty ID" value={value.recipient_username} onChangeText={(text) => set('recipient_username', text)} placeholder="Institutional ID" autoCapitalize="none" />}<>{!isStaff && <View><Text style={styles.modalSub}>Send to</Text><View style={{ flexDirection: 'row', gap: 8 }}>{['librarian', 'admin'].map((role) => <Button key={role} title={role === 'librarian' ? 'Librarian' : 'Admin'} secondary={value.recipient_role !== role} onPress={() => set('recipient_role', role)} />)}</View><Text style={styles.modalSub}>Only the selected staff team can see this conversation.</Text></View>}</><Field label="Subject" value={value.subject} onChangeText={(text) => set('subject', text)} placeholder="What do you need help with?" /><Field label="Your message" value={value.message} onChangeText={(text) => set('message', text)} placeholder="Type your question…" multiline /><Button title={busy ? 'Sending…' : 'Send message'} onPress={onSubmit} disabled={busy} /><Button title="Cancel" secondary onPress={onClose} style={styles.modalCancel} /></ScrollView></KeyboardAvoidingView></View></Modal>;
 }
 
 function AnnouncementModal({ visible, value, onChange, onClose, onSubmit, busy }) {
@@ -1250,7 +1275,11 @@ function AnnouncementModal({ visible, value, onChange, onClose, onSubmit, busy }
 }
 
 function AssistantModal({ visible, onClose, messages, draft, setDraft, onSend, onExplore, onMessage, busy }) {
-  return <Modal visible={visible} animationType="slide" onRequestClose={onClose}><View style={styles.assistantPage}><View style={styles.assistantHeader}><View><Text style={styles.assistantTitle}>✦ SmartLib AI Assistant</Text><Text style={styles.assistantSubtitle}>Ask about live catalog books and library services</Text></View><Pressable onPress={onClose}><Text style={styles.assistantClose}>Close</Text></Pressable></View><ScrollView contentContainerStyle={styles.assistantConversation} keyboardShouldPersistTaps="handled">{messages.length ? messages.map((item, index) => <View key={`${index}-${item.from}`} style={[styles.assistantBubble, item.from === 'you' ? styles.chatBubbleUser : styles.chatBubbleStaff]}><Text style={styles.chatSender}>{item.from === 'you' ? 'You' : item.source === 'model' ? 'SmartLib AI' : 'Library guide'}</Text><Text style={styles.chatText}>{item.text}</Text>{item.books?.map((book) => <Pressable key={book.id} style={styles.assistantBook} onPress={onExplore}><Text style={styles.quickTitle}>{book.title}</Text><Text style={styles.quickSub}>{book.author} · {book.available_copies} available</Text></Pressable>)}</View>) : <EmptyState icon="✦" title="Ask your library assistant" message="Try “Find books about biology,” “What is my request status?” or “How do I contact a librarian?”" />}<Button title="Message a librarian" secondary onPress={onMessage} style={styles.profileButton} /></ScrollView><View style={styles.assistantComposer}><TextInput value={draft} onChangeText={setDraft} placeholder="Ask a library question…" placeholderTextColor={COLORS.muted} style={[styles.input, styles.composerInput]} multiline /><Button title={busy ? "Thinking…" : "Ask"} onPress={onSend} disabled={busy} compact /></View><Text style={styles.assistantDisclosure}>When enabled, your question and recent chat are sent to the AI provider with relevant library data. Contact a librarian for official decisions.</Text></View></Modal>;
+  const { height } = useWindowDimensions();
+  const keyboardOverlap = useAndroidKeyboardOverlap();
+  const availableHeight = Math.max(180, height - keyboardOverlap);
+  const androidPageStyle = Platform.OS === 'android' ? { height: availableHeight, marginBottom: keyboardOverlap, paddingTop: keyboardOverlap > 0 ? 0 : 22 } : { flex: 1 };
+  return <Modal visible={visible} animationType="slide" onRequestClose={onClose}><KeyboardAvoidingView style={styles.assistantModalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><View style={[styles.assistantPage, androidPageStyle]}><View style={styles.assistantHeader}><View><Text style={styles.assistantTitle}>✦ SmartLib AI Assistant</Text><Text style={styles.assistantSubtitle}>Ask about live catalog books and library services</Text></View><Pressable onPress={onClose}><Text style={styles.assistantClose}>Close</Text></Pressable></View><ScrollView style={styles.assistantConversationScroll} contentContainerStyle={styles.assistantConversation} keyboardShouldPersistTaps="handled">{messages.length ? messages.map((item, index) => <View key={`${index}-${item.from}`} style={[styles.assistantBubble, item.from === 'you' ? styles.chatBubbleUser : styles.chatBubbleStaff]}><Text style={styles.chatSender}>{item.from === 'you' ? 'You' : item.source === 'model' ? 'SmartLib AI' : 'Library guide'}</Text><Text style={styles.chatText}>{item.text}</Text>{item.books?.map((book) => <Pressable key={book.id} style={styles.assistantBook} onPress={onExplore}><Text style={styles.quickTitle}>{book.title}</Text><Text style={styles.quickSub}>{book.author} · {book.available_copies} available</Text></Pressable>)}</View>) : <EmptyState icon="✦" title="Ask your library assistant" message="Try “Find books about biology,” “What is my request status?” or “How do I contact a librarian?”" />}<Button title="Message a librarian" secondary onPress={onMessage} style={styles.profileButton} /></ScrollView><View style={styles.assistantComposer}><TextInput value={draft} onChangeText={setDraft} placeholder="Ask a library question…" placeholderTextColor={COLORS.muted} style={[styles.input, styles.composerInput]} multiline /><Button title={busy ? "Thinking…" : "Ask"} onPress={onSend} disabled={busy} compact /></View><Text style={styles.assistantDisclosure}>When enabled, your question and recent chat are sent to the AI provider with relevant library data. Contact a librarian for official decisions.</Text></View></KeyboardAvoidingView></Modal>;
 }
 
 function ProfileFact({ label, value }) { return <View style={styles.profileFact}><Text style={styles.profileFactLabel}>{label}</Text><Text style={styles.profileFactValue}>{value}</Text></View>; }
@@ -1505,6 +1534,8 @@ const styles = StyleSheet.create({
   assistantBook: { padding: 9, backgroundColor: COLORS.paper, borderRadius: 10, marginTop: 8 },
   assistantComposer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: COLORS.paper, borderTopWidth: 1, borderTopColor: COLORS.line },
   assistantDisclosure: { color: COLORS.muted, fontSize: 9, textAlign: 'center', paddingHorizontal: 12, paddingBottom: 8, backgroundColor: COLORS.paper },
+  assistantModalRoot: { flex: 1, justifyContent: 'flex-end' },
+  assistantConversationScroll: { flex: 1 },
   tabBar: { position: 'absolute', bottom: 0, left: 0, right: 0, minHeight: 88, paddingBottom: Platform.OS === 'ios' ? 30 : 20, paddingTop: 10, paddingHorizontal: 4, backgroundColor: '#fffffff2', borderTopWidth: 1, borderTopColor: COLORS.line, flexDirection: 'row', justifyContent: 'space-around' },
   tabItem: { flex: 1, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 12 },
   tabItemActive: { backgroundColor: COLORS.soft },
@@ -1614,6 +1645,7 @@ const styles = StyleSheet.create({
   authSwitchAction: { color: COLORS.wine, fontWeight: '800' },
   modalShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#16111677' },
   modalWrap: { maxHeight: '92%', flexShrink: 1 },
+  modalScrollView: { flexShrink: 1 },
   modalCard: { backgroundColor: COLORS.paper, paddingHorizontal: 21, paddingTop: 14, paddingBottom: Platform.OS === 'ios' ? 34 : 22, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
   modalHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#ded7d2', alignSelf: 'center', marginBottom: 17 },
   pickerButtonText: { fontSize: 10 },

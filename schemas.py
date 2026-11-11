@@ -214,6 +214,7 @@ class SignupOptionResponse(BaseModel):
 
 class DigitalIDPayload(BaseModel):
     patron_id: str
+    profile_picture_url: Optional[str] = None
     full_name: str
     role: str
     department: str

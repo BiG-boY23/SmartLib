@@ -1,15 +1,18 @@
 import os
+import hashlib
+import json
 import logging
 import uuid
 from typing import List, Optional, Literal
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from models import (
-    StaffArchive, User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, FinePayment, FinePaymentEvent, AcquisitionSuggestion, SignupOption,
+    StaffArchive, User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, FinePayment, FinePaymentEvent, AcquisitionSuggestion, SignupOption, IdempotencyRecord,
     AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread, BorrowApprovalEmail, LibraryEmail, LoanExtensionEvent,
 )
 from schemas import (
@@ -148,14 +151,62 @@ def reject_legacy_fine_toggle(fine_id: int, current_user: User = Depends(require
 @router.post("/books", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
 def create_new_book(
     book_data: BookCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
+    if idempotency_key is None:
+        try:
+            return crud.create_book(db, book_data, actor=current_user.username)
+        except ValueError as exc:
+            db.rollback()
+            raise HTTPException(409, str(exc))
+
+    idempotency_key = idempotency_key.strip()
+    if not 8 <= len(idempotency_key) <= 128:
+        raise HTTPException(400, "Idempotency-Key must contain 8 to 128 characters")
+
+    request_body = book_data.model_dump(mode="json")
+    request_hash = hashlib.sha256(
+        json.dumps(request_body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    def replay_or_conflict(record: Optional[IdempotencyRecord]):
+        if record is None:
+            return None
+        if record.request_hash != request_hash:
+            raise HTTPException(409, "This request key was already used with different book details")
+        if record.response_payload is None:
+            raise HTTPException(409, "This catalog request is still being processed; retry with the same request")
+        return record.response_payload
+
     try:
-        return crud.create_book(db, book_data)
+        record = IdempotencyRecord(
+            scope="admin:create-book", actor_id=current_user.id,
+            key=idempotency_key, request_hash=request_hash,
+        )
+        db.add(record)
+        db.flush()
+        book = crud.create_book(db, book_data, commit=False, actor=current_user.username)
+        payload = BookResponse.model_validate(book).model_dump(mode="json")
+        record.response_payload = payload
+        db.commit()
+        return payload
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(IdempotencyRecord).filter_by(
+            scope="admin:create-book", actor_id=current_user.id, key=idempotency_key
+        ).first()
+        replay = replay_or_conflict(existing)
+        if replay is not None:
+            return replay
+        raise HTTPException(409, "The book could not be saved because a matching record already exists")
     except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc))
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/books", response_model=List[BookResponse])

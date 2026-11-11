@@ -1498,8 +1498,38 @@
       preview.removeAttribute('src');
     }
 
+    function getCatalogIdempotencyKey(storageKey, payload) {
+      const serialized = JSON.stringify(payload);
+      const memory = window.__catalogIdempotency || (window.__catalogIdempotency = {});
+      let pending = memory[storageKey];
+      try {
+        const stored = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+        if (stored?.key) pending = stored;
+      } catch (_) {}
+      // Keep an uncertain request's key even if fields were edited. The API
+      // will reject changed details under that key until the original save is resolved.
+      if (pending?.key) return pending.key;
+      const key = globalThis.crypto?.randomUUID?.() || `book-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      pending = { key, payload: serialized };
+      memory[storageKey] = pending;
+      try { sessionStorage.setItem(storageKey, JSON.stringify(pending)); } catch (_) {}
+      return key;
+    }
+
+    function clearCatalogIdempotencyKey(storageKey) {
+      if (window.__catalogIdempotency) delete window.__catalogIdempotency[storageKey];
+      try { sessionStorage.removeItem(storageKey); } catch (_) {}
+    }
+
     async function handleCatalogSubmit(e) {
       e.preventDefault();
+      const form = e.currentTarget;
+      if (form.dataset.submitting === 'true') return;
+      form.dataset.submitting = 'true';
+      form.setAttribute('aria-busy', 'true');
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      const idempotencyStorageKey = 'smartlib:librarian:create-book';
       const acc = document.getElementById('catAcc').value.trim();
       const title = document.getElementById('catTitle').value.trim();
       const author = document.getElementById('catAuthor').value.trim();
@@ -1511,27 +1541,31 @@
       const copies = parseInt(document.getElementById('catCopies').value) || 1;
       const condition = document.getElementById('catCondition').value;
 
+      const payload = {
+        accession_no: document.getElementById('catAcc').value.trim() || null,
+        title,
+        author,
+        publisher: publisher || null,
+        year_published: year || null,
+        isbn: isbn || null,
+        category: cat,
+        call_number: callNum || null,
+        total_copies: copies,
+        available_copies: copies,
+        condition
+      };
+      const idempotencyKey = getCatalogIdempotencyKey(idempotencyStorageKey, payload);
+
       try {
         const res = await fetch(`${API_BASE}/admin/books`, {
           method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            accession_no: document.getElementById('catAcc').value.trim() || null,
-            title: title,
-            author: author,
-            publisher: publisher || null,
-            year_published: year || null,
-            isbn: isbn || null,
-            category: cat,
-            call_number: callNum || null,
-            total_copies: copies,
-            available_copies: copies,
-            condition: condition
-          })
+          headers: { ...getAuthHeaders(), 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify(payload)
         });
 
         if (res.ok) {
           let savedBook = await res.json();
+          clearCatalogIdempotencyKey(idempotencyStorageKey);
           let coverWarning = '';
           try { savedBook = await uploadBookCoverIfSelected(savedBook, 'catCoverInput'); }
           catch (coverError) { coverWarning = ` Cover upload failed: ${coverError.message}`; }
@@ -1554,10 +1588,19 @@
           clearBookCoverInput('catCoverInput', 'catCoverPreview');
 
         } else {
-          const err = await res.json();
+          const err = await res.json().catch(() => ({}));
+          const unresolvedRequest = String(err.detail || '').toLowerCase().includes('request key was already used');
+          if (res.status < 500 && !unresolvedRequest) clearCatalogIdempotencyKey(idempotencyStorageKey);
           toast(err.detail || 'Failed to catalog book', 'danger');
         }
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        console.error(err);
+        toast('The connection was interrupted. Retry without changing the form; SmartLib will check whether the book was already saved.', 'warning');
+      } finally {
+        form.dataset.submitting = 'false';
+        form.removeAttribute('aria-busy');
+        if (submitButton) submitButton.disabled = false;
+      }
     }
 
     function openBookQrSheet(accessionNo) {

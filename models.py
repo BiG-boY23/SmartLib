@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     Float,
     Text,
+    JSON,
     UniqueConstraint,
     Index,
 )
@@ -70,6 +71,20 @@ class UserSession(Base):
     expires_at = Column(DateTime, nullable=False)
     revoked_at = Column(DateTime, nullable=True)
     remember_me = Column(Boolean, default=False, nullable=False)
+
+
+class IdempotencyRecord(Base):
+    """Cached result for a retried staff create request."""
+    __tablename__ = "idempotency_records"
+    __table_args__ = (UniqueConstraint("scope", "actor_id", "key", name="uq_idempotency_scope_actor_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope = Column(String(100), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    key = Column(String(128), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    response_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class EmailActionToken(Base):

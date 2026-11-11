@@ -372,7 +372,7 @@ def catalog_accession(db, requested=None, exclude_id=None):
         candidate = prefix + separator + str(int(suffix) + 1).zfill(len(suffix))
 
 
-def create_book(db: Session, book_data: BookCreate):
+def create_book(db: Session, book_data: BookCreate, *, commit: bool = True, actor: str = "Librarian"):
     values = book_data.model_dump(exclude={"accession_no"})
     values["available_copies"] = values["total_copies"]
     values["accession_no"] = catalog_accession(db, book_data.accession_no)
@@ -380,14 +380,16 @@ def create_book(db: Session, book_data: BookCreate):
     db.add(db_book)
     db.flush()
     db.add_all(_new_book_copy(db, db_book, copy_number) for copy_number in range(1, db_book.total_copies + 1))
-    db.commit()
-    db.refresh(db_book)
-    log_audit(
-        db,
-        "Librarian",
-        f"Cataloged Book {db_book.accession_no} ({db_book.title})",
-        "Saved",
-    )
+    event = f"Cataloged Book {db_book.accession_no} ({db_book.title})"
+    if commit:
+        db.commit()
+        db.refresh(db_book)
+        log_audit(db, actor, event, "Saved")
+    else:
+        # The caller owns the transaction so the book, copies, audit row, and
+        # idempotency response can be committed atomically.
+        db.add(AuditLog(user_name=actor, event=event, status="Saved"))
+        db.flush()
     return db_book
 
 

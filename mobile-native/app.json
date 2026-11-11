@@ -29,6 +29,7 @@
     },
     "android": {
       "package": "ph.edu.evsu.smartlib",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#f3ead0"

@@ -1032,7 +1032,7 @@
           <div class="card-head"><h3><i class="fa-solid fa-hand-holding-hand"></i> Online Borrowing Request Queue</h3></div>
           <div class="card-body" style="padding:0;">
             <div style="padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-              <label>Status <select id="queueStatus" onchange="loadBorrowQueue(true)"><option value="">All statuses</option><option>PENDING</option><option>APPROVED</option><option>CHECKED_OUT</option><option>OVERDUE</option><option>RETURNED</option><option>REJECTED</option><option>CANCELLED</option></select></label>
+              <label>Status <select id="queueStatus" onchange="loadBorrowQueue(true)"><option value="">All statuses</option><option>PENDING</option><option>APPROVED</option><option>CHECKED_OUT</option><option>OVERDUE</option><option>RETURNED</option><option>REJECTED</option><option>CANCELLED</option><option>EXPIRED</option></select></label>
               <label>Sort <select id="queueSort" onchange="loadBorrowQueue(true)"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due">Due date</option><option value="patron">Patron name</option></select></label>
               <label>Search <input id="queueSearch" type="search" placeholder="Patron, title, request ID" oninput="scheduleQueueSearch()"></label>
               <span id="queueCount" aria-live="polite"></span>
@@ -2438,7 +2438,7 @@
         row.innerHTML = `<td><strong>${escapeHtml(request.req_id)}</strong></td><td>${escapeHtml(request.user_name || 'Patron')}</td>
           <td>${escapeHtml(request.accession_no)}<br><small>${escapeHtml(request.book_title || '')}</small></td>
           <td>${escapeHtml(request.pickup_date || 'N/A')}</td><td>${loanDeadlineCell(request)}</td><td>${loanReturnDateCell(request)}</td><td>${escapeHtml(request.request_date.substring(0,10))}</td>
-          <td><span class="badge ${request.status === 'APPROVED' ? 'badge-success' : request.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(request.status)}</span></td>
+          <td><span class="badge ${request.status === 'APPROVED' ? 'badge-success' : ['REJECTED','EXPIRED'].includes(request.status) ? 'badge-danger' : 'badge-warning'}">${escapeHtml(request.status === 'EXPIRED' ? 'EXPIRED · NOT PICKED UP' : request.status)}</span></td>
           <td>${['CHECKED_OUT','OVERDUE'].includes(request.status) ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="SmartLibUpdates.extend(this.dataset.requestId)">Extend loan</button> ` : ''}
           ${request.status === 'PENDING' ? `<button class="btn btn-maroon btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="approveReq(this.dataset.requestId)">Approve</button> <button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="rejectReq(this.dataset.requestId)">Reject</button>` : request.approval_email_status === 'failed' ? `<button class="btn btn-outline btn-sm" data-request-id="${escapeHtml(request.req_id)}" onclick="retryApprovalEmail(this.dataset.requestId)">Retry email</button>` : '<span class="badge badge-secondary">Processed</span>'}</td>`;
       });

@@ -27,6 +27,7 @@ from assistant_local import catalog_terms, conversational_reply
 from rate_limits import enforce_rate_limit
 from security import require_roles, get_current_user
 from archive_service import archive_keys, cancel_support_emails, claim_support_thread, retain_support, snapshot_time
+from library_notifications import expire_uncollected_approved_requests
 
 router = APIRouter(prefix="/mobile", tags=["Mobile Client App (Student & Faculty)"])
 
@@ -80,6 +81,7 @@ def get_my_borrowings(
     db: Session = Depends(get_db),
     current_user: User = Depends(patron_roles),
 ):
+    expire_uncollected_approved_requests(db)
     return crud.get_borrow_records(db, user_id=current_user.id)
 
 

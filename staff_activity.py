@@ -44,7 +44,8 @@ def notify_borrow_activity(db, record, title=None):
     """Describe an actual circulation transition using its permanent reference."""
     labels = {"PENDING": "New borrow request", "APPROVED": "Borrow request approved",
               "REJECTED": "Borrow request declined", "CHECKED_OUT": "Book borrowed",
-              "RETURNED": "Book returned", "CANCELLED": "Borrow request cancelled"}
+              "RETURNED": "Book returned", "CANCELLED": "Borrow request cancelled",
+              "EXPIRED": "Pickup reservation expired"}
     state = record.status.value
     patron = record.user.full_name or record.user.username if record.user else "Patron"
     book = record.book.title if record.book else "Library book"

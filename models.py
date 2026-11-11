@@ -34,6 +34,7 @@ class BorrowStatus(str, enum.Enum):
     REJECTED = "REJECTED"
     OVERDUE = "OVERDUE"
     CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
 
 
 class User(Base):

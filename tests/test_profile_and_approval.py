@@ -56,7 +56,8 @@ def api(tmp_path, monkeypatch):
         db.flush()
         reader = db.query(User).filter_by(username="reader").one()
         db.add(BorrowRecord(req_id="REQ-EMAIL-1", user_id=reader.id, book_id=book.id,
-                            status=BorrowStatus.PENDING, pickup_date="2026-10-20T10:00"))
+                            status=BorrowStatus.PENDING,
+                            pickup_date=f"{(datetime.now().date() + timedelta(days=1)).isoformat()}T10:00"))
         db.commit()
         option_ids = (department.id, course.id)
     monkeypatch.setattr(auth_router, "enforce_rate_limit", lambda *args, **kwargs: None)

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from database import engine, Base, SessionLocal, get_db
-from models import Book
+from models import Book, BorrowRecord, BorrowStatus
 from routers import auth_router, admin_router, mobile_router, report_router, staff_notification_router
 from schemas import FeedbackCreate, FeedbackResponse, BookResponse
 import crud
@@ -43,6 +43,14 @@ async def lifespan(app: FastAPI):
     validate_production_settings()
     # Startup: Create tables & seed database
     Base.metadata.create_all(bind=engine)
+    # SQLAlchemy create_all does not add members to an existing PostgreSQL enum.
+    # Keep deployed databases able to store system-expired reservations.
+    if engine.dialect.name == "postgresql":
+        enum_name = BorrowRecord.__table__.c.status.type.name
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                f'ALTER TYPE "{enum_name}" ADD VALUE IF NOT EXISTS \'{BorrowStatus.EXPIRED.value}\''
+            )
     thread_columns = {column["name"] for column in inspect(engine).get_columns("support_threads")}
     if "recipient_role" not in thread_columns:
         with engine.begin() as connection:

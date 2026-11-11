@@ -45,7 +45,8 @@ from schemas import (
 )
 import crud
 from email_service import send_email
-from library_notifications import queue_email
+from library_notifications import (expire_uncollected_approved_requests, pickup_window_is_closed,
+                                   queue_email)
 from security import require_roles, get_current_user
 from archive_service import archive_keys, require_archive_view, record_content, retain_deleted, retain_support
 
@@ -428,6 +429,7 @@ def get_all_borrow_requests(
     sort: Literal["newest", "oldest", "due", "patron"] = "newest",
     skip: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100),
 ):
+    expire_uncollected_approved_requests(db)
     # Refresh elapsed loans before filtering so OVERDUE results include them.
     db.query(BorrowRecord).filter(
         BorrowRecord.status == BorrowStatus.CHECKED_OUT,
@@ -462,6 +464,7 @@ def get_all_borrow_requests(
 
 @router.get("/borrow-requests/{req_id}", response_model=BorrowRecordResponse)
 def get_staff_borrow_request(req_id: str, db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
+    expire_uncollected_approved_requests(db)
     record = db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Loan not found.")
@@ -479,12 +482,18 @@ def update_request_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
+    expire_uncollected_approved_requests(db)
+    if status_update.status == BorrowStatus.APPROVED:
+        pending = db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
+        if pending and pending.status == BorrowStatus.PENDING and pickup_window_is_closed(pending.pickup_date):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail="The scheduled pickup window has passed. Ask the patron to submit a new request.")
     updated, msg = crud.update_borrow_status(db, req_id, status_update.status, persist=False, due_date=status_update.due_date)
     if not updated:
         code = status.HTTP_404_NOT_FOUND if msg == "Request record not found" else status.HTTP_409_CONFLICT
         raise HTTPException(status_code=code, detail=msg)
     if updated.status == BorrowStatus.APPROVED:
-        db.add(Notification(user_id=updated.user_id, title="Borrow request approved", body=f"Your request {updated.req_id} for {updated.book.title if updated.book else 'a book'} has been approved. Check your pickup schedule in My books.", kind="borrowing"))
+        db.add(Notification(user_id=updated.user_id, title="Borrow request approved", body=f"Your request {updated.req_id} for {updated.book.title if updated.book else 'a book'} has been approved. Check your pickup schedule in My books and collect it by 6:00 PM Philippine time on that day; uncollected reservations expire after closing.", kind="borrowing"))
         db.add(BorrowApprovalEmail(borrow_record_id=updated.id))
     else:
         db.add(Notification(user_id=updated.user_id, title="Borrow request updated", body=f"Your request for {updated.book.title if updated.book else 'a book'} is now {updated.status.value.replace('_', ' ').lower()}.", kind="borrowing"))
@@ -517,6 +526,7 @@ def _deliver_approval_email(db: Session, record: BorrowRecord) -> str:
         "Approval status: Approved\n"
         f"Approval date: {delivery.created_at.strftime('%B %d, %Y at %I:%M %p UTC')}\n"
         f"Pickup schedule: {record.pickup_date or 'Please contact the library to arrange pickup.'}\n\n"
+        "Please collect the reservation by 6:00 PM Philippine time on the scheduled pickup day. It expires after closing if it is not checked out.\n\n"
         "Please present your library ID at the circulation desk. The loan period begins when the book is checked out.\n\n"
         "EVSU Ormoc Campus Library"
     )

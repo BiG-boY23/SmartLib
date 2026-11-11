@@ -555,7 +555,7 @@ def _claim_stock(db: Session, book):
 
 def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, persist: bool = True, due_date=None):
     record = (
-        db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).first()
+        db.query(BorrowRecord).filter(BorrowRecord.req_id == req_id).with_for_update().first()
     )
     if not record:
         return None, "Request record not found"
@@ -572,6 +572,8 @@ def update_borrow_status(db: Session, req_id: str, new_status: BorrowStatus, per
             return None, "Only pending requests can be rejected."
         record.status = new_status
     elif new_status == BorrowStatus.CHECKED_OUT:
+        if record.status == BorrowStatus.EXPIRED:
+            return None, "This pickup reservation expired because the item was not checked out by closing time."
         if record.status != BorrowStatus.APPROVED:
             return None, "Approve the request before checking it out."
         eligibility_error = _checkout_eligibility(db, record.user)

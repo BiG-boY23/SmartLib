@@ -1,7 +1,7 @@
 /* Staff-only library entry register and attendance reports. */
 (() => {
   const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const headers = () => ({Authorization:`Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`,'Content-Type':'application/json'});
+  const headers = () => ({'Content-Type':'application/json'});
   async function request(url, options={}) {
     const response=await fetch(url,{...options,headers:headers()});
     if(!response.ok) { const data=await response.json(); throw new Error(data.detail || 'Unable to complete attendance request.'); }

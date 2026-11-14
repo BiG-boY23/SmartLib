@@ -255,7 +255,7 @@ def _patron_support_thread(db, thread_id, current_user):
 def start_message_thread(req: SupportThreadCreate, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
     if len(req.subject.strip()) < 3 or not req.message.strip():
         raise HTTPException(status_code=422, detail="Enter a subject and message.")
-    enforce_rate_limit(f"support-thread:{current_user.id}", 5, 60 * 60)
+    enforce_rate_limit(f"support-thread:{current_user.id}", 5, 60 * 60, db=db)
     now = datetime.utcnow()
     thread = SupportThread(user_id=current_user.id, recipient_role=req.recipient_role, subject=req.subject.strip(), created_at=now, updated_at=now)
     db.add(thread)
@@ -282,7 +282,7 @@ def read_user_message_thread(thread_id: int, db: Session = Depends(get_db), curr
 def reply_to_staff_thread(thread_id: int, req: SupportMessageCreate, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
     if not req.message.strip():
         raise HTTPException(status_code=422, detail="Enter a message.")
-    enforce_rate_limit(f"support-reply:{current_user.id}", 20, 60 * 60)
+    enforce_rate_limit(f"support-reply:{current_user.id}", 20, 60 * 60, db=db)
     thread = _patron_support_thread(db, thread_id, current_user)
     if thread.is_closed:
         raise HTTPException(status_code=400, detail="This conversation is closed")
@@ -354,7 +354,7 @@ def delete_user_conversation(thread_id: int, expected_created_at: Optional[datet
 
 @router.post("/assistant")
 def ask_library_assistant(req: AssistantRequest, db: Session = Depends(get_db), current_user: User = Depends(patron_roles)):
-    enforce_rate_limit(f"library-assistant:{current_user.id}", 30, 60 * 60)
+    enforce_rate_limit(f"library-assistant:{current_user.id}", 30, 60 * 60, db=db)
     question = req.message.strip()
     lower = question.casefold()
     terms = catalog_terms(question)

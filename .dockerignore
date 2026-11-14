@@ -7,6 +7,8 @@
 !library_guide.json
 !routers/
 !routers/*.py
+!scripts/
+!scripts/*.py
 !templates/
 !templates/**
 !static/

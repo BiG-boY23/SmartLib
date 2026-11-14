@@ -1128,6 +1128,8 @@ def archive_staff_record(kind: Literal["acquisitions", "announcements", "message
     db: Session = Depends(get_db), current_user: User = Depends(admin_or_staff)):
     if not archived and current_user.role != UserRole.SUPERADMIN:
         raise HTTPException(403, "Only SuperAdmin can restore archived records.")
+    if archived and not reason.strip():
+        raise HTTPException(422, "A reason is required when archiving a record.")
     model = {"acquisitions": AcquisitionSuggestion, "announcements": Announcement, "messages": SupportThread}[kind]
     column = AcquisitionSuggestion.acq_id if kind == "acquisitions" else model.id
     record = db.query(model).filter(column == record_id).first()

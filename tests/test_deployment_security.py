@@ -115,11 +115,12 @@ def test_release_links_only_enable_real_https_distribution_urls(monkeypatch):
 def test_production_rejects_missing_settings_and_does_not_seed_demo(isolated, monkeypatch, tmp_path):
     _, factory, _ = isolated
     monkeypatch.setenv("SMARTLIB_ENV", "production")
-    for key in ("SMARTLIB_SECRET_KEY", "DATABASE_URL", "PUBLIC_BASE_URL", "SMARTLIB_UPLOAD_DIR"):
+    for key in ("SMARTLIB_SECRET_KEY", "SMARTLIB_MFA_ENCRYPTION_KEY", "DATABASE_URL", "PUBLIC_BASE_URL", "SMARTLIB_UPLOAD_DIR"):
         monkeypatch.delenv(key, raising=False)
     with pytest.raises(RuntimeError, match="Production configuration is incomplete"):
         validate_production_settings()
     monkeypatch.setenv("SMARTLIB_SECRET_KEY", "a" * 48)
+    monkeypatch.setenv("SMARTLIB_MFA_ENCRYPTION_KEY", "b" * 48)
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'persistent.db'}")
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://library.evsu.edu.ph")
     monkeypatch.setenv("SMARTLIB_UPLOAD_DIR", str(tmp_path / "uploads"))

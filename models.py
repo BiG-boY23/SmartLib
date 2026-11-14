@@ -55,6 +55,10 @@ class User(Base):
     contact_no = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     email_verified = Column(Boolean, default=True, nullable=False, server_default="1")
+    mfa_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
+    mfa_secret_enc = Column(Text, nullable=True)
+    mfa_recovery_hashes = Column(Text, nullable=True)
+    mfa_last_counter = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     borrow_records = relationship("BorrowRecord", back_populates="user")
@@ -72,6 +76,30 @@ class UserSession(Base):
     expires_at = Column(DateTime, nullable=False)
     revoked_at = Column(DateTime, nullable=True)
     remember_me = Column(Boolean, default=False, nullable=False)
+
+
+class MfaChallenge(Base):
+    """Short-lived, one-use challenge for staff MFA login or first-time setup."""
+    __tablename__ = "mfa_challenges"
+
+    challenge_id = Column(String(64), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    purpose = Column(String(16), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    pending_secret_enc = Column(Text, nullable=True)
+    remember_me = Column(Boolean, default=False, nullable=False)
+
+
+class RateLimitBucket(Base):
+    """Shared fixed-window rate limit counters for multi-worker deployments."""
+    __tablename__ = "rate_limit_buckets"
+
+    bucket_key = Column(String(64), primary_key=True)
+    hits = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=False, index=True)
 
 
 class IdempotencyRecord(Base):

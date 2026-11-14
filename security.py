@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta
 from typing import Optional, List
+import base64
+import hashlib
 import logging
 import os
 import secrets
+from urllib.parse import urlsplit
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -26,23 +29,57 @@ IDLE_TIMEOUT_MINUTES = 15
 SESSION_ABSOLUTE_HOURS = 12
 REMEMBERED_SESSION_ABSOLUTE_DAYS = 30
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+WEB_SESSION_COOKIE = "smartlib_web_session"
+
+
+def _require_same_origin_cookie_request(request: Request) -> None:
+    """Block cross-origin state changes authenticated by ambient browser cookies."""
+    if request.method.upper() in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+        return
+    origin = request.headers.get("origin")
+    if not origin:
+        referer = request.headers.get("referer")
+        origin = referer
+    try:
+        source = urlsplit(origin or "")
+        expected_scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip().lower()
+        source_host = source.netloc.casefold()
+        request_host = request.headers.get("host", request.url.netloc).casefold()
+    except (TypeError, ValueError):
+        source_host = ""
+        request_host = ""
+        expected_scheme = ""
+        source = urlsplit("")
+    if not source_host or source_host != request_host or source.scheme.lower() != expected_scheme:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-origin session request rejected")
+
+
+def staff_mfa_required() -> bool:
+    """Production staff access always requires MFA; dev can opt in for testing."""
+    return os.getenv("SMARTLIB_ENV", "development").lower() == "production" or \
+        os.getenv("SMARTLIB_REQUIRE_STAFF_MFA", "false").lower() in {"1", "true", "yes"}
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
-        )
+        if hashed_password.startswith("bcrypt-sha256$"):
+            digest = hashlib.sha256(b"EVSU-SmartLib-password-v1:" + plain_password.encode("utf-8")).digest()
+            encoded = base64.urlsafe_b64encode(digest)
+            stored_hash = hashed_password.split("$", 1)[1]
+            return bcrypt.checkpw(encoded, stored_hash.encode("utf-8"))
+        # Legacy bcrypt hashes remain valid. Successful legacy logins are upgraded.
+        return bcrypt.checkpw(plain_password.encode("utf-8")[:72], hashed_password.encode("utf-8"))
     except Exception:
         return False
 
 
 def get_password_hash(password: str) -> str:
-    # Truncate to 72 bytes max for bcrypt standard compliance
-    pwd_bytes = password.encode("utf-8")[:72]
+    # Pre-hash so bcrypt's 72-byte input limit never silently truncates passwords.
+    digest = hashlib.sha256(b"EVSU-SmartLib-password-v1:" + password.encode("utf-8")).digest()
+    pwd_bytes = base64.urlsafe_b64encode(digest)
     salt = bcrypt.gensalt()
-    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
+    return "bcrypt-sha256$" + bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -76,8 +113,15 @@ def get_session_id(token: str) -> str:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    request: Request, token: Optional[str] = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
+    if not token:
+        token = request.cookies.get(WEB_SESSION_COOKIE)
+        if token:
+            _require_same_origin_cookie_request(request)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in required",
+                            headers={"WWW-Authenticate": "Bearer"})
     payload = get_token_payload(token)
     username: str = payload.get("sub")
     session_id: str = payload.get("sid")
@@ -104,6 +148,9 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user account"
         )
+    if user.role in (UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.LIBRARIAN) and staff_mfa_required() and not user.mfa_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Staff multi-factor authentication setup is required. Sign in again to continue setup.")
     auth_session.last_activity_at = now
     db.commit()
     return user

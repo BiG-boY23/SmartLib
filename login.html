@@ -236,6 +236,14 @@
     .login-options { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:2px 0 12px; color:var(--text-muted); font-size:12px; }
     .remember-option { display:flex; align-items:center; gap:7px; cursor:pointer; }
     .login-options button { border:0; background:none; color:var(--evsu-gold-light); font:inherit; cursor:pointer; }
+    .mfa-panel { margin-top: 20px; padding: 22px; border: 1px solid var(--border-gold); border-radius: 14px; background: rgba(10,12,16,.55); }
+    .mfa-panel[hidden] { display:none; }
+    .mfa-panel h2 { margin-bottom: 8px; font-size: 19px; }
+    .mfa-panel p { margin: 8px 0 14px; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+    .mfa-qr { display:block; width:180px; height:180px; margin:14px auto; padding:8px; background:#fff; border-radius:8px; }
+    .mfa-manual { overflow-wrap:anywhere; color:var(--evsu-gold-light)!important; font-family:monospace; font-size:14px!important; text-align:center; }
+    .mfa-error { min-height:20px; color:var(--danger-text)!important; }
+    .mfa-recovery { padding:12px; border-radius:8px; color:var(--text-main); background:#0a0c10; font:600 13px/1.8 monospace; overflow-wrap:anywhere; }
 
     /* Footer Links */
     .login-footer {
@@ -298,7 +306,6 @@
       </div>
 
       <div class="login-options">
-        <label class="remember-option"><input type="checkbox" id="rememberMe"> Remember me</label>
         <button type="button" onclick="forgotPassword()">Forgot password?</button>
       </div>
 
@@ -317,6 +324,23 @@
       </button>
     </form>
 
+    <section id="mfaPanel" class="mfa-panel" hidden aria-live="polite">
+      <h2 id="mfaTitle">Staff account verification</h2>
+      <p id="mfaInstructions"></p>
+      <img id="mfaQr" class="mfa-qr" alt="Authenticator app setup QR code" hidden>
+      <p id="mfaManualKey" class="mfa-manual" hidden></p>
+      <label class="form-label" for="mfaCode">Authenticator or recovery code</label>
+      <input id="mfaCode" class="form-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="64" placeholder="Enter your code">
+      <p id="mfaError" class="mfa-error" role="alert"></p>
+      <button id="mfaSubmit" type="button" class="btn-submit" onclick="submitMfaCode()">Verify and continue</button>
+      <div id="mfaRecoveryBlock" hidden>
+        <p>Save these recovery codes somewhere private. Each code works once if you lose access to your authenticator.</p>
+        <pre id="mfaRecoveryCodes" class="mfa-recovery"></pre>
+        <button type="button" class="btn-submit" onclick="continueAfterMfaSetup()">I saved the codes — continue</button>
+      </div>
+      <button type="button" class="back-link" onclick="cancelMfaStep()">Back to sign in</button>
+    </section>
+
     <div class="login-footer">
       <a href="/" class="back-link" onclick="window.location.href='/'; return false;">
         <i class="fas fa-arrow-left"></i> Back to Public Landing Page
@@ -334,6 +358,9 @@
   </div>
 
   <script>
+    let pendingMfa = null;
+    let pendingDashboardPath = '';
+
     function togglePasswordField(inputId, button) {
       const input = document.getElementById(inputId);
       input.type = input.type === 'password' ? 'text' : 'password';
@@ -387,12 +414,12 @@
 
       const username = usernameInput.value.trim();
       const password = passwordInput.value;
-      const rememberMe = document.getElementById('rememberMe').checked;
+      const rememberMe = false;
 
       try {
         const response = await fetch('/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-SmartLib-Web-Session': '1' },
           body: JSON.stringify({ username, password, remember_me: rememberMe })
         });
 
@@ -402,30 +429,149 @@
           showLoginResult(false, data.detail || 'Incorrect Staff ID or password. Please verify your staff credentials.');
           return;
         }
+        usernameInput.value = '';
+        passwordInput.value = '';
 
-        // Store JWT token and role
+        if (data.mfa_setup_required) {
+          pendingMfa = { kind: 'setup', token: data.setup_token, role: data.role, username: data.username };
+          await beginMfaSetup();
+          return;
+        }
+        if (data.mfa_required) {
+          pendingMfa = { kind: 'login', token: data.challenge_token, role: data.role, username: data.username };
+          showMfaPanel(false);
+          return;
+        }
+
+        // Staff web sessions use an HttpOnly cookie and never place bearer tokens in browser storage.
         localStorage.removeItem('token'); localStorage.removeItem('role'); localStorage.removeItem('username');
         sessionStorage.removeItem('token'); sessionStorage.removeItem('role'); sessionStorage.removeItem('username');
-        const storage = rememberMe ? localStorage : sessionStorage;
-        storage.setItem('token', data.access_token);
-        storage.setItem('role', data.role);
-        storage.setItem('username', data.username);
-
-        const userRole = (data.role || '').toLowerCase();
-
-        if (userRole === 'superadmin' || userRole === 'admin') {
-          showLoginResult(true, `Your ${userRole === 'superadmin' ? 'Super Admin' : 'Administrator'} account has been authenticated. Continue to the administration dashboard.`, () => { window.location.href = '/admin-dashboard.html'; });
-        } else if (userRole === 'librarian') {
-          showLoginResult(true, 'Your Librarian account has been authenticated. Continue to the librarian dashboard.', () => { window.location.href = '/librarian-dashboard.html'; });
-        } else {
-          fetch('/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${data.access_token}` } }).catch(() => {});
-          ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
-          showLoginResult(false, 'Access is restricted to administrator and librarian accounts.');
-        }
+        routeStaffDashboard(data.role);
 
       } catch (err) {
         showLoginResult(false, 'Could not reach the library server. Check the connection and try again.');
       }
+    }
+
+    function routeStaffDashboard(role) {
+      const userRole = (role || '').toLowerCase();
+      if (userRole === 'superadmin' || userRole === 'admin') {
+        const title = userRole === 'superadmin' ? 'Super Admin' : 'Administrator';
+        showLoginResult(true, `Your ${title} account has been authenticated. Continue to the administration dashboard.`, () => { window.location.href = '/admin-dashboard.html'; });
+      } else if (userRole === 'librarian') {
+        showLoginResult(true, 'Your Librarian account has been authenticated. Continue to the librarian dashboard.', () => { window.location.href = '/librarian-dashboard.html'; });
+      } else {
+        showLoginResult(false, 'Access is restricted to administrator and librarian accounts.');
+      }
+    }
+
+    function showMfaPanel(setup) {
+      document.getElementById('staffLoginForm').hidden = true;
+      document.getElementById('mfaPanel').hidden = false;
+      document.getElementById('mfaTitle').textContent = setup ? 'Set up staff verification' : 'Verify your staff sign in';
+      document.getElementById('mfaInstructions').textContent = setup
+        ? 'Scan this QR code with an authenticator app such as Google Authenticator or Microsoft Authenticator, then enter the six-digit code it shows.'
+        : 'Enter the current six-digit code from your authenticator app. You can enter one unused recovery code if you cannot access the app.';
+      document.getElementById('mfaError').textContent = '';
+      document.getElementById('mfaCode').value = '';
+      document.getElementById('mfaSubmit').hidden = false;
+      document.getElementById('mfaRecoveryBlock').hidden = true;
+      document.getElementById('mfaCode').focus();
+    }
+
+    async function beginMfaSetup() {
+      showMfaPanel(true);
+      const code = document.getElementById('mfaCode');
+      code.hidden = true;
+      document.querySelector('label[for="mfaCode"]').hidden = true;
+      const button = document.getElementById('mfaSubmit');
+      button.disabled = true;
+      button.textContent = 'Preparing authenticator setup...';
+      try {
+        const response = await fetch('/auth/mfa/setup', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-SmartLib-Web-Session': '1' },
+          body: JSON.stringify({ setup_token: pendingMfa.token })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Could not start MFA setup.');
+        document.getElementById('mfaQr').src = data.qr_code;
+        document.getElementById('mfaQr').hidden = false;
+        document.getElementById('mfaManualKey').textContent = `Manual setup key: ${data.manual_key}`;
+        document.getElementById('mfaManualKey').hidden = false;
+        code.hidden = false;
+        document.querySelector('label[for="mfaCode"]').hidden = false;
+        button.disabled = false;
+        button.textContent = 'Enable MFA and continue';
+        button.onclick = submitMfaCode;
+        code.focus();
+      } catch (error) {
+        document.getElementById('mfaError').textContent = error.message;
+        button.disabled = false;
+        button.textContent = 'Retry setup';
+        button.onclick = beginMfaSetup;
+      }
+    }
+
+    async function submitMfaCode() {
+      if (!pendingMfa) return;
+      const button = document.getElementById('mfaSubmit');
+      button.disabled = true;
+      button.textContent = 'Checking code...';
+      document.getElementById('mfaError').textContent = '';
+      const setup = pendingMfa.kind === 'setup';
+      try {
+        const response = await fetch(setup ? '/auth/mfa/enable' : '/auth/mfa/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-SmartLib-Web-Session': '1' },
+          body: JSON.stringify(setup
+            ? { setup_token: pendingMfa.token, code: document.getElementById('mfaCode').value.trim() }
+            : { challenge_token: pendingMfa.token, code: document.getElementById('mfaCode').value.trim() })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'The verification code was not accepted.');
+        ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
+        if (data.recovery_codes?.length) {
+          pendingDashboardPath = ['superadmin','admin'].includes((data.role || '').toLowerCase()) ? '/admin-dashboard.html' : '/librarian-dashboard.html';
+          document.getElementById('mfaInstructions').textContent = 'Multi-factor authentication is enabled. Save these recovery codes now; they will not be shown again.';
+          document.getElementById('mfaQr').hidden = true;
+          document.getElementById('mfaManualKey').hidden = true;
+          document.querySelector('label[for="mfaCode"]').hidden = true;
+          document.getElementById('mfaCode').hidden = true;
+          document.getElementById('mfaSubmit').hidden = true;
+          document.getElementById('mfaRecoveryCodes').textContent = data.recovery_codes.join('\n');
+          document.getElementById('mfaRecoveryBlock').hidden = false;
+          return;
+        }
+        pendingMfa = null;
+        routeStaffDashboard(data.role);
+      } catch (error) {
+        document.getElementById('mfaError').textContent = error.message;
+        button.disabled = false;
+        button.textContent = setup ? 'Enable MFA and continue' : 'Verify and continue';
+      }
+    }
+
+    function continueAfterMfaSetup() {
+      if (pendingDashboardPath) window.location.href = pendingDashboardPath;
+    }
+
+    function cancelMfaStep() {
+      pendingMfa = null;
+      document.getElementById('mfaPanel').hidden = true;
+      document.getElementById('staffLoginForm').hidden = false;
+      document.getElementById('mfaQr').removeAttribute('src');
+      document.getElementById('mfaQr').hidden = true;
+      document.getElementById('mfaManualKey').textContent = '';
+      document.getElementById('mfaManualKey').hidden = true;
+      document.querySelector('label[for="mfaCode"]').hidden = false;
+      document.getElementById('mfaCode').hidden = false;
+      document.getElementById('mfaSubmit').hidden = false;
+      document.getElementById('mfaRecoveryBlock').hidden = true;
+      document.getElementById('mfaSubmit').disabled = false;
+      document.getElementById('mfaSubmit').onclick = submitMfaCode;
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').innerHTML = '<span>Sign In to Staff Portal</span> <i class="fas fa-arrow-right"></i>';
+      document.getElementById('username').focus();
     }
 
     async function forgotPassword() {

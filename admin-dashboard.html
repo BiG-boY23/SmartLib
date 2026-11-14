@@ -1108,10 +1108,7 @@
   <script src="/static/staff-notifications.js?v=20261020-activity-archive"></script>
   <script>
     // AUTH GUARD FOR ADMIN PORTAL
-    function getActiveToken() {
-      return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
-    }
-    const token = getActiveToken();
+    ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
     let idleLogoutTimer;
     function togglePasswordField(inputId, button) {
       const input = document.getElementById(inputId);
@@ -1128,10 +1125,7 @@
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     function getAuthHeaders() {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getActiveToken()}`
-      };
+      return { 'Content-Type': 'application/json' };
     }
 
     function requestLogout() {
@@ -1142,7 +1136,7 @@
     }
 
     function handleLogout() {
-      fetch('/auth/logout', { method: 'POST', headers: getAuthHeaders() }).catch(() => {});
+      fetch('/auth/logout', { method: 'POST', headers: getAuthHeaders(), credentials: 'same-origin' }).catch(() => {});
       ['token','role','username'].forEach(key => { localStorage.removeItem(key); sessionStorage.removeItem(key); });
       window.location.href = '/login.html';
     }
@@ -2535,12 +2529,9 @@
 
     // INITIALIZATION
     (async () => {
-      const activeTok = getActiveToken();
-      if (!activeTok) { window.location.href = '/login.html'; return; }
-      
       let currentUser;
       try {
-        const response = await fetch('/auth/me', { headers: getAuthHeaders() });
+        const response = await fetch('/auth/me', { headers: getAuthHeaders(), credentials: 'same-origin' });
         if (!response.ok) throw new Error('Unauthorized');
         currentUser = await response.json();
         const role = (currentUser.role || '').toLowerCase();

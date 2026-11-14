@@ -29,6 +29,24 @@ from production import validate_production_settings, prepare_production_accounts
 from storage import BOOK_COVERS, PROFILE_PHOTOS, prepare_storage
 
 
+async def backup_worker():
+    """Run scheduled encrypted snapshots from the single web service process."""
+    while True:
+        try:
+            from backup_service import run_scheduled_backup
+            result = await asyncio.to_thread(run_scheduled_backup)
+            if result.get("status") == "uploaded":
+                logging.getLogger(__name__).info(
+                    "Encrypted off-site backup uploaded: %s", result["key"]
+                )
+        except Exception as exc:
+            # Avoid logging credentials or provider request details from SDK exceptions.
+            logging.getLogger(__name__).error(
+                "Scheduled backup failed (%s)", type(exc).__name__
+            )
+        await asyncio.sleep(60 * 60)
+
+
 async def notification_worker():
     while True:
         try:
@@ -38,9 +56,27 @@ async def notification_worker():
         await asyncio.sleep(60)
 
 
+async def transient_retention_worker():
+    """Hourly cleanup of already-expired authentication artifacts only."""
+    while True:
+        try:
+            from data_retention import purge_expired_transient_data_with_factory
+            counts = await asyncio.to_thread(purge_expired_transient_data_with_factory, SessionLocal)
+            removed = sum(counts.values())
+            if removed:
+                logging.getLogger(__name__).info(
+                    "Expired transient security data removed: %s", counts
+                )
+        except Exception:
+            logging.getLogger(__name__).exception("Transient data retention worker failed")
+        await asyncio.sleep(60 * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_production_settings()
+    from backup_service import validate_backup_settings
+    validate_backup_settings()
     # Startup: Create tables & seed database
     Base.metadata.create_all(bind=engine)
     # SQLAlchemy create_all does not add members to an existing PostgreSQL enum.
@@ -62,6 +98,20 @@ async def lifespan(app: FastAPI):
             connection.exec_driver_sql(
                 "ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE"
             )
+    if "mfa_enabled" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+    if "mfa_secret_enc" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN mfa_secret_enc TEXT")
+    if "mfa_recovery_hashes" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN mfa_recovery_hashes TEXT")
+    if "mfa_last_counter" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN mfa_last_counter INTEGER")
     if "course" not in user_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN course VARCHAR")
@@ -120,14 +170,30 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     worker = asyncio.create_task(notification_worker())
+    retention_worker = asyncio.create_task(transient_retention_worker())
+    backup_task = None
+    if os.getenv("SMARTLIB_BACKUP_ENABLED", "false").strip().lower() in {"1", "true", "yes"}:
+        backup_task = asyncio.create_task(backup_worker())
     try:
         yield
     finally:
         worker.cancel()
+        retention_worker.cancel()
+        if backup_task:
+            backup_task.cancel()
         try:
             await worker
         except asyncio.CancelledError:
             pass
+        try:
+            await retention_worker
+        except asyncio.CancelledError:
+            pass
+        if backup_task:
+            try:
+                await backup_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

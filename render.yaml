@@ -17,6 +17,8 @@ services:
         value: production
       - key: SMARTLIB_SECRET_KEY
         generateValue: true
+      - key: SMARTLIB_MFA_ENCRYPTION_KEY
+        generateValue: true
       - key: PUBLIC_BASE_URL
         fromService:
           name: evsu-smartlib
@@ -26,6 +28,12 @@ services:
         sync: false
       - key: SMARTLIB_UPLOAD_DIR
         value: /var/data/uploads
+      # Off-site backup scheduling stays off until an S3-compatible private
+      # bucket, credentials, encryption key, and approved retention are configured.
+      - key: SMARTLIB_BACKUP_ENABLED
+        value: "false"
+      - key: SMARTLIB_BACKUP_DIR
+        value: /var/data/backups
       - key: REQUIRE_HTTPS
         value: "true"
       - key: SMARTLIB_SEED_DEMO

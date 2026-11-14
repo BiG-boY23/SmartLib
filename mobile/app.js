@@ -1,7 +1,11 @@
 (() => {
   const root = document.getElementById('app');
   const toast = document.getElementById('toast');
-  const state = { token: localStorage.getItem('smartlib_token') || sessionStorage.getItem('smartlib_token'), user: null, tab: localStorage.getItem('smartlib_active_tab') || 'home', authMode: 'login', signupOptions: { departments: [], courses: [] }, books: [], borrowings: [], fines: [], totalOutstandingFines: 0, digitalId: null, search: '', category: 'All', installPrompt: null, editingProfile: false, offlineMode: false };
+  const COOKIE_SESSION = 'cookie-session';
+  const hasRememberedSession = () => localStorage.getItem('smartlib_web_session_active') === '1' || sessionStorage.getItem('smartlib_web_session_active') === '1';
+  // Remove bearer tokens left by older PWA builds; web sessions now use an HttpOnly cookie.
+  localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token');
+  const state = { token: hasRememberedSession() ? COOKIE_SESSION : null, user: null, tab: localStorage.getItem('smartlib_active_tab') || 'home', authMode: 'login', signupOptions: { departments: [], courses: [] }, books: [], borrowings: [], fines: [], totalOutstandingFines: 0, digitalId: null, search: '', category: 'All', installPrompt: null, editingProfile: false, offlineMode: false };
   let pullStart = null;
   let pulling = false;
   let pullRefreshing = false;
@@ -34,15 +38,15 @@
 
   async function api(path, options = {}) {
     if (!navigator.onLine) throw new Error('You’re offline. No requests or transactions have been sent.');
-    const headers = { ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}), ...options.headers };
+    const headers = { ...(typeof options.body === 'string' ? { 'Content-Type': 'application/json' } : {}), ...(state.token && state.token !== COOKIE_SESSION ? { Authorization: `Bearer ${state.token}` } : {}), ...options.headers };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
     let response;
-    try { response = await fetch(path, { ...options, headers, signal: controller.signal }); }
+    try { response = await fetch(path, { ...options, headers, credentials: 'same-origin', signal: controller.signal }); }
     finally { clearTimeout(timeout); }
     const data = response.status === 204 ? null : await response.json().catch(() => ({}));
     if (!response.ok) {
-      if (response.status === 401) { state.token = null; state.user = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; renderAuth(); }
+      if (response.status === 401) { state.token = null; state.user = null; localStorage.removeItem('smartlib_web_session_active'); sessionStorage.removeItem('smartlib_web_session_active'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; renderAuth(); }
       const detail = Array.isArray(data?.detail) ? data.detail.map((item) => item.msg).filter(Boolean).join('; ') : data?.detail;
       throw new Error(detail || 'Something went wrong. Please try again.');
     }
@@ -55,7 +59,7 @@
     idleTimer = setTimeout(() => {
       api('/auth/logout', { method: 'POST' }).catch(() => {});
       state.token = null; state.user = null; state.digitalId = null;
-      localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; renderAuth();
+      localStorage.removeItem('smartlib_web_session_active'); sessionStorage.removeItem('smartlib_web_session_active'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; renderAuth();
     }, 15 * 60 * 1000);
   }
   function authError(message) { const node = document.getElementById('auth-error'); if (node) { node.textContent = message; node.hidden = false; } }
@@ -66,7 +70,7 @@
     const departments = state.signupOptions.departments || [];
     const courses = state.signupOptions.courses || [];
     const nameFields = `<div class="field"><label for="first-name">First name</label><input id="first-name" name="first_name" autocomplete="given-name" required maxlength="80"></div><div class="field"><label for="middle-name">Middle name (optional)</label><input id="middle-name" name="middle_name" autocomplete="additional-name" maxlength="80"></div><div class="field"><label for="last-name">Last name</label><input id="last-name" name="last_name" autocomplete="family-name" required maxlength="80"></div>`;
-    const registrationFields = `${nameFields}<div class="field"><label for="reg-username">Student or staff ID</label><input id="reg-username" name="username" autocomplete="username" required></div><div class="field"><label for="email">EVSU email</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="account-type">Account type</label><select id="account-type" name="account_type"><option value="student">Student</option><option value="faculty">Faculty</option></select></div><div class="field"><label for="department">Department</label><select id="department" name="department_id" required><option value="">Choose a department</option>${departments.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}</select></div><div class="field" id="course-field"><label for="course">Course</label><select id="course" name="course_id" required disabled><option value="">Select a department first</option></select></div><div class="field"><label for="reg-password">Password</label><div class="password-input-wrap"><input id="reg-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="12" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="reg-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><div class="field"><label for="confirm-password">Confirm password</label><div class="password-input-wrap"><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="12" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="confirm-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>`;
+    const registrationFields = `${nameFields}<div class="field"><label for="reg-username">Student or staff ID</label><input id="reg-username" name="username" autocomplete="username" required></div><div class="field"><label for="email">EVSU email</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="account-type">Account type</label><select id="account-type" name="account_type"><option value="student">Student</option><option value="faculty">Faculty</option></select></div><div class="field"><label for="department">Department</label><select id="department" name="department_id" required><option value="">Choose a department</option>${departments.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}</select></div><div class="field" id="course-field"><label for="course">Course</label><select id="course" name="course_id" required disabled><option value="">Select a department first</option></select></div><div class="field"><label for="reg-password">Password</label><div class="password-input-wrap"><input id="reg-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="64" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="reg-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><div class="field"><label for="confirm-password">Confirm password</label><div class="password-input-wrap"><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="64" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="confirm-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>`;
     const loginFields = `<div class="field"><label for="username">Institutional ID or email</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">Password</label><div class="password-input-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><label class="remember-option"><input type="checkbox" name="remember_me"> Remember me</label><button class="text-button" type="button" data-action="forgot-password">Forgot password?</button>`;
     root.innerHTML = `<section class="auth-page fade-in"><div class="auth-art"><div class="brand"><img class="brand-mark-img small" src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"><span>EVSU-OC SmartLib</span></div><div><h1>Your campus library, wherever you are.</h1><p>Find your next read, request a copy, and keep your library card close at hand.</p></div><div class="art-bottom">Eastern Visayas State University &middot; Ormoc Campus</div></div><form class="auth-card" id="auth-form"><button class="back-link" type="button" data-action="public-home">&larr; SmartLib home</button><h2>${verify ? 'Verify your email' : register ? 'Create your account' : 'Welcome back'}</h2><p class="subheading">${verify ? `Enter the 6-digit code sent to ${escapeHtml(state.pendingRegistration?.email || 'your email')}.` : register ? 'Join your EVSU library community.' : 'Sign in with your institutional account.'}</p><div id="auth-error" class="auth-error" hidden></div>${verify ? '<div class="field"><label for="otp">Email code</label><input id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>' : register ? registrationFields : loginFields}<button class="primary wide" type="submit">${verify ? 'Verify and create account' : register ? 'Send email code' : 'Sign in'}</button><p class="switch-auth"><button type="button" data-action="toggle-auth">${verify || register ? 'Back to sign in' : 'Create account'}</button></p></form></section>`;
   }
@@ -160,13 +164,13 @@
     document.getElementById('offlineRetry').onclick = () => startApp();
   }
   function saveOfflineCache() {
-    if (!state.user || localStorage.getItem('smartlib_token') !== state.token) return;
+    if (!state.user || state.token !== COOKIE_SESSION || !hasRememberedSession()) return;
     const snapshot = { user: state.user, tab: state.tab, books: state.books, borrowings: state.borrowings, fines: state.fines, totalOutstandingFines: state.totalOutstandingFines, digitalId: state.digitalId, savedAt: new Date().toISOString() };
     try { localStorage.setItem('smartlib_offline_cache', JSON.stringify(snapshot)); } catch { /* Keep the online session usable when browser storage is full. */ }
   }
   function enterOffline() {
     let cache = null;
-    try { if (state.token && localStorage.getItem('smartlib_token') === state.token) cache = JSON.parse(localStorage.getItem('smartlib_offline_cache') || 'null'); } catch { cache = null; }
+    try { if (state.token === COOKIE_SESSION && hasRememberedSession()) cache = JSON.parse(localStorage.getItem('smartlib_offline_cache') || 'null'); } catch { cache = null; }
     if (cache?.user) Object.assign(state, { ...cache, offlineMode: true });
     else if (state.user && state.token) state.offlineMode = true;
     else { renderOffline(); return; }
@@ -226,7 +230,7 @@
       }
     }
     if (action === 'public-home') { window.location.assign('/'); }
-    if (action === 'logout') { window.confirmSignOut(() => { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.token = null; state.user = null; state.digitalId = null; localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; state.authMode = 'login'; renderAuth(); }); }
+    if (action === 'logout') { window.confirmSignOut(() => { api('/auth/logout', { method: 'POST' }).catch(() => {}); state.token = null; state.user = null; state.digitalId = null; localStorage.removeItem('smartlib_web_session_active'); sessionStorage.removeItem('smartlib_web_session_active'); localStorage.removeItem('smartlib_offline_cache'); state.offlineMode = false; state.authMode = 'login'; renderAuth(); }); }
     if (action === 'refresh-borrowings') await renderTab('borrowings');
     if (action === 'refresh-id') { await renderTab('digital-id'); notify('Library ID refreshed.'); }
     if (action === 'copy-id' && state.digitalId?.qr_payload) { try { await navigator.clipboard.writeText(state.digitalId.qr_payload); notify('Digital ID copied.'); } catch { notify(state.digitalId.qr_payload); } }
@@ -250,11 +254,11 @@
           await api('/auth/register/request-otp', { method: 'POST', body: JSON.stringify(payload) });
           state.pendingRegistration = payload; state.authMode = 'register-otp'; renderAuth(); notify('Check your email for the 6-digit code.');
         } else {
-          const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({ username: formData.username, password: formData.password, remember_me: formData.remember_me === 'on' }) });
-          state.token = data.access_token;
+          const data = await api('/auth/login', { method: 'POST', headers: { 'X-SmartLib-Web-Session': '1' }, body: JSON.stringify({ username: formData.username, password: formData.password, remember_me: formData.remember_me === 'on' }) });
+          state.token = COOKIE_SESSION;
           localStorage.removeItem('smartlib_offline_cache');
-          localStorage.removeItem('smartlib_token'); sessionStorage.removeItem('smartlib_token');
-          (formData.remember_me === 'on' ? localStorage : sessionStorage).setItem('smartlib_token', data.access_token);
+          localStorage.removeItem('smartlib_web_session_active'); sessionStorage.removeItem('smartlib_web_session_active');
+          (formData.remember_me === 'on' ? localStorage : sessionStorage).setItem('smartlib_web_session_active', '1');
           state.offlineMode = false; state.tab = 'home'; localStorage.setItem('smartlib_active_tab', 'home'); await startApp();
         }
       } catch (error) { authError(error.message); button.disabled = false; }

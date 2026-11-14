@@ -47,6 +47,8 @@ node_modules/
 
 # Private user content and signing credentials
 uploads/
+backups/
+*.slbk
 *.db-*
 *.sqlite-*
 credentials.json

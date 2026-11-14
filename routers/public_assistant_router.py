@@ -19,7 +19,7 @@ GUIDE = json.loads((Path(__file__).resolve().parent.parent / 'library_guide.json
 
 @router.post('/assistant')
 def ask_public_assistant(req: AssistantRequest, request: Request, db: Session = Depends(get_db)):
-    enforce_rate_limit('public-assistant:' + (request.client.host if request.client else 'unknown'), 20, 3600)
+    enforce_rate_limit('public-assistant:' + (request.client.host if request.client else 'unknown'), 20, 3600, db=db)
     question = req.message.strip()
     if len(question) < 2:
         raise HTTPException(status_code=422, detail='Enter a library question.')

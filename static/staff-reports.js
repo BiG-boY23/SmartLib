@@ -1,7 +1,7 @@
 /* Shared, authenticated reporting and suggestions UI for both staff roles. */
 (() => {
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const headers = () => ({Authorization: `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token') || ''}`, 'Content-Type':'application/json'});
+  const headers = () => ({'Content-Type':'application/json'});
   async function api(path, options={}) {
     const res=await fetch(path,{...options,headers:headers()});
     if(!res.ok) { const data=await res.json().catch(()=>({})); throw new Error(typeof data.detail==='string'?data.detail:'Unable to load library data. Please sign in again or retry.'); }

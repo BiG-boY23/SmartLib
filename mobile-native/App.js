@@ -569,8 +569,8 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
         const password = authMode === 'register' ? form.password : form.new_password;
         const confirmation = authMode === 'register' ? form.confirm_password : form.confirm_new_password;
         if (password !== confirmation) { setAuthError('The password and confirmation do not match.'); return false; }
-        if (password.length < 8 || password.length > 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-          setAuthError('Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.'); return false;
+        if (password.length < 8 || password.length > 64 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+          setAuthError('Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.'); return false;
         }
       }
       if (authMode === 'register') {
@@ -679,8 +679,8 @@ function SmartLibApp({ onSessionEnd, restoreSession }) {
     const { current_password, new_password, confirm_password } = changePasswordForm;
     if (!current_password) { Alert.alert('Current password required', 'Enter your current password to continue.'); return; }
     if (new_password !== confirm_password) { Alert.alert('Passwords do not match', 'Enter the same new password in both fields.'); return; }
-    if (new_password.length < 8 || new_password.length > 12 || !/[a-z]/.test(new_password) || !/[A-Z]/.test(new_password) || !/\d/.test(new_password) || !/[^A-Za-z0-9]/.test(new_password)) {
-      Alert.alert('Password does not meet the policy', 'Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.'); return;
+    if (new_password.length < 8 || new_password.length > 64 || !/[a-z]/.test(new_password) || !/[A-Z]/.test(new_password) || !/\d/.test(new_password) || !/[^A-Za-z0-9]/.test(new_password)) {
+      Alert.alert('Password does not meet the policy', 'Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.'); return;
     }
     setBusy(true);
     try {
@@ -955,7 +955,7 @@ function SelectField({ label, value, options, placeholder, disabled, onSelect })
 }
 
 function PasswordStrengthIndicator({ password }) {
-  const criteria = [password.length >= 8 && password.length <= 12, /[a-z]/.test(password), /[A-Z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)];
+  const criteria = [password.length >= 8 && password.length <= 64, /[a-z]/.test(password), /[A-Z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)];
   const score = criteria.filter(Boolean).length;
   const strong = score === criteria.length;
   const tone = !password ? 'weak' : strong ? 'strong' : score >= 3 ? 'medium' : 'weak';
@@ -1062,17 +1062,17 @@ function AuthScreen({ apiBase, onApiChange, onSubmit, mode, setMode, onRegistrat
             <SelectField label="Department" value={signupOptions.departments.find((item) => item.id === form.department_id)?.name} options={signupOptions.departments} placeholder={signupOptionsLoading ? 'Loading departments…' : signupOptionsError ? 'Could not load departments' : 'Choose your department'} disabled={signupOptionsLoading || !signupOptions.departments.length} onSelect={(item) => { update('department_id', item.id); update('course_id', null); }} />
             {form.account_type !== 'faculty' ? <SelectField label="Course" value={signupOptions.courses.find((item) => item.id === form.course_id)?.name} options={signupOptions.courses.filter((item) => item.department_id === form.department_id)} placeholder={form.department_id ? 'Choose your course' : 'Select a department first'} disabled={signupOptionsLoading || !form.department_id || !signupOptions.courses.some((item) => item.department_id === form.department_id)} onSelect={(item) => update('course_id', item.id)} /> : null}
             {signupOptionsError ? <Pressable accessibilityRole="button" onPress={onRefreshSignupOptions} style={styles.authSwitch}><Text style={styles.authSwitchAction}>Retry loading departments and courses</Text></Pressable> : !signupOptionsLoading && !signupOptions.departments.length ? <Text style={styles.serverHint}>No department options are available yet. Ask the superAdmin to add them in the Admin Portal.</Text> : null}
-            <AuthField label="Password" icon="lock" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–12 characters" autoComplete="new-password" />
+            <AuthField label="Password" icon="lock" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="8–64 characters" autoComplete="new-password" />
             <PasswordStrengthIndicator password={form.password} />
-            <Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text>
+            <Text style={styles.serverHint}>Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.</Text>
             <AuthField label="Confirm password" icon="lock" value={form.confirm_password} onChangeText={(value) => update('confirm_password', value)} secureTextEntry placeholder="Enter the password again" autoComplete="new-password" />
           </> : registerOtp || forgotOtp ? <>
             <AuthField label="6-digit email code" icon="mail" value={form.otp} onChangeText={(value) => update('otp', value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" keyboardType="number-pad" autoComplete="one-time-code" maxLength={6} inputStyle={styles.authCodeInput} />
             <Pressable accessibilityRole="button" disabled={busy} style={styles.authSwitch} onPress={() => submitForm({ ...form, resend_otp: true })}><Text style={styles.authSwitchAction}>Send a new code</Text></Pressable>
           </> : forgot ? <AuthField label="EVSU email" icon="mail" value={form.email} onChangeText={(value) => update('email', value)} placeholder="name@evsu.edu.ph" keyboardType="email-address" autoComplete="email" /> : newPassword ? <>
-            <AuthField label="New password" icon="lock" value={form.new_password} onChangeText={(value) => update('new_password', value)} secureTextEntry placeholder="8–12 characters" autoComplete="new-password" />
+            <AuthField label="New password" icon="lock" value={form.new_password} onChangeText={(value) => update('new_password', value)} secureTextEntry placeholder="8–64 characters" autoComplete="new-password" />
             <AuthField label="Confirm new password" icon="lock" value={form.confirm_new_password} onChangeText={(value) => update('confirm_new_password', value)} secureTextEntry placeholder="Enter it again" autoComplete="new-password" />
-            <Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol.</Text>
+            <Text style={styles.serverHint}>Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.</Text>
           </> : <>
             <AuthField label="Institutional ID or email" icon="user" value={form.username} onChangeText={(value) => update('username', value)} placeholder="Your ID or EVSU email" autoComplete="username" autoCorrect={false} />
             <AuthField label="Password" icon="lock" value={form.password} onChangeText={(value) => update('password', value)} secureTextEntry placeholder="Enter your password" autoComplete="current-password" returnKeyType="go" onSubmitEditing={() => submitForm()} />
@@ -1311,10 +1311,10 @@ function ChangePasswordModal({ visible, value, onChange, onClose, onSubmit, busy
             <Text style={styles.modalTitle}>Change password</Text>
             <Text style={styles.modalSub}>Choose a secure password you have not used before.</Text>
             <Field label="Current password" value={value.current_password} onChangeText={(text) => onChange('current_password', text)} secureTextEntry autoCorrect={false} editable={!busy} placeholder="Enter your current password" />
-            <Field label="New password" value={value.new_password} onChangeText={(text) => onChange('new_password', text)} secureTextEntry autoCorrect={false} maxLength={12} editable={!busy} placeholder="8–12 characters" />
+            <Field label="New password" value={value.new_password} onChangeText={(text) => onChange('new_password', text)} secureTextEntry autoCorrect={false} maxLength={64} editable={!busy} placeholder="8–64 characters" />
             <PasswordStrengthIndicator password={value.new_password} />
-            <Field label="Confirm new password" value={value.confirm_password} onChangeText={(text) => onChange('confirm_password', text)} secureTextEntry autoCorrect={false} maxLength={12} editable={!busy} placeholder="Enter the new password again" />
-            <Text style={styles.serverHint}>Use 8–12 characters with an uppercase letter, lowercase letter, number, and symbol. You’ll be signed out after changing it.</Text>
+            <Field label="Confirm new password" value={value.confirm_password} onChangeText={(text) => onChange('confirm_password', text)} secureTextEntry autoCorrect={false} maxLength={64} editable={!busy} placeholder="Enter the new password again" />
+            <Text style={styles.serverHint}>Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol. You’ll be signed out after changing it.</Text>
             <Button title={busy ? 'Updating…' : 'Update password'} onPress={onSubmit} disabled={busy || !value.current_password || !value.new_password || !value.confirm_password} />
             <Button title="Cancel" secondary onPress={onClose} disabled={busy} style={styles.modalCancel} />
           </ScrollView>

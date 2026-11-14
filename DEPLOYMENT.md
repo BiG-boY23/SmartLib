@@ -99,7 +99,7 @@ provider's rules); port 25 is blocked for all Render services. See
    `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `SMTP_HOST`, `SMTP_FROM`,
    `SMTP_USERNAME` and `SMTP_PASSWORD`. Use your real email-provider settings and
    newly rotated credentials. The SuperAdmin password must follow the current
-   app policy: 8–12 characters with uppercase, lowercase, a number and a symbol.
+   app policy: 8–64 characters with uppercase, lowercase, a number and a symbol.
    The Blueprint sets port 587, STARTTLS on and SSL off; change these in the
    Blueprint if your provider requires different settings.
 5. Click **Deploy Blueprint** (some dashboard versions label this **Apply**).
@@ -118,19 +118,38 @@ Blueprint; enter secrets in the Render form/Environment page, not in source file
 | `SMARTLIB_ENV` | `production` (Blueprint default) |
 | `PUBLIC_BASE_URL` | Automatically mapped to this service's `RENDER_EXTERNAL_URL` |
 | `SMARTLIB_SECRET_KEY` | Random, at least 32 characters; Blueprint generates it |
+| `SMARTLIB_MFA_ENCRYPTION_KEY` | Separate random secret; Blueprint generates it; keep it backed up |
 | `DATABASE_URL` | `sqlite:////var/data/library.db` (Blueprint default) |
 | `SMARTLIB_UPLOAD_DIR` | `/var/data/uploads` (Blueprint default) |
+| `SMARTLIB_BACKUP_ENABLED` | `false` in the Blueprint; enable only after the remaining backup values are configured |
+| `SMARTLIB_BACKUP_DIR` | `/var/data/backups` (mounted persistent disk; retry staging only) |
+| `SMARTLIB_BACKUP_INTERVAL_HOURS` | Optional, defaults to `24` |
+| `SMARTLIB_BACKUP_RETENTION_DAYS` | Required approved retention period before enabling scheduled cleanup |
+| `SMARTLIB_BACKUP_S3_BUCKET`, `SMARTLIB_BACKUP_S3_REGION` | Private S3-compatible backup destination |
+| `SMARTLIB_BACKUP_S3_ACCESS_KEY_ID`, `SMARTLIB_BACKUP_S3_SECRET_ACCESS_KEY` | Restricted object-storage credentials; store as Render secrets |
+| `SMARTLIB_BACKUP_S3_ENDPOINT_URL` | Optional HTTPS endpoint for a non-AWS S3-compatible provider |
+| `SMARTLIB_BACKUP_S3_PREFIX` | Optional; defaults to `smartlib` |
+| `SMARTLIB_BACKUP_ENCRYPTION_KEY` | Separate random secret, at least 32 characters; back it up securely outside Render |
 | `SMARTLIB_SEED_DEMO` | `false` |
 | `REQUIRE_HTTPS` | `true` |
 | `FORWARDED_ALLOW_IPS` | `*` only behind the managed platform's private ingress |
 | `BOOTSTRAP_ADMIN_USERNAME` | New institutional staff ID for the first SuperAdmin |
 | `BOOTSTRAP_ADMIN_EMAIL` | Actual staff email |
-| `BOOTSTRAP_ADMIN_PASSWORD` | Unique 8–12 character password with uppercase, lowercase, number, symbol |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Unique 8–64 character password with uppercase, lowercase, number, symbol |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` | Mail provider and verified sender; port usually `587` |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | New provider credentials stored as secrets |
 | `SMTP_STARTTLS`, `SMTP_USE_SSL` | Match the provider, usually `true` / `false` for port 587 |
 | `CORS_ALLOWED_ORIGINS` | Leave blank for same-origin web pages and native apps |
 | `OPENAI_API_KEY` | Optional replacement server-only key; local assistant works without it |
+
+Production staff MFA is mandatory. On a Librarian/Admin/SuperAdmin's first sign-in,
+the portal displays a QR code for an authenticator app and ten one-time recovery
+codes. The user must confirm a current code before the dashboard opens. Staff
+browser sessions use an HttpOnly, Secure, SameSite=Strict cookie, expire after
+15 minutes idle or 12 hours, and do not use “Remember me.” Patron web sessions
+also use HttpOnly cookies; native app sessions continue using OS secure storage.
+No paid MFA provider is required. Test local enrollment by setting
+`SMARTLIB_REQUIRE_STAFF_MFA=true` in the local environment and restarting FastAPI.
 
 6. Open the service's assigned `https://…onrender.com` URL, then open `/ready`.
    The readiness endpoint should show `{"status":"ready"}`. Startup initializes
@@ -146,12 +165,26 @@ Blueprint; enter secrets in the Render form/Environment page, not in source file
    test accounts. `/ready` checks the database; it does not verify SMTP delivery.
    Platform health probes may use HTTP on the private network; user-facing
    traffic is redirected to HTTPS.
-8. Set up backups before inviting testers. Back up both SQLite and uploads,
-   retain copies outside the service, and rehearse a restore. Stop writes or use
-   SQLite's backup API when copying an active database. A persistent volume alone
-   is not a tested backup. Monitor disk usage and mail failures. An old database
-   with duplicate active copy loans must be reconciled before the new unique
-   index can be installed; startup does not silently discard such records.
+8. Set up backups before inviting testers. Provision a private S3-compatible
+   bucket and choose an approved retention period. Add the backup variables in
+   the table above to Render **Environment**; for AWS S3, leave the endpoint URL
+   blank. Use a storage identity scoped to this app's backup prefix, and store
+   the separate backup encryption key somewhere recoverable outside Render.
+   Only after all values are present, change `SMARTLIB_BACKUP_ENABLED` to
+   `true`. The one web service checks hourly and creates a backup as soon as one
+   is due; no separate Render Cron service is needed. It verifies that each
+   archive can be decrypted/staged and checks the database snapshot before
+   upload, confirms remote size/hash, then removes expired copies according to
+   the configured retention. Failed uploads stay on the mounted disk for retry.
+   Confirm successful backup entries in logs and objects in the bucket.
+   Rehearse an actual recovery to a fresh database and uploads directory before
+   relying on it: `python -m scripts.remote_backup list`, then
+   `python -m scripts.remote_backup download <object-key> <new-file.slbk>`, then
+   `python -m scripts.restore_backup <new-file.slbk> <new-empty-directory>`.
+   The final restore/switchover is an operator action; these tools never replace
+   production data automatically. Monitor disk usage and mail failures. An old
+   database with duplicate active copy loans must be reconciled before the new
+   unique index can be installed; startup does not silently discard such records.
 9. In the linked Expo project, open **Environment variables** and set
    `EXPO_PUBLIC_API_BASE_URL` to the verified Render HTTPS origin for **preview**
    with plain-text visibility. Add it separately to **production** before store

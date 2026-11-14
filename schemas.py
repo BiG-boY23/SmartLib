@@ -7,10 +7,15 @@ from models import UserRole, BorrowStatus
 
 
 class Token(BaseModel):
-    access_token: str
-    token_type: str
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
     role: str
     username: str
+    mfa_required: bool = False
+    mfa_setup_required: bool = False
+    challenge_token: Optional[str] = None
+    setup_token: Optional[str] = None
+    recovery_codes: Optional[List[str]] = None
 
 
 class TokenData(BaseModel):
@@ -19,15 +24,30 @@ class TokenData(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+    remember_me: bool = False
+
+
+class MfaSetupRequest(BaseModel):
+    setup_token: str = Field(min_length=20, max_length=2000)
+
+
+class MfaCodeRequest(BaseModel):
+    setup_token: str = Field(min_length=20, max_length=2000)
+    code: str = Field(min_length=6, max_length=64)
+
+
+class MfaLoginRequest(BaseModel):
+    challenge_token: str = Field(min_length=20, max_length=2000)
+    code: str = Field(min_length=6, max_length=64)
 
 
 class RegisterRequest(BaseModel):
     username: str
     email: EmailStr
-    password: str = Field(min_length=8, max_length=12)
-    confirm_password: str = Field(min_length=8, max_length=12)
+    password: str = Field(min_length=8, max_length=64)
+    confirm_password: str = Field(min_length=8, max_length=64)
     first_name: str = Field(min_length=1, max_length=80)
     middle_name: Optional[str] = Field(default=None, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
@@ -71,8 +91,8 @@ class EmailActionRequest(BaseModel):
 
 
 def validate_password_policy(password: str) -> None:
-    if len(password) < 8 or len(password) > 12:
-        raise ValueError("Password must be 8 to 12 characters long")
+    if len(password) < 8 or len(password) > 64:
+        raise ValueError("Password must be 8 to 64 characters long")
     if not any(char.islower() for char in password):
         raise ValueError("Password must include a lowercase letter")
     if not any(char.isupper() for char in password):
@@ -92,8 +112,8 @@ class PasswordResetOtpRequest(BaseModel):
 
 
 class PasswordResetComplete(EmailActionRequest):
-    new_password: str = Field(min_length=8, max_length=12)
-    confirm_new_password: str = Field(min_length=8, max_length=12)
+    new_password: str = Field(min_length=8, max_length=64)
+    confirm_new_password: str = Field(min_length=8, max_length=64)
 
     @model_validator(mode="after")
     def password_within_bcrypt_limit(self):

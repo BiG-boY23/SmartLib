@@ -33,6 +33,8 @@ def validate_production_settings():
     errors = []
     if len(os.getenv("SMARTLIB_SECRET_KEY", "")) < 32:
         errors.append("SMARTLIB_SECRET_KEY must be a random secret of at least 32 characters")
+    if len(os.getenv("SMARTLIB_MFA_ENCRYPTION_KEY", "")) < 32:
+        errors.append("SMARTLIB_MFA_ENCRYPTION_KEY must be a separate random secret of at least 32 characters")
     base = os.getenv("PUBLIC_BASE_URL", "")
     if not public_https_url(base):
         errors.append("PUBLIC_BASE_URL must be the real public HTTPS URL")

@@ -7,7 +7,7 @@ def main():
     # Render and Railway may mount volumes as root. Start this initializer as
     # root so it can prepare the known data directories before dropping privileges.
     if os.geteuid() == 0:
-        for path in (Path("/var/data"), Path("/var/data/uploads"),
+        for path in (Path("/var/data"), Path("/var/data/uploads"), Path("/var/data/backups"),
                      Path("/var/data/uploads/book-covers"), Path("/var/data/uploads/profile-photos")):
             path.mkdir(parents=True, exist_ok=True)
             os.chown(path, 10001, 10001)

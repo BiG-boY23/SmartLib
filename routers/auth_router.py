@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
+import hmac
 import hashlib
+import json
 import logging
 import secrets
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
@@ -18,11 +20,14 @@ from email_service import (
     public_base_url,
     send_email,
 )
-from models import EmailActionToken, PendingRegistration, SignupOption, User, UserRole, UserSession
+from models import EmailActionToken, MfaChallenge, PendingRegistration, SignupOption, User, UserRole, UserSession
 from rate_limits import enforce_rate_limit
 from schemas import (
     EmailActionRequest,
     EmailAddressRequest,
+    MfaCodeRequest,
+    MfaLoginRequest,
+    MfaSetupRequest,
     PasswordChangeRequest,
     PasswordResetComplete,
     PasswordResetOtpRequest,
@@ -43,7 +48,19 @@ from security import (
     get_password_hash,
     get_session_id,
     oauth2_scheme,
+    WEB_SESSION_COOKIE,
+    staff_mfa_required,
+    get_token_payload,
     verify_password,
+)
+from mfa_security import (
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    hash_recovery_code,
+    matching_totp_counter,
+    new_recovery_codes,
+    new_totp_secret,
+    provisioning_qr,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -117,8 +134,103 @@ def _send_otp(email: str, purpose: str, otp: str) -> None:
     )
 
 
+_STAFF_ROLES = {UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.LIBRARIAN}
+_MFA_CHALLENGE_MINUTES = 10
+_MFA_MAX_ATTEMPTS = 5
+
+
+def _new_mfa_challenge(db: Session, user: User, purpose: str, remember_me: bool = False) -> str:
+    now = datetime.utcnow()
+    challenge_id = secrets.token_urlsafe(32)
+    expires_at = now + timedelta(minutes=_MFA_CHALLENGE_MINUTES)
+    db.add(MfaChallenge(
+        challenge_id=challenge_id,
+        user_id=user.id,
+        purpose=purpose,
+        created_at=now,
+        expires_at=expires_at,
+        remember_me=remember_me,
+    ))
+    db.commit()
+    return create_access_token(
+        {"sub": user.username, "cid": challenge_id, "purpose": f"mfa_{purpose}"},
+        expires_delta=timedelta(minutes=_MFA_CHALLENGE_MINUTES),
+    )
+
+
+def _load_mfa_challenge(token: str, purpose: str, db: Session) -> tuple[MfaChallenge, User]:
+    payload = get_token_payload(token)
+    challenge_id = payload.get("cid")
+    if payload.get("purpose") != f"mfa_{purpose}" or not challenge_id:
+        raise HTTPException(status_code=401, detail="MFA challenge expired. Sign in again.")
+    challenge = db.query(MfaChallenge).filter(MfaChallenge.challenge_id == challenge_id).with_for_update().first()
+    now = datetime.utcnow()
+    if (not challenge or challenge.purpose != purpose or challenge.consumed_at or
+            challenge.expires_at <= now or challenge.attempts >= _MFA_MAX_ATTEMPTS):
+        raise HTTPException(status_code=401, detail="MFA challenge expired. Sign in again.")
+    user = db.query(User).filter(User.id == challenge.user_id).first()
+    if (not user or not user.is_active or user.role not in _STAFF_ROLES or
+            user.username != payload.get("sub")):
+        raise HTTPException(status_code=401, detail="MFA challenge expired. Sign in again.")
+    return challenge, user
+
+
+def _failed_mfa_attempt(challenge: MfaChallenge, db: Session, message: str = "Invalid verification code."):
+    challenge.attempts += 1
+    if challenge.attempts >= _MFA_MAX_ATTEMPTS:
+        challenge.consumed_at = datetime.utcnow()
+    db.commit()
+    user = db.query(User).filter(User.id == challenge.user_id).first()
+    if user:
+        crud.log_audit(db, user.username, "Staff MFA Verification Failed", "Rejected")
+    raise HTTPException(status_code=401, detail=message)
+
+
+def _issue_session(user: User, request: Request, response: Response, db: Session, remember_me: bool = False) -> dict:
+    is_staff = user.role in _STAFF_ROLES
+    # Staff always use a bounded work-session, even if a browser sent remember_me.
+    remember_me = bool(remember_me and not is_staff)
+    lifetime = timedelta(days=REMEMBERED_SESSION_ABSOLUTE_DAYS) if remember_me else timedelta(hours=SESSION_ABSOLUTE_HOURS)
+    now = datetime.utcnow()
+    session_id = secrets.token_urlsafe(32)
+    db.add(UserSession(
+        session_id=session_id,
+        user_id=user.id,
+        created_at=now,
+        last_activity_at=now,
+        expires_at=now + lifetime,
+        remember_me=remember_me,
+    ))
+    db.commit()
+    access_token = create_access_token(
+        data={"sub": user.username, "role": user.role.value, "sid": session_id},
+        expires_delta=lifetime,
+    )
+    web_client = request.headers.get("x-smartlib-web-session") == "1"
+    if web_client:
+        response.set_cookie(
+            key=WEB_SESSION_COOKIE,
+            value=access_token,
+            max_age=int(lifetime.total_seconds()) if (remember_me or is_staff) else None,
+            httponly=True,
+            secure=request.url.scheme == "https" or staff_mfa_required(),
+            samesite="strict",
+            path="/",
+        )
+        response_access_token = None
+    else:
+        response_access_token = access_token
+    crud.log_audit(db, user.username, f"User Authentication Passed ({user.role.value})", "Authorized")
+    return {
+        "access_token": response_access_token,
+        "token_type": "bearer",
+        "role": user.role.value,
+        "username": user.username,
+    }
+
+
 @router.post("/login", response_model=Token)
-async def login(request: Request, db: Session = Depends(get_db)):
+async def login(request: Request, response: Response, db: Session = Depends(get_db)):
     username = ""
     password = ""
     remember_me = False
@@ -137,15 +249,19 @@ async def login(request: Request, db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    enforce_rate_limit(f"login-ip:{_ip(request)}", 30, 15 * 60)
-    enforce_rate_limit(f"login-account:{username.casefold()}", 10, 15 * 60)
+    enforce_rate_limit(f"login-ip:{_ip(request)}", 30, 15 * 60, db=db)
+    enforce_rate_limit(f"login-account:{username.casefold()}", 10, 15 * 60, db=db)
     if not username or not password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and password are required")
+    if len(username) > 254 or len(password) > 128:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credentials are too long")
 
     user = crud.get_user_by_username(db, username=username)
     if not user:
         user = crud.get_user_by_email(db, email=username.casefold())
     if not user or not verify_password(password, user.hashed_password):
+        audited_name = user.username if user else f"unknown:{hashlib.sha256(username.casefold().encode('utf-8')).hexdigest()[:16]}"
+        crud.log_audit(db, audited_name, "User Authentication Failed", "Rejected")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username/email or password",
@@ -158,28 +274,109 @@ async def login(request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is suspended. Please contact the Library Administrator.",
         )
+    if not user.hashed_password.startswith("bcrypt-sha256$"):
+        user.hashed_password = get_password_hash(password)
+        db.commit()
 
-    now = datetime.utcnow()
-    lifetime = timedelta(days=REMEMBERED_SESSION_ABSOLUTE_DAYS) if remember_me else timedelta(hours=SESSION_ABSOLUTE_HOURS)
-    session_id = secrets.token_urlsafe(32)
-    db.add(
-        UserSession(
-            session_id=session_id,
-            user_id=user.id,
-            created_at=now,
-            last_activity_at=now,
-            expires_at=now + lifetime,
-            remember_me=remember_me,
-        )
-    )
+    if user.role in _STAFF_ROLES and staff_mfa_required():
+        if user.mfa_enabled:
+            if not user.mfa_secret_enc:
+                logger.error("Staff MFA secret missing for user id %s", user.id)
+                raise HTTPException(status_code=503, detail="Staff MFA configuration needs administrator attention.")
+            response.delete_cookie(WEB_SESSION_COOKIE, path="/", httponly=True, samesite="strict")
+            challenge_token = _new_mfa_challenge(db, user, "login")
+            return {"role": user.role.value, "username": user.username, "mfa_required": True,
+                    "challenge_token": challenge_token}
+        response.delete_cookie(WEB_SESSION_COOKIE, path="/", httponly=True, samesite="strict")
+        setup_token = _new_mfa_challenge(db, user, "setup")
+        return {"role": user.role.value, "username": user.username, "mfa_setup_required": True,
+                "setup_token": setup_token}
+
+    return _issue_session(user, request, response, db, remember_me)
+
+
+@router.post("/mfa/setup")
+def begin_mfa_setup(req: MfaSetupRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_rate_limit(f"mfa-setup-ip:{_ip(request)}", 20, 15 * 60, db=db)
+    challenge, user = _load_mfa_challenge(req.setup_token, "setup", db)
+    if user.mfa_enabled:
+        raise HTTPException(status_code=409, detail="MFA is already enabled. Sign in again.")
+    secret = new_totp_secret()
+    challenge.pending_secret_enc = encrypt_totp_secret(secret)
     db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"qr_code": provisioning_qr(secret, user.email), "manual_key": secret,
+            "expires_in_seconds": _MFA_CHALLENGE_MINUTES * 60}
 
-    access_token = create_access_token(
-        data={"sub": user.username, "role": user.role.value, "sid": session_id},
-        expires_delta=lifetime,
+
+@router.post("/mfa/enable", response_model=Token)
+def enable_mfa(req: MfaCodeRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_rate_limit(f"mfa-setup-ip:{_ip(request)}", 20, 15 * 60, db=db)
+    challenge, user = _load_mfa_challenge(req.setup_token, "setup", db)
+    if not challenge.pending_secret_enc:
+        raise HTTPException(status_code=400, detail="Start MFA setup again before verifying the code.")
+    try:
+        secret = decrypt_totp_secret(challenge.pending_secret_enc)
+    except ValueError:
+        logger.exception("Unable to decrypt pending staff MFA secret for user id %s", user.id)
+        raise HTTPException(status_code=503, detail="MFA setup is unavailable. Contact the system administrator.")
+    counter = matching_totp_counter(secret, req.code)
+    if counter is None:
+        _failed_mfa_attempt(challenge, db)
+    codes = new_recovery_codes()
+    user.mfa_enabled = True
+    user.mfa_secret_enc = challenge.pending_secret_enc
+    user.mfa_recovery_hashes = json.dumps([hash_recovery_code(code) for code in codes])
+    user.mfa_last_counter = counter
+    # Enrollment invalidates every old bearer token and browser session.
+    db.query(UserSession).filter(UserSession.user_id == user.id, UserSession.revoked_at.is_(None)).update(
+        {UserSession.revoked_at: datetime.utcnow()}, synchronize_session=False
     )
-    crud.log_audit(db, user.username, f"User Authentication Passed ({user.role.value})", "Authorized")
-    return {"access_token": access_token, "token_type": "bearer", "role": user.role.value, "username": user.username}
+    challenge.pending_secret_enc = None
+    challenge.consumed_at = datetime.utcnow()
+    db.commit()
+    crud.log_audit(db, user.username, "Staff MFA Enabled", "Authorized")
+    result = _issue_session(user, request, response, db)
+    result["recovery_codes"] = codes
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@router.post("/mfa/verify", response_model=Token)
+def verify_mfa_login(req: MfaLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    enforce_rate_limit(f"mfa-login-ip:{_ip(request)}", 20, 15 * 60, db=db)
+    challenge, user = _load_mfa_challenge(req.challenge_token, "login", db)
+    if not user.mfa_enabled or not user.mfa_secret_enc:
+        raise HTTPException(status_code=403, detail="MFA setup is required. Sign in again to configure it.")
+    try:
+        secret = decrypt_totp_secret(user.mfa_secret_enc)
+    except ValueError:
+        logger.exception("Unable to decrypt staff MFA secret for user id %s", user.id)
+        raise HTTPException(status_code=503, detail="Staff MFA is unavailable. Contact the system administrator.")
+
+    counter = matching_totp_counter(secret, req.code)
+    recovery_hashes = json.loads(user.mfa_recovery_hashes or "[]")
+    recovery_index = None
+    if counter is not None and user.mfa_last_counter is not None and counter <= user.mfa_last_counter:
+        counter = None
+    if counter is None and len(req.code.strip()) > 6:
+        submitted_hash = hash_recovery_code(req.code)
+        for index, stored_hash in enumerate(recovery_hashes):
+            if hmac.compare_digest(stored_hash, submitted_hash):
+                recovery_index = index
+                break
+    if counter is None and recovery_index is None:
+        _failed_mfa_attempt(challenge, db)
+
+    if recovery_index is not None:
+        recovery_hashes.pop(recovery_index)
+        user.mfa_recovery_hashes = json.dumps(recovery_hashes)
+        crud.log_audit(db, user.username, "Staff MFA Recovery Code Used", "Authorized")
+    else:
+        user.mfa_last_counter = counter
+    challenge.consumed_at = datetime.utcnow()
+    db.commit()
+    return _issue_session(user, request, response, db, challenge.remember_me)
 
 
 @router.post("/register", status_code=status.HTTP_202_ACCEPTED)
@@ -210,7 +407,7 @@ def get_signup_options(db: Session = Depends(get_db)):
 def request_registration_otp(req: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     if req.account_type not in (UserRole.STUDENT, UserRole.FACULTY):
         raise HTTPException(status_code=403, detail="Staff accounts must be provisioned by a SuperAdmin")
-    enforce_rate_limit(f"register-otp-ip:{_ip(request)}", 5, 60 * 60)
+    enforce_rate_limit(f"register-otp-ip:{_ip(request)}", 5, 60 * 60, db=db)
     email = str(req.email).strip().casefold()
     username = req.username.strip()
     if crud.get_user_by_username(db, username=username):
@@ -270,7 +467,7 @@ def request_registration_otp(req: RegisterRequest, request: Request, db: Session
 @router.post("/register/verify-otp", status_code=status.HTTP_201_CREATED)
 def verify_registration_otp(req: RegistrationOtpRequest, request: Request, db: Session = Depends(get_db)):
     email = str(req.email).strip().casefold()
-    enforce_rate_limit(f"register-verify-ip:{_ip(request)}", 10, 15 * 60)
+    enforce_rate_limit(f"register-verify-ip:{_ip(request)}", 10, 15 * 60, db=db)
     pending = db.query(PendingRegistration).filter(PendingRegistration.email == email).first()
     now = datetime.utcnow()
     if not pending or pending.expires_at <= now or pending.attempts >= 5:
@@ -331,8 +528,8 @@ def verify_email(req: EmailActionRequest, db: Session = Depends(get_db)):
 def resend_verification(req: EmailAddressRequest, request: Request, db: Session = Depends(get_db)):
     email = str(req.email).strip().casefold()
     email_key = hashlib.sha256(email.encode("utf-8")).hexdigest()
-    enforce_rate_limit(f"resend-verification-ip:{_ip(request)}", 5, 60 * 60)
-    enforce_rate_limit(f"resend-verification-email:{email_key}", 3, 60 * 60)
+    enforce_rate_limit(f"resend-verification-ip:{_ip(request)}", 5, 60 * 60, db=db)
+    enforce_rate_limit(f"resend-verification-email:{email_key}", 3, 60 * 60, db=db)
     try:
         ensure_email_configured()
     except EmailConfigurationError:
@@ -355,8 +552,8 @@ def resend_verification(req: EmailAddressRequest, request: Request, db: Session 
 def request_password_reset_otp(req: EmailAddressRequest, request: Request, db: Session = Depends(get_db)):
     email = str(req.email).strip().casefold()
     email_key = hashlib.sha256(email.encode("utf-8")).hexdigest()
-    enforce_rate_limit(f"reset-otp-ip:{_ip(request)}", 5, 15 * 60)
-    enforce_rate_limit(f"reset-otp-email:{email_key}", 3, 60 * 60)
+    enforce_rate_limit(f"reset-otp-ip:{_ip(request)}", 5, 15 * 60, db=db)
+    enforce_rate_limit(f"reset-otp-email:{email_key}", 3, 60 * 60, db=db)
     try:
         ensure_smtp_configured()
     except EmailConfigurationError:
@@ -392,8 +589,8 @@ def request_password_reset_otp(req: EmailAddressRequest, request: Request, db: S
 def verify_password_reset_otp(req: PasswordResetOtpRequest, request: Request, db: Session = Depends(get_db)):
     email = str(req.email).strip().casefold()
     email_key = hashlib.sha256(email.encode("utf-8")).hexdigest()
-    enforce_rate_limit(f"reset-verify-ip:{_ip(request)}", 10, 15 * 60)
-    enforce_rate_limit(f"reset-verify-email:{email_key}", 8, 15 * 60)
+    enforce_rate_limit(f"reset-verify-ip:{_ip(request)}", 10, 15 * 60, db=db)
+    enforce_rate_limit(f"reset-verify-email:{email_key}", 8, 15 * 60, db=db)
     user = crud.get_user_by_email(db, email=email)
     action = db.query(EmailActionToken).filter(
         EmailActionToken.token_hash == (_hash_action_token(f"{user.id}:{req.otp}") if user else ""),
@@ -465,15 +662,21 @@ def reset_password(req: PasswordResetComplete, db: Session = Depends(get_db)):
 
 @router.post("/logout")
 def logout(
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
-    token: str = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    token = token or request.cookies.get(WEB_SESSION_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="Sign in required")
     session_id = get_session_id(token)
     auth_session = db.query(UserSession).filter(UserSession.session_id == session_id).first()
     if auth_session and auth_session.user_id == current_user.id and not auth_session.revoked_at:
         auth_session.revoked_at = datetime.utcnow()
         db.commit()
+    response.delete_cookie(WEB_SESSION_COOKIE, path="/", httponly=True, samesite="strict")
     return {"message": "Signed out."}
 
 

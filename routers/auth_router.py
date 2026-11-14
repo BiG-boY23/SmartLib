@@ -586,7 +586,8 @@ def request_password_reset_otp(req: EmailAddressRequest, request: Request, db: S
 
 
 @router.post("/forgot-password/verify-otp")
-def verify_password_reset_otp(req: PasswordResetOtpRequest, request: Request, db: Session = Depends(get_db)):
+def verify_password_reset_otp(req: PasswordResetOtpRequest, request: Request, response: Response,
+                              db: Session = Depends(get_db)):
     email = str(req.email).strip().casefold()
     email_key = hashlib.sha256(email.encode("utf-8")).hexdigest()
     enforce_rate_limit(f"reset-verify-ip:{_ip(request)}", 10, 15 * 60, db=db)
@@ -609,6 +610,7 @@ def verify_password_reset_otp(req: PasswordResetOtpRequest, request: Request, db
         expires_at=datetime.utcnow() + timedelta(minutes=10),
     ))
     db.commit()
+    response.headers["Cache-Control"] = "no-store"
     return {"reset_token": reset_token, "message": "Email verified. Choose a new password."}
 
 

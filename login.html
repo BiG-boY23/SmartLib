@@ -147,6 +147,24 @@
     .login-result-card p { color: var(--text-muted); font-size: 14px; line-height: 1.55; margin-bottom: 23px; overflow-wrap: anywhere; }
     .login-result-card button { width: 100%; padding: 12px 18px; border: 0; border-radius: 10px; background: var(--evsu-maroon); color: white; font: inherit; font-weight: 700; cursor: pointer; }
 
+    .recovery-overlay { position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:18px; background:rgba(3,5,9,.78); backdrop-filter:blur(5px); }
+    .recovery-overlay[hidden] { display:none; }
+    .recovery-dialog { width:min(100%,460px); max-height:min(90vh,760px); overflow:auto; padding:26px; border:1px solid var(--border); border-radius:18px; background:var(--bg-card); box-shadow:0 24px 80px rgba(0,0,0,.6); }
+    .recovery-dialog-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:8px; }
+    .recovery-dialog h2 { font-size:21px; line-height:1.25; }
+    .recovery-dialog-intro { margin:0 0 20px; color:var(--text-muted); font-size:13px; line-height:1.55; }
+    .recovery-close { flex:none; width:34px; height:34px; border:1px solid var(--border); border-radius:8px; color:var(--text-muted); background:transparent; font-size:18px; cursor:pointer; }
+    .recovery-close:hover { border-color:var(--evsu-gold); color:var(--evsu-gold-light); }
+    .recovery-message { display:none; margin:0 0 16px; padding:11px 13px; border-radius:9px; font-size:13px; line-height:1.5; }
+    .recovery-message.show { display:block; }
+    .recovery-message.error { color:var(--danger-text); background:var(--danger-bg); border:1px solid var(--danger-border); }
+    .recovery-message.info { color:var(--evsu-gold-light); background:rgba(212,175,55,.09); border:1px solid var(--border-gold); }
+    .recovery-dialog .form-group { margin-bottom:16px; }
+    .recovery-dialog .btn-submit { margin-top:18px; }
+    .recovery-dialog .recovery-secondary { width:100%; margin-top:10px; padding:10px 14px; border:1px solid var(--border); border-radius:9px; color:var(--text-muted); background:transparent; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+    .recovery-dialog .recovery-secondary:hover { color:var(--text-main); border-color:var(--evsu-gold); }
+    .recovery-dialog [hidden] { display:none!important; }
+
     /* Form Inputs */
     .form-group {
       margin-bottom: 20px;
@@ -357,9 +375,68 @@
     </section>
   </div>
 
+  <div id="passwordResetOverlay" class="recovery-overlay" hidden>
+    <section class="recovery-dialog" role="dialog" aria-modal="true" aria-labelledby="passwordResetTitle" aria-describedby="passwordResetIntro">
+      <div class="recovery-dialog-header">
+        <h2 id="passwordResetTitle">Reset your staff password</h2>
+        <button type="button" id="passwordResetClose" class="recovery-close" aria-label="Close password reset">&times;</button>
+      </div>
+      <p id="passwordResetIntro" class="recovery-dialog-intro">We’ll send a verification code to the email address on your SmartLib account.</p>
+      <p id="passwordResetMessage" class="recovery-message" role="status" aria-live="polite"></p>
+
+      <form id="passwordResetEmailStep">
+        <div class="form-group">
+          <label class="form-label" for="resetEmail">SmartLib account email</label>
+          <div class="input-wrapper">
+            <input type="email" id="resetEmail" class="form-input" placeholder="name@evsu.edu.ph" autocomplete="email" required maxlength="254">
+            <i class="fas fa-envelope input-icon" aria-hidden="true"></i>
+          </div>
+        </div>
+        <button type="submit" id="resetSendCode" class="btn-submit">Send verification code</button>
+      </form>
+
+      <form id="passwordResetOtpStep" hidden>
+        <div class="form-group">
+          <label class="form-label" for="resetOtp">Six-digit email code</label>
+          <div class="input-wrapper">
+            <input type="text" id="resetOtp" class="form-input" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter the code" pattern="[0-9]{6}" maxlength="6" required>
+            <i class="fas fa-key input-icon" aria-hidden="true"></i>
+          </div>
+        </div>
+        <button type="submit" id="resetVerifyCode" class="btn-submit">Verify code</button>
+        <button type="button" id="resetChangeEmail" class="recovery-secondary">Use a different email</button>
+      </form>
+
+      <form id="passwordResetPasswordStep" hidden>
+        <div class="form-group">
+          <label class="form-label" for="resetNewPassword">New password</label>
+          <div class="input-wrapper">
+            <input type="password" id="resetNewPassword" class="form-input" autocomplete="new-password" placeholder="Create a new password" required minlength="8" maxlength="64">
+            <i class="fas fa-lock input-icon" aria-hidden="true"></i>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="resetConfirmPassword">Confirm new password</label>
+          <div class="input-wrapper">
+            <input type="password" id="resetConfirmPassword" class="form-input" autocomplete="new-password" placeholder="Enter it again" required minlength="8" maxlength="64">
+            <i class="fas fa-lock input-icon" aria-hidden="true"></i>
+          </div>
+        </div>
+        <p class="recovery-dialog-intro">Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.</p>
+        <button type="submit" id="resetSavePassword" class="btn-submit">Save new password</button>
+      </form>
+
+      <div id="passwordResetDoneStep" hidden>
+        <p class="recovery-dialog-intro">Your password has been changed. Sign in using your new password, then complete staff authenticator verification if prompted.</p>
+        <button type="button" id="passwordResetDone" class="btn-submit">Return to sign in</button>
+      </div>
+    </section>
+  </div>
+
   <script>
     let pendingMfa = null;
     let pendingDashboardPath = '';
+    let passwordResetToken = '';
 
     function togglePasswordField(inputId, button) {
       const input = document.getElementById(inputId);
@@ -574,21 +651,151 @@
       document.getElementById('username').focus();
     }
 
-    async function forgotPassword() {
-      const email = prompt('Enter the email address on your SmartLib account:');
-      if (!email || !email.trim()) return;
+    function setPasswordResetStep(step) {
+      document.getElementById('passwordResetEmailStep').hidden = step !== 'email';
+      document.getElementById('passwordResetOtpStep').hidden = step !== 'otp';
+      document.getElementById('passwordResetPasswordStep').hidden = step !== 'password';
+      document.getElementById('passwordResetDoneStep').hidden = step !== 'done';
+      const focusIds = { email: 'resetEmail', otp: 'resetOtp', password: 'resetNewPassword', done: 'passwordResetDone' };
+      document.getElementById(focusIds[step])?.focus();
+    }
+
+    function setPasswordResetMessage(message, type = 'info') {
+      const box = document.getElementById('passwordResetMessage');
+      box.textContent = message || '';
+      box.className = `recovery-message${message ? ` show ${type}` : ''}`;
+      box.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    }
+
+    function setPasswordResetBusy(form, busy, label) {
+      const button = form.querySelector('button[type="submit"]');
+      if (!button.dataset.originalText) button.dataset.originalText = button.textContent.trim();
+      button.disabled = busy;
+      button.textContent = busy ? label : button.dataset.originalText;
+    }
+
+    function openPasswordReset() {
+      const overlay = document.getElementById('passwordResetOverlay');
+      const username = document.getElementById('username').value.trim();
+      document.getElementById('passwordResetIntro').textContent = 'We’ll send a verification code to the email address on your SmartLib account.';
+      document.getElementById('resetEmail').value = username.includes('@') ? username : '';
+      document.getElementById('resetOtp').value = '';
+      document.getElementById('resetNewPassword').value = '';
+      document.getElementById('resetConfirmPassword').value = '';
+      passwordResetToken = '';
+      setPasswordResetMessage('');
+      overlay.hidden = false;
+      setPasswordResetStep('email');
+    }
+
+    function closePasswordReset() {
+      document.getElementById('passwordResetOverlay').hidden = true;
+      passwordResetToken = '';
+      document.getElementById('resetOtp').value = '';
+      document.getElementById('resetNewPassword').value = '';
+      document.getElementById('resetConfirmPassword').value = '';
+      document.getElementById('username').focus();
+    }
+
+    async function submitPasswordResetEmail(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const email = document.getElementById('resetEmail').value.trim();
+      setPasswordResetMessage('');
+      setPasswordResetBusy(form, true, 'Sending code…');
       try {
-        const response = await fetch('/auth/forgot-password', {
+        const response = await fetch('/auth/forgot-password/request-otp', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email.trim() })
+          body: JSON.stringify({ email })
         });
         const data = await response.json().catch(() => ({}));
-        alert(response.ok ? data.message : (data.detail || 'Could not send the reset email.'));
-      } catch { alert('Could not reach the library server.'); }
+        if (!response.ok) throw new Error(data.detail || 'Could not send a verification code.');
+        document.getElementById('passwordResetIntro').textContent = 'If an active SmartLib account uses this email, a six-digit code has been sent. Check your inbox and spam folder.';
+        setPasswordResetMessage('Enter the six-digit code from your email. It expires in 10 minutes.');
+        setPasswordResetStep('otp');
+      } catch (error) {
+        setPasswordResetMessage(error.message || 'Could not reach the library server. Try again.', 'error');
+      } finally {
+        setPasswordResetBusy(form, false);
+      }
     }
+
+    async function submitPasswordResetOtp(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const email = document.getElementById('resetEmail').value.trim();
+      const otp = document.getElementById('resetOtp').value.trim();
+      setPasswordResetMessage('');
+      setPasswordResetBusy(form, true, 'Checking code…');
+      try {
+        const response = await fetch('/auth/forgot-password/verify-otp', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'That code is invalid or expired. Request another code.');
+        passwordResetToken = data.reset_token || '';
+        if (!passwordResetToken) throw new Error('Email verification could not be completed. Request another code.');
+        document.getElementById('passwordResetIntro').textContent = 'Choose a new password for your SmartLib account.';
+        setPasswordResetMessage('Email verified. Create your new password below.');
+        setPasswordResetStep('password');
+      } catch (error) {
+        setPasswordResetMessage(error.message || 'Could not verify the code. Try again.', 'error');
+      } finally {
+        setPasswordResetBusy(form, false);
+      }
+    }
+
+    async function submitPasswordResetPassword(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const newPassword = document.getElementById('resetNewPassword').value;
+      const confirmPassword = document.getElementById('resetConfirmPassword').value;
+      if (newPassword !== confirmPassword) {
+        setPasswordResetMessage('The passwords do not match.', 'error');
+        document.getElementById('resetConfirmPassword').focus();
+        return;
+      }
+      setPasswordResetMessage('');
+      setPasswordResetBusy(form, true, 'Saving password…');
+      try {
+        const response = await fetch('/auth/forgot-password/complete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: passwordResetToken, new_password: newPassword, confirm_new_password: confirmPassword })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not change the password. Request a new code and try again.');
+        passwordResetToken = '';
+        document.getElementById('passwordResetIntro').textContent = 'Password updated';
+        setPasswordResetMessage(data.message || 'Your password has been changed.');
+        setPasswordResetStep('done');
+      } catch (error) {
+        setPasswordResetMessage(error.message || 'Could not reach the library server. Try again.', 'error');
+      } finally {
+        setPasswordResetBusy(form, false);
+      }
+    }
+
+    function forgotPassword() { openPasswordReset(); }
 
     // Auto check if already logged in (only if user explicitly navigated to login)
     window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('passwordResetClose').addEventListener('click', closePasswordReset);
+      document.getElementById('passwordResetDone').addEventListener('click', closePasswordReset);
+      document.getElementById('passwordResetOverlay').addEventListener('click', event => {
+        if (event.target === event.currentTarget) closePasswordReset();
+      });
+      document.getElementById('passwordResetEmailStep').addEventListener('submit', submitPasswordResetEmail);
+      document.getElementById('passwordResetOtpStep').addEventListener('submit', submitPasswordResetOtp);
+      document.getElementById('passwordResetPasswordStep').addEventListener('submit', submitPasswordResetPassword);
+      document.getElementById('resetChangeEmail').addEventListener('click', () => {
+        document.getElementById('passwordResetIntro').textContent = 'We’ll send a verification code to the email address on your SmartLib account.';
+        setPasswordResetMessage('');
+        setPasswordResetStep('email');
+      });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !document.getElementById('passwordResetOverlay').hidden) closePasswordReset();
+      });
       // Don't auto-redirect if URL has ?prompt=login or user is browsing
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('logout')) {

@@ -609,6 +609,9 @@
       <button class="nav-item-btn" id="navLogs" onclick="switchNav('logs')">
         <i class="fa-solid fa-clock-rotate-left"></i> Security Audit Logs
       </button>
+      <button class="nav-item-btn" id="navBackup" onclick="switchNav('backup')" style="display:none">
+        <i class="fa-solid fa-database"></i> Backup &amp; Recovery
+      </button>
       <button class="nav-item-btn" id="navFeedback" onclick="switchNav('feedback')">
         <i class="fa-solid fa-comments"></i> Visitor Suggestions
       </button>
@@ -1048,6 +1051,16 @@
       </div>
 
       <div class="screen-panel" id="panelFines"><div id="staffFinesRoot"></div></div>
+      <div class="screen-panel" id="panelBackup">
+        <div class="card">
+          <div class="card-head"><h3><i class="fa-solid fa-database text-gold"></i> Backup &amp; Recovery</h3></div>
+          <div class="card-body" style="padding:24px;max-width:780px">
+            <p style="margin:0 0 12px">Create a one-time encrypted backup containing the library database and uploaded files. The backup is checked before download.</p>
+            <p style="margin:0 0 20px;color:var(--text-muted)">Keep the downloaded file and the separate backup encryption key in secure locations. You will need that key to restore the backup.</p>
+            <button type="button" id="downloadBackupButton" class="btn btn-maroon" onclick="downloadManualBackup()"><i class="fa-solid fa-download"></i> Download encrypted backup</button>
+          </div>
+        </div>
+      </div>
       <div class="screen-panel" id="panelLogs">
         <div class="grid-2">
           <div class="card">
@@ -1230,6 +1243,10 @@
     }
 
     async function switchNav(key) {
+      if (key === 'backup' && currentAdminRole !== 'superadmin') {
+        toast('Only the SuperAdmin can create a system backup.', 'danger');
+        return;
+      }
       window.SmartLibChat.setActive(key === 'messages', getAuthHeaders, toast);
       document.querySelectorAll('.nav-item-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.screen-panel').forEach(p => p.classList.remove('active'));
@@ -1241,6 +1258,7 @@
         'circ': ['Circulation Desk (Borrow & Return Counter)', 'Verify both scans and confirm checkout; returns require an active loan'],
         'borrowreq': ['Online Borrow Requests Queue', 'Review requests, manage active loans, and export queue records'],
         'fines': ['Fines & Returns', 'Review late returns and record fine payments'],
+        'backup': ['Backup & Recovery', 'Create a verified encrypted copy of library records and uploads'],
         'logs': ['Security Audit & Email Logs', 'Full security events trail and automated SMTP dispatch logs'],
         'feedback': ['Visitor Feedback & Inquiries', 'Submissions received from the public landing page suggestion box'],
         'messages': ['Patron Messages', 'Read and reply to student and faculty conversations']
@@ -1281,6 +1299,9 @@
         document.getElementById('navLogs').classList.add('active');
         document.getElementById('panelLogs').classList.add('active');
         await loadLogs();
+      } else if (key === 'backup') {
+        document.getElementById('navBackup').classList.add('active');
+        document.getElementById('panelBackup').classList.add('active');
       } else if (key === 'feedback') {
         document.getElementById('navFeedback').classList.add('active');
         document.getElementById('panelFeedback').classList.add('active');
@@ -2527,6 +2548,45 @@
       setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; setTimeout(() => el.remove(), 250); }, 3000);
     }
 
+    async function downloadManualBackup() {
+      if (currentAdminRole !== 'superadmin') {
+        toast('Only the SuperAdmin can create a system backup.', 'danger');
+        return;
+      }
+      const button = document.getElementById('downloadBackupButton');
+      if (button.disabled) return;
+      const originalContent = button.innerHTML;
+      button.disabled = true;
+      button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating and checking backup…';
+      try {
+        const response = await fetch(`${API_BASE}/admin/backup/download`, {
+          method: 'POST', headers: getAuthHeaders(), credentials: 'same-origin'
+        });
+        if (!response.ok) {
+          let message = 'Could not create the backup.';
+          try { const body = await response.json(); message = body.detail || message; } catch {}
+          throw new Error(message);
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('content-disposition') || '';
+        const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `smartlib-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.slbk`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast('Verified encrypted backup downloaded. Store the file and encryption key safely.', 'success');
+      } catch (error) {
+        toast(error.message || 'Could not create the backup. Try again later.', 'danger');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = originalContent;
+      }
+    }
+
     // INITIALIZATION
     (async () => {
       let currentUser;
@@ -2539,6 +2599,7 @@
         currentAdminRole = role;
         document.getElementById('signupOptionsAdmin').style.display = role === 'superadmin' ? '' : 'none';
         document.getElementById('navFines').style.display = role === 'superadmin' ? '' : 'none';
+        document.getElementById('navBackup').style.display = role === 'superadmin' ? '' : 'none';
       } catch (authErr) {
         console.error('Admin authentication guard failed:', authErr);
         handleLogout();

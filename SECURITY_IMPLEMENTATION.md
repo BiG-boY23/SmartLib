@@ -35,15 +35,15 @@ security certification.
 - **Audit:** Successful authentication, failed password login, MFA failures,
   MFA enrollment, and recovery-code use are recorded without recording passwords
   or MFA codes.
-- **Backup and recovery:** The service can create scheduled AES-GCM-encrypted
-  database-and-uploads archives, run an archive-level restore rehearsal, upload
-  them to a private S3-compatible bucket, verify remote size and SHA-256 metadata,
-  and prune expired copies while retaining the newest. The scheduler is disabled
-  by default until its destination, separate encryption key, and approved
-  retention period are configured. `scripts.remote_backup` lists and downloads
-  verified copies; `scripts.restore_backup` authenticates and stages them in a
-  new folder without overwriting a live database. The encryption key is separate
-  from app keys.
+- **Backup and recovery:** A SuperAdmin can create and download a one-time
+  AES-GCM-encrypted database-and-uploads archive from the dashboard. The app
+  verifies the archive before sending it and audits the action. The generated
+  `.slbk` file can only be restored with the separate
+  `SMARTLIB_BACKUP_ENCRYPTION_KEY`; keep a secure copy of that key outside
+  Render. Optional scheduled backups can also be uploaded to a private
+  S3-compatible bucket, verified, and pruned by retention policy. That scheduler
+  remains disabled by default. `scripts.restore_backup` authenticates and stages
+  archives in a new folder without overwriting a live database.
 - **Transient data retention:** The service hourly deletes expired pending
   registrations, expired/consumed email action tokens and MFA challenges,
   expired or revoked sessions, and expired rate-limit buckets. These records are
@@ -61,7 +61,11 @@ security certification.
 2. Each staff member signs in with their existing password, scans the displayed
    QR code using an authenticator app, confirms a code, then saves the recovery
    codes in a private location. Authenticator apps can be free.
-3. Provision a private S3-compatible bucket, approve a backup retention period,
+3. For a manual backup, ensure `SMARTLIB_BACKUP_ENCRYPTION_KEY` is set in Render;
+   the Blueprint generates a value. Save a secure copy outside Render. The
+   SuperAdmin can then use **Backup & Recovery → Download encrypted backup**;
+   no S3 bucket is needed. To enable optional scheduled off-site copies, provision
+   a private S3-compatible bucket, approve a backup retention period,
    and add `SMARTLIB_BACKUP_S3_BUCKET`, `SMARTLIB_BACKUP_S3_REGION`,
    `SMARTLIB_BACKUP_S3_ACCESS_KEY_ID`, `SMARTLIB_BACKUP_S3_SECRET_ACCESS_KEY`,
    `SMARTLIB_BACKUP_ENCRYPTION_KEY`, and `SMARTLIB_BACKUP_RETENTION_DAYS` as

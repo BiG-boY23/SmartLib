@@ -2,10 +2,15 @@ import os
 import hashlib
 import json
 import logging
+import shutil
+import tempfile
 import uuid
+from pathlib import Path
 from typing import List, Optional, Literal
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +54,8 @@ from library_notifications import (expire_uncollected_approved_requests, pickup_
                                    queue_email)
 from security import require_roles, get_current_user
 from archive_service import archive_keys, require_archive_view, record_content, retain_deleted, retain_support
+from scripts.backup import create_backup
+from backup_service import verify_backup_archive
 
 router = APIRouter(prefix="/admin", tags=["Web Dashboard (Admin & Librarian)"])
 logger = logging.getLogger(__name__)
@@ -56,6 +63,42 @@ logger = logging.getLogger(__name__)
 # Dependency enforcing ADMIN, LIBRARIAN, or SUPERADMIN
 admin_or_staff = require_roles([UserRole.SUPERADMIN, UserRole.ADMIN, UserRole.LIBRARIAN])
 superadmin_only = require_roles([UserRole.SUPERADMIN])
+
+
+@router.post("/backup/download")
+def download_manual_backup(
+    db: Session = Depends(get_db), current_user: User = Depends(superadmin_only)
+):
+    """Create, verify, and download a one-off encrypted backup for a SuperAdmin."""
+    if len(os.getenv("SMARTLIB_BACKUP_ENCRYPTION_KEY", "")) < 32:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Backup download is not configured. Set SMARTLIB_BACKUP_ENCRYPTION_KEY in the hosting environment.",
+        )
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="smartlib-admin-backup-"))
+    try:
+        archive_path = create_backup(destination_dir=temp_dir)
+        verify_backup_archive(archive_path)
+        crud.log_audit(db, current_user.username, "Encrypted database and uploads backup downloaded", "Authorized")
+        return FileResponse(
+            path=archive_path,
+            media_type="application/octet-stream",
+            filename=archive_path.name,
+            headers={"Cache-Control": "private, no-store"},
+            background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+        )
+    except HTTPException:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Exception strings from database drivers can include connection details.
+        logger.error("Manual backup creation failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not create and verify the backup. Check the service configuration and logs.",
+        ) from None
 
 
 @router.get("/dashboard/stats", response_model=DashboardStatsResponse)

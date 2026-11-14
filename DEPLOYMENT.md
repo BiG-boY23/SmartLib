@@ -121,7 +121,7 @@ Blueprint; enter secrets in the Render form/Environment page, not in source file
 | `SMARTLIB_MFA_ENCRYPTION_KEY` | Separate random secret; Blueprint generates it; keep it backed up |
 | `DATABASE_URL` | `sqlite:////var/data/library.db` (Blueprint default) |
 | `SMARTLIB_UPLOAD_DIR` | `/var/data/uploads` (Blueprint default) |
-| `SMARTLIB_BACKUP_ENABLED` | `false` in the Blueprint; enable only after the remaining backup values are configured |
+| `SMARTLIB_BACKUP_ENABLED` | `false` in the Blueprint; leave false when using the manual download button |
 | `SMARTLIB_BACKUP_DIR` | `/var/data/backups` (mounted persistent disk; retry staging only) |
 | `SMARTLIB_BACKUP_INTERVAL_HOURS` | Optional, defaults to `24` |
 | `SMARTLIB_BACKUP_RETENTION_DAYS` | Required approved retention period before enabling scheduled cleanup |
@@ -129,7 +129,7 @@ Blueprint; enter secrets in the Render form/Environment page, not in source file
 | `SMARTLIB_BACKUP_S3_ACCESS_KEY_ID`, `SMARTLIB_BACKUP_S3_SECRET_ACCESS_KEY` | Restricted object-storage credentials; store as Render secrets |
 | `SMARTLIB_BACKUP_S3_ENDPOINT_URL` | Optional HTTPS endpoint for a non-AWS S3-compatible provider |
 | `SMARTLIB_BACKUP_S3_PREFIX` | Optional; defaults to `smartlib` |
-| `SMARTLIB_BACKUP_ENCRYPTION_KEY` | Separate random secret, at least 32 characters; back it up securely outside Render |
+| `SMARTLIB_BACKUP_ENCRYPTION_KEY` | Blueprint generates a separate secret; keep a secure copy outside Render to decrypt manual or scheduled backups |
 | `SMARTLIB_SEED_DEMO` | `false` |
 | `REQUIRE_HTTPS` | `true` |
 | `FORWARDED_ALLOW_IPS` | `*` only behind the managed platform's private ingress |
@@ -158,6 +158,9 @@ No paid MFA provider is required. Test local enrollment by setting
    in, provision librarians and configure departments/courses, then remove the
    three `BOOTSTRAP_ADMIN_*` variables. Keep the signing secret stable across
    restarts; changing it invalidates existing sessions and photo links.
+   Bootstrap credentials are used only when the database has no SuperAdmin;
+   changing those variables later does not change an existing account's
+   password. Use email-code password recovery for an existing account.
    Your local SQLite catalog/accounts/uploads are not automatically migrated;
    the hosted service starts with its own database on the attached disk.
 7. Confirm real registration/OTP email delivery, then check password recovery,
@@ -165,26 +168,21 @@ No paid MFA provider is required. Test local enrollment by setting
    test accounts. `/ready` checks the database; it does not verify SMTP delivery.
    Platform health probes may use HTTP on the private network; user-facing
    traffic is redirected to HTTPS.
-8. Set up backups before inviting testers. Provision a private S3-compatible
-   bucket and choose an approved retention period. Add the backup variables in
-   the table above to Render **Environment**; for AWS S3, leave the endpoint URL
-   blank. Use a storage identity scoped to this app's backup prefix, and store
-   the separate backup encryption key somewhere recoverable outside Render.
-   Only after all values are present, change `SMARTLIB_BACKUP_ENABLED` to
-   `true`. The one web service checks hourly and creates a backup as soon as one
-   is due; no separate Render Cron service is needed. It verifies that each
-   archive can be decrypted/staged and checks the database snapshot before
-   upload, confirms remote size/hash, then removes expired copies according to
-   the configured retention. Failed uploads stay on the mounted disk for retry.
-   Confirm successful backup entries in logs and objects in the bucket.
-   Rehearse an actual recovery to a fresh database and uploads directory before
-   relying on it: `python -m scripts.remote_backup list`, then
-   `python -m scripts.remote_backup download <object-key> <new-file.slbk>`, then
-   `python -m scripts.restore_backup <new-file.slbk> <new-empty-directory>`.
-   The final restore/switchover is an operator action; these tools never replace
-   production data automatically. Monitor disk usage and mail failures. An old
-   database with duplicate active copy loans must be reconciled before the new
-   unique index can be installed; startup does not silently discard such records.
+8. Set `SMARTLIB_BACKUP_ENCRYPTION_KEY` in Render **Environment** before using
+   manual backups. The Blueprint generates this value; save a secure copy
+   somewhere outside Render because it is required to decrypt backups. After
+   deployment, sign in as SuperAdmin and choose **Backup & Recovery → Download
+   encrypted backup**. The app includes the database and uploads, verifies the
+   archive, then downloads a `.slbk` file. Store both the file and key safely.
+   No S3 bucket or paid object storage is needed for this button. To add
+   scheduled off-site backups later, separately provision a private S3-compatible
+   bucket, approve a retention period, configure its credentials, and set
+   `SMARTLIB_BACKUP_ENABLED=true`. The service then checks hourly for backups,
+   verifies them before upload, and prunes copies according to that retention.
+   Rehearse an actual recovery into a fresh database and uploads directory before
+   relying on the backups: `python -m scripts.restore_backup <new-file.slbk> <new-empty-directory>`.
+   The tool stages the decrypted files but never
+   overwrites production data automatically.
 9. In the linked Expo project, open **Environment variables** and set
    `EXPO_PUBLIC_API_BASE_URL` to the verified Render HTTPS origin for **preview**
    with plain-text visibility. Add it separately to **production** before store

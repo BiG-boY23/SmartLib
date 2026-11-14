@@ -34,6 +34,8 @@ services:
         value: "false"
       - key: SMARTLIB_BACKUP_DIR
         value: /var/data/backups
+      - key: SMARTLIB_BACKUP_ENCRYPTION_KEY
+        generateValue: true
       - key: REQUIRE_HTTPS
         value: "true"
       - key: SMARTLIB_SEED_DEMO

@@ -50,7 +50,14 @@
   }
   async function openReports() {
     show('panelReports','navReports','Circulation reports','Recorded borrowing and returns · Ormoc Campus · Philippine time');
-    try {reportOptions=await (await api('/admin/reports/options')).json();document.getElementById('reportDepartment').innerHTML='<option value="">All departments</option>'+reportOptions.departments.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');refreshCourses();await generate();}
+    try {
+      reportOptions=await (await api('/admin/reports/options')).json();
+      document.getElementById('reportDepartment').innerHTML='<option value="">All departments</option>'+reportOptions.departments.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      refreshCourses();
+      const output=document.getElementById('reportOutput');
+      if(!output.innerHTML) document.getElementById('reportStatus').textContent='Choose your dates and filters, then click Generate report to view circulation totals and activity.';
+      loadTrends();loadExtensions();
+    }
     catch(error){document.getElementById('reportStatus').textContent=error.message;}
   }
   async function generate() {

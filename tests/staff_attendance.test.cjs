@@ -28,6 +28,8 @@ test('attendance filters are present and sent to the preview request', async () 
   assert.ok(panelMarkup.includes('Department'));
   assert.ok(panelMarkup.includes('Course'));
   assert.ok(panelMarkup.includes('Sort by'));
+  assert.ok(panelMarkup.includes('Different people'));
+  assert.ok(!panelMarkup.includes('Unique visitors'));
   assert.ok(el('attendanceCourse').innerHTML.includes('BSIT'));
   Object.assign(el('attendanceStart'),{value:'2026-10-01'});
   Object.assign(el('attendanceEnd'),{value:'2026-10-31'});

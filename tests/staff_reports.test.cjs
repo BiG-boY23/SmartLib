@@ -18,7 +18,7 @@ test('book views distinguish returns and borrowing and weekly requests carry aud
     if (!elements.has(id)) elements.set(id, {value: '', options:[], innerHTML: '', textContent: '', classList: {add() {}, remove() {}}});
     return elements.get(id);
   };
-  for (const [id, value] of Object.entries({reportStart:'2026-10-12', reportEnd:'2026-10-18', reportWeek:'2026-10-14', reportRole:'all', reportSort:'date', reportDirection:'asc', reportBookActivity:'all', reportActivity:'all'})) el(id).value = value;
+  let install, markup='';
   const calls = [];
   const book = (title, borrowed_items, returned_items) => ({title, borrowed_items, returned_items, author:'Writer', accession_no:'B1'});
   const report = {
@@ -33,15 +33,26 @@ test('book views distinguish returns and borrowing and weekly requests carry aud
   };
   const context = vm.createContext({window:{}, URLSearchParams, Date, Map, Set,
     localStorage:{getItem:()=>''}, sessionStorage:{getItem:()=>''},
-    document:{readyState:'loading', addEventListener(){}, getElementById:el, querySelectorAll:()=>[]},
+    document:{readyState:'loading', head:{appendChild(){}}, addEventListener:(_,callback)=>{install=callback;}, getElementById:id=>id==='navFeedback'?null:el(id),
+      querySelector:selector=>selector==='.sidebar-menu'?{appendChild(){}}:{insertAdjacentHTML:(_,html)=>{markup=html;}},
+      querySelectorAll:()=>[], createElement:()=>({style:{},removeAttribute(){}})},
     fetch:async path => {
       calls.push(path);
-      return {ok:true, json:async()=>path.includes('/options')?{departments:[],courses:[]}:path.includes('/book-trends')?trends:report};
+      return {ok:true, json:async()=>path.includes('/options')?{departments:[],courses:[]}:path.includes('/book-trends')?trends:path.includes('/loan-extensions')?{summary:{approved_extensions:0,unique_patrons:0},history_note:'',rows:[]}:report};
     },
   });
   vm.runInContext(fs.readFileSync('static/staff-reports.js','utf8'),context);
+  install();
+  for (const [id, value] of Object.entries({reportStart:'2026-10-12', reportEnd:'2026-10-18', reportWeek:'2026-10-14', reportRole:'all', reportSort:'date', reportDirection:'asc', reportBookActivity:'all', reportActivity:'all'})) el(id).value = value;
   await context.window.SmartLibStaff.openReports();
   await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(markup.includes('Generate report'));
+  assert.equal(el('reportOutput').innerHTML, '', 'circulation results wait until Generate report is clicked');
+  assert.ok(!calls.some(path=>path.includes('/admin/reports/circulation')));
+  el('reportForm').onsubmit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(calls.some(path=>path.includes('/admin/reports/circulation')));
+  assert.ok(el('reportOutput').innerHTML.includes('Daily totals'));
   assert.ok(el('reportBookTable').innerHTML.includes('&lt;Script title&gt;'));
   el('reportBookActivity').value='returned';el('reportBookActivity').onchange();
   assert.ok(el('reportBookTable').innerHTML.includes('Returned only'));

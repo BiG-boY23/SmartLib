@@ -536,6 +536,22 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="actionConfirmModal" role="dialog" aria-modal="true" aria-labelledby="actionConfirmTitle" aria-describedby="actionConfirmMessage" onclick="handleActionConfirmationBackdrop(event)">
+    <div class="settings-modal" style="width:460px; max-width:95vw;">
+      <div class="modal-header">
+        <h2><i class="fa-solid fa-circle-exclamation" id="actionConfirmIcon" style="color:var(--evsu-gold);"></i> <span id="actionConfirmTitle">Confirm action</span></h2>
+        <button class="modal-close" type="button" aria-label="Close confirmation" onclick="closeActionConfirmation(false)"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="card-body" style="padding:22px 24px;">
+        <p id="actionConfirmMessage" style="margin:0; color:var(--text-muted); line-height:1.6;"></p>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:22px;">
+          <button id="actionConfirmCancel" class="btn btn-outline" type="button" onclick="closeActionConfirmation(false)">Cancel</button>
+          <button id="actionConfirmProceed" class="btn btn-maroon" type="button" onclick="closeActionConfirmation(true)">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- BATCH MULTI-COPY QR CODE MODAL -->
   <div class="modal-overlay" id="qrBatchModal">
     <div class="settings-modal" style="width: 860px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
@@ -756,7 +772,12 @@
                 </div>
                 <div class="form-group">
                   <label>Initial Password</label>
-                  <div class="password-input-wrap"><input type="password" id="staffPwd" class="form-control password-field" autocomplete="new-password" minlength="8" maxlength="128" required><button class="password-toggle" type="button" onclick="togglePasswordField('staffPwd', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
+                  <div class="password-input-wrap"><input type="password" id="staffPwd" class="form-control password-field" autocomplete="new-password" minlength="8" maxlength="64" aria-describedby="staffPasswordPolicy" required><button class="password-toggle" type="button" onclick="togglePasswordField('staffPwd', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
+                  <small id="staffPasswordPolicy" aria-live="polite" style="display:block; color:var(--text-muted); margin-top:6px;">Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.</small>
+                </div>
+                <div class="form-group">
+                  <label for="staffPwdConfirm">Confirm Password</label>
+                  <div class="password-input-wrap"><input type="password" id="staffPwdConfirm" class="form-control password-field" autocomplete="new-password" minlength="8" maxlength="64" required><button class="password-toggle" type="button" onclick="togglePasswordField('staffPwdConfirm', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
                 </div>
                 <button type="submit" class="btn btn-maroon w-100" style="padding:11px;">
                   <i class="fa-solid fa-user-check"></i> Create Librarian Credentials
@@ -1158,6 +1179,82 @@
     let signupOptionCache = [];
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+    let actionConfirmationResolver = null;
+    let actionConfirmationKeyHandler = null;
+    let actionConfirmationPreviousFocus = null;
+    function showActionConfirmation({ title, message, confirmText = 'Confirm', danger = false }) {
+      if (actionConfirmationResolver) closeActionConfirmation(false);
+      const modal = document.getElementById('actionConfirmModal');
+      const closeButton = modal.querySelector('.modal-close');
+      const cancelButton = document.getElementById('actionConfirmCancel');
+      const proceedButton = document.getElementById('actionConfirmProceed');
+      const icon = document.getElementById('actionConfirmIcon');
+      document.getElementById('actionConfirmTitle').textContent = title;
+      document.getElementById('actionConfirmMessage').textContent = message;
+      proceedButton.textContent = confirmText;
+      proceedButton.style.background = danger ? '#c0392b' : 'var(--evsu-maroon)';
+      proceedButton.style.color = '#fff';
+      icon.style.color = danger ? 'var(--danger)' : 'var(--evsu-gold)';
+      actionConfirmationPreviousFocus = document.activeElement;
+      modal.classList.add('open');
+      return new Promise(resolve => {
+        actionConfirmationResolver = resolve;
+        actionConfirmationKeyHandler = event => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            closeActionConfirmation(false);
+          } else if (event.key === 'Tab') {
+            const first = closeButton;
+            const last = proceedButton;
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault(); first.focus();
+            }
+          }
+        };
+        document.addEventListener('keydown', actionConfirmationKeyHandler);
+        cancelButton.focus();
+      });
+    }
+
+    function closeActionConfirmation(confirmed) {
+      const modal = document.getElementById('actionConfirmModal');
+      if (modal) modal.classList.remove('open');
+      if (actionConfirmationKeyHandler) document.removeEventListener('keydown', actionConfirmationKeyHandler);
+      actionConfirmationKeyHandler = null;
+      const resolve = actionConfirmationResolver;
+      actionConfirmationResolver = null;
+      if (actionConfirmationPreviousFocus?.isConnected) actionConfirmationPreviousFocus.focus();
+      actionConfirmationPreviousFocus = null;
+      if (resolve) resolve(Boolean(confirmed));
+    }
+
+    function handleActionConfirmationBackdrop(event) {
+      if (event.target === event.currentTarget) closeActionConfirmation(false);
+    }
+
+    function validateStaffPasswordForm() {
+      const password = document.getElementById('staffPwd');
+      const confirmation = document.getElementById('staffPwdConfirm');
+      const note = document.getElementById('staffPasswordPolicy');
+      const value = password.value;
+      const unmet = [];
+      if (value.length < 8 || value.length > 64) unmet.push('8–64 characters');
+      if (!/[a-z]/.test(value)) unmet.push('a lowercase letter');
+      if (!/[A-Z]/.test(value)) unmet.push('an uppercase letter');
+      if (!/[0-9]/.test(value)) unmet.push('a number');
+      if (!/[^A-Za-z0-9]/.test(value)) unmet.push('a symbol');
+      password.setCustomValidity(unmet.length ? `Password must include ${unmet.join(', ')}.` : '');
+      confirmation.setCustomValidity(confirmation.value && confirmation.value !== value ? 'Passwords do not match.' : '');
+      note.textContent = unmet.length ? `Password must include ${unmet.join(', ')}.` : 'Password meets the required policy.';
+      note.style.color = unmet.length ? 'var(--warning)' : 'var(--success)';
+      return unmet.length === 0 && confirmation.value === value;
+    }
+    ['staffPwd', 'staffPwdConfirm'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', validateStaffPasswordForm);
+    });
+
     function getAuthHeaders() {
       return { 'Content-Type': 'application/json' };
     }
@@ -1499,7 +1596,12 @@
     }
 
     async function deactivateSignupOption(id) {
-      if (!window.confirm('Remove this option from new sign-ups? Existing member records will be kept.')) return;
+      if (!await showActionConfirmation({
+        title: 'Remove sign-up option?',
+        message: 'This option will no longer appear in new sign-ups. Existing member records will be kept.',
+        confirmText: 'Remove option',
+        danger: true,
+      })) return;
       try {
         const res = await fetch(`${API_BASE}/admin/signup-options/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
         const data = await res.json().catch(() => ({}));
@@ -1519,6 +1621,9 @@
 
     async function handleProvisionStaff(e) {
       e.preventDefault();
+      const form = e.currentTarget;
+      validateStaffPasswordForm();
+      if (!form.reportValidity()) return;
       const id = document.getElementById('staffId').value;
       const username = document.getElementById('staffUsername').value.trim();
       const firstName = document.getElementById('staffFirstName').value.trim();
@@ -1527,12 +1632,13 @@
       const email = document.getElementById('staffEmail').value;
       const dept = document.getElementById('staffDept').value;
       const pwd = document.getElementById('staffPwd').value;
+      const confirmPwd = document.getElementById('staffPwdConfirm').value;
 
       try {
         const res = await fetch(`${API_BASE}/admin/users/staff`, {
           method: 'POST',
           headers: getAuthHeaders(),
-          body: JSON.stringify({ username, first_name: firstName, middle_name: middleName || null, last_name: lastName, email, department: dept, password: pwd })
+          body: JSON.stringify({ username, first_name: firstName, middle_name: middleName || null, last_name: lastName, email, department: dept, password: pwd, confirm_password: confirmPwd })
         });
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
@@ -1544,6 +1650,8 @@
           document.getElementById('staffLastName').value = '';
           document.getElementById('staffEmail').value = '';
           document.getElementById('staffPwd').value = '';
+          document.getElementById('staffPwdConfirm').value = '';
+          validateStaffPasswordForm();
         } else {
           const detail = typeof data.detail === 'string' ? data.detail : (data.detail || []).map(item => item.msg).join('; ');
           toast(detail || 'Failed to provision staff.', 'danger');
@@ -1552,7 +1660,12 @@
     }
 
     async function archiveUserAccount(id) {
-      if (!confirm('Archive this account? The account will be signed out and can be restored later by a SuperAdmin.')) return;
+      if (!await showActionConfirmation({
+        title: 'Archive this account?',
+        message: 'The account will be signed out and can be restored later by a SuperAdmin.',
+        confirmText: 'Archive account',
+        danger: true,
+      })) return;
       try {
         const response = await fetch(`${API_BASE}/admin/users/${id}/archive`, { method: 'PATCH', headers: getAuthHeaders() });
         const data = await response.json().catch(() => ({}));

@@ -23,7 +23,7 @@ def test_staff_ids_are_generated_and_account_fields_are_distinct(inbox_api, monk
     response = client.post('/admin/users/staff', headers=headers['superadmin'], json={
         'username': 'librarian.jane', 'first_name': 'Jane', 'middle_name': 'M',
         'last_name': 'Reyes', 'email': 'Jane.Reyes@evsu.edu.ph',
-        'department': 'Circulation Desk', 'password': 'Securepass1!',
+        'department': 'Circulation Desk', 'password': 'Securepass1!', 'confirm_password': 'Securepass1!',
     })
     assert response.status_code == 201, response.text
     staff = response.json()
@@ -36,7 +36,20 @@ def test_staff_ids_are_generated_and_account_fields_are_distinct(inbox_api, monk
     assert client.post('/admin/users/staff', headers=headers['superadmin'], json={
         'staff_id': '2026-0009', 'username': 'another', 'first_name': 'A', 'last_name': 'B',
         'email': 'another@evsu.edu.ph', 'department': 'Desk', 'password': 'Securepass1!',
+        'confirm_password': 'Securepass1!',
     }).status_code == 422
+    mismatch = client.post('/admin/users/staff', headers=headers['superadmin'], json={
+        'username': 'librarian.mismatch', 'first_name': 'Test', 'last_name': 'User',
+        'email': 'mismatch@evsu.edu.ph', 'department': 'Desk', 'password': 'Securepass1!',
+        'confirm_password': 'Different1!',
+    })
+    assert mismatch.status_code == 422
+    weak_password = client.post('/admin/users/staff', headers=headers['superadmin'], json={
+        'username': 'librarian.weak', 'first_name': 'Test', 'last_name': 'User',
+        'email': 'weak@evsu.edu.ph', 'department': 'Desk', 'password': 'weakpassword',
+        'confirm_password': 'weakpassword',
+    })
+    assert weak_password.status_code == 422
 
 
 def test_user_archive_revokes_sessions_and_restore_requires_reactivation(inbox_api):

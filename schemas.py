@@ -156,7 +156,8 @@ class UserStaffCreate(BaseModel):
     last_name: str = Field(min_length=1, max_length=80)
     email: EmailStr
     department: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=8, max_length=64)
+    confirm_password: str = Field(min_length=8, max_length=64)
 
     @field_validator("username", "first_name", "middle_name", "last_name", "email", "department")
     @classmethod
@@ -172,13 +173,12 @@ class UserStaffCreate(BaseModel):
             raise ValueError("Username, first name, last name, email, and assigned section are required")
         return self
 
-    @field_validator("password")
-    @classmethod
-    def production_password(cls, value):
-        import os
-        if os.getenv("SMARTLIB_ENV", "development").lower() == "production":
-            validate_password_policy(value)
-        return value
+    @model_validator(mode="after")
+    def validate_staff_password(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        validate_password_policy(self.password)
+        return self
 
 
 class UserUpdate(BaseModel):

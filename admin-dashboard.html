@@ -705,9 +705,16 @@
           <div class="card">
             <div class="card-head"><h3><i class="fa-solid fa-users text-gold"></i> Patron &amp; Staff Directory</h3></div>
             <div class="card-body" style="padding:0;">
+              <div style="padding:12px 16px; display:flex; align-items:center; gap:10px;">
+                <label for="userDirectoryView" style="color:var(--text-muted); font-size:12px;">Show accounts</label>
+                <select id="userDirectoryView" class="form-select" style="max-width:180px;" onchange="loadUsers()">
+                  <option value="active">Active directory</option>
+                  <option value="archived">Archived accounts</option>
+                </select>
+              </div>
               <div class="table-responsive">
                 <table id="userTable">
-                  <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+                  <thead><tr><th>Username / Staff ID</th><th>Name</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
                   <tbody></tbody>
                 </table>
               </div>
@@ -719,12 +726,25 @@
             <div class="card-body">
               <form onsubmit="handleProvisionStaff(event)">
                 <div class="form-group">
-                  <label>Staff ID Number</label>
-                  <input type="text" id="staffId" class="form-control" placeholder="e.g. EVSU-LIB-2027" required>
+                  <label for="staffId">Generated Staff ID</label>
+                  <input type="text" id="staffId" class="form-control" readonly aria-describedby="staffIdHelp" placeholder="Loading next Staff ID…">
+                  <small id="staffIdHelp" style="color:var(--text-muted);">Assigned automatically in the format YYYY-0000.</small>
                 </div>
                 <div class="form-group">
-                  <label>Full Name</label>
-                  <input type="text" id="staffName" class="form-control" placeholder="e.g. Elena Reyes" required>
+                  <label for="staffFirstName">First name</label>
+                  <input type="text" id="staffFirstName" class="form-control" maxlength="80" required>
+                </div>
+                <div class="form-group">
+                  <label for="staffMiddleName">Middle name (optional)</label>
+                  <input type="text" id="staffMiddleName" class="form-control" maxlength="80">
+                </div>
+                <div class="form-group">
+                  <label for="staffLastName">Last name</label>
+                  <input type="text" id="staffLastName" class="form-control" maxlength="80" required>
+                </div>
+                <div class="form-group">
+                  <label for="staffUsername">Username</label>
+                  <input type="text" id="staffUsername" class="form-control" autocomplete="username" minlength="3" maxlength="80" required>
                 </div>
                 <div class="form-group">
                   <label>Institutional Email</label>
@@ -736,7 +756,7 @@
                 </div>
                 <div class="form-group">
                   <label>Initial Password</label>
-                  <div class="password-input-wrap"><input type="password" id="staffPwd" class="form-control password-field" value="LibStaff2026!" required><button class="password-toggle" type="button" onclick="togglePasswordField('staffPwd', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
+                  <div class="password-input-wrap"><input type="password" id="staffPwd" class="form-control password-field" autocomplete="new-password" minlength="8" maxlength="128" required><button class="password-toggle" type="button" onclick="togglePasswordField('staffPwd', this)" aria-label="Show password"><b>Aa</b><span>Show</span></button></div>
                 </div>
                 <button type="submit" class="btn btn-maroon w-100" style="padding:11px;">
                   <i class="fa-solid fa-user-check"></i> Create Librarian Credentials
@@ -1134,6 +1154,7 @@
     const API_BASE = '';
     let chartInstance = null;
     let currentAdminRole = '';
+    let userDirectoryArchived = false;
     let signupOptionCache = [];
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -1342,7 +1363,13 @@
 
     async function loadUsers() {
       try {
-        const res = await fetch(`${API_BASE}/admin/users`, { headers: getAuthHeaders() });
+        const selector = document.getElementById('userDirectoryView');
+        userDirectoryArchived = selector?.value === 'archived' && currentAdminRole === 'superadmin';
+        if (selector && currentAdminRole !== 'superadmin') {
+          selector.value = 'active';
+          selector.querySelector('option[value="archived"]').hidden = true;
+        }
+        const res = await fetch(`${API_BASE}/admin/users${userDirectoryArchived ? '?archived=true' : ''}`, { headers: getAuthHeaders() });
         if (!res.ok) return;
         const users = await res.json();
         const tbody = document.getElementById('userTable').getElementsByTagName('tbody')[0];
@@ -1352,20 +1379,39 @@
           const row = tbody.insertRow();
           const isSuper = u.role === 'superadmin';
           row.innerHTML = `
-            <td><strong>${escapeHtml(u.username)}</strong></td>
+            <td><strong>${escapeHtml(u.username)}</strong>${u.staff_id ? `<br><small style="color:var(--text-muted)">Staff ID: ${escapeHtml(u.staff_id)}</small>` : ''}</td>
             <td>${escapeHtml(u.full_name)}</td>
             <td><span class="badge ${isSuper ? 'badge-gold' : u.role === 'librarian' ? 'badge-maroon' : 'badge-secondary'}">${escapeHtml(u.role.toUpperCase())}</span></td>
-            <td><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Active' : 'Suspended'}</span></td>
+            <td><span class="badge ${u.is_archived ? 'badge-secondary' : u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_archived ? 'Archived' : u.is_active ? 'Active' : 'Suspended'}</span></td>
             <td>
-              ${isSuper ? `<span class="badge badge-secondary">Protected</span>` : `
-                <button class="btn btn-outline btn-sm" onclick="toggleUserStatus(${u.id})">
-                  <i class="fa-solid ${u.is_active ? 'fa-ban text-danger' : 'fa-check text-success'}"></i> ${u.is_active ? 'Suspend' : 'Reactivate'}
-                </button>
-              `}
+              ${isSuper ? `<span class="badge badge-secondary">Protected</span>` : currentAdminRole !== 'superadmin'
+                ? `<span class="badge badge-secondary">Restricted</span>`
+                : userDirectoryArchived
+                  ? `<button class="btn btn-outline btn-sm" onclick="restoreUserAccount(${u.id})"><i class="fa-solid fa-rotate-left"></i> Restore</button>`
+                  : `<div style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="btn btn-outline btn-sm" onclick="toggleUserStatus(${u.id})"><i class="fa-solid ${u.is_active ? 'fa-ban text-danger' : 'fa-check text-success'}"></i> ${u.is_active ? 'Suspend' : 'Reactivate'}</button>
+                      <button class="btn btn-outline btn-sm" onclick="archiveUserAccount(${u.id})"><i class="fa-solid fa-box-archive"></i> Archive</button>
+                    </div>`}
             </td>
           `;
         });
+        if (currentAdminRole === 'superadmin') await loadNextStaffId();
       } catch (err) { console.error(err); }
+    }
+
+    async function loadNextStaffId() {
+      const field = document.getElementById('staffId');
+      if (!field || currentAdminRole !== 'superadmin') return;
+      try {
+        const response = await fetch(`${API_BASE}/admin/users/staff/next-id`, { headers: getAuthHeaders() });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not load the next Staff ID.');
+        field.value = data.staff_id || '';
+        document.getElementById('staffIdHelp').textContent = 'This ID is assigned automatically when the account is created.';
+      } catch (error) {
+        field.value = '';
+        document.getElementById('staffIdHelp').textContent = error.message;
+      }
     }
 
     function toggleSignupOptionKind() {
@@ -1474,7 +1520,10 @@
     async function handleProvisionStaff(e) {
       e.preventDefault();
       const id = document.getElementById('staffId').value;
-      const name = document.getElementById('staffName').value;
+      const username = document.getElementById('staffUsername').value.trim();
+      const firstName = document.getElementById('staffFirstName').value.trim();
+      const middleName = document.getElementById('staffMiddleName').value.trim();
+      const lastName = document.getElementById('staffLastName').value.trim();
       const email = document.getElementById('staffEmail').value;
       const dept = document.getElementById('staffDept').value;
       const pwd = document.getElementById('staffPwd').value;
@@ -1483,18 +1532,44 @@
         const res = await fetch(`${API_BASE}/admin/users/staff`, {
           method: 'POST',
           headers: getAuthHeaders(),
-          body: JSON.stringify({ staff_id: id, full_name: name, email: email, department: dept, password: pwd })
+          body: JSON.stringify({ username, first_name: firstName, middle_name: middleName || null, last_name: lastName, email, department: dept, password: pwd })
         });
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
-          toast(`Librarian Account (${id}) provisioned!`, 'success');
+          toast(`Librarian account created. Staff ID: ${data.staff_id || id}; username: ${data.username}.`, 'success');
           await loadUsers();
-          document.getElementById('staffId').value = '';
-          document.getElementById('staffName').value = '';
+          document.getElementById('staffUsername').value = '';
+          document.getElementById('staffFirstName').value = '';
+          document.getElementById('staffMiddleName').value = '';
+          document.getElementById('staffLastName').value = '';
           document.getElementById('staffEmail').value = '';
+          document.getElementById('staffPwd').value = '';
         } else {
-          toast('Failed to provision staff', 'danger');
+          const detail = typeof data.detail === 'string' ? data.detail : (data.detail || []).map(item => item.msg).join('; ');
+          toast(detail || 'Failed to provision staff.', 'danger');
         }
       } catch (err) { console.error(err); }
+    }
+
+    async function archiveUserAccount(id) {
+      if (!confirm('Archive this account? The account will be signed out and can be restored later by a SuperAdmin.')) return;
+      try {
+        const response = await fetch(`${API_BASE}/admin/users/${id}/archive`, { method: 'PATCH', headers: getAuthHeaders() });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not archive the account.');
+        toast('Account archived and active sessions revoked.', 'success');
+        await loadUsers();
+      } catch (error) { toast(error.message, 'danger'); }
+    }
+
+    async function restoreUserAccount(id) {
+      try {
+        const response = await fetch(`${API_BASE}/admin/users/${id}/restore`, { method: 'PATCH', headers: getAuthHeaders() });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not restore the account.');
+        toast('Account restored as suspended. Reactivate it when it is ready to sign in.', 'success');
+        await loadUsers();
+      } catch (error) { toast(error.message, 'danger'); }
     }
 
     async function toggleUserStatus(id) {

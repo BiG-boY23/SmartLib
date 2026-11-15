@@ -1,4 +1,5 @@
 import os
+import re
 import hashlib
 import json
 import logging
@@ -8,6 +9,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional, Literal
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
@@ -17,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 
 from database import get_db
 from models import (
-    StaffArchive, User, UserRole, Book, BorrowRecord, BorrowStatus, Fine, FinePayment, FinePaymentEvent, AcquisitionSuggestion, SignupOption, IdempotencyRecord,
+    StaffArchive, User, UserSession, UserRole, Book, BookCopy, BorrowRecord, BorrowStatus, Fine, FinePayment, FinePaymentEvent, AcquisitionSuggestion, SignupOption, IdempotencyRecord,
     AuditLog, SmtpLog, Announcement, Notification, SupportMessage, SupportThread, BorrowApprovalEmail, LibraryEmail, LoanExtensionEvent,
 )
 from schemas import (
@@ -27,6 +29,7 @@ from schemas import (
     BookCopyResponse,
     BookCopiesPrintedRequest,
     BookCopiesAddRequest,
+    BookCopyStatusUpdate,
     BorrowRecordResponse,
     BorrowStatusUpdate,
     LoanExtensionRequest,
@@ -342,6 +345,50 @@ def list_book_copy_qr_records(
     if not book or (book.is_archived and current_user.role != UserRole.SUPERADMIN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
     return crud.get_book_copies(db, book_id, unprinted_only=unprinted_only)
+
+
+@router.patch("/books/{book_id}/copies/{copy_id}/status", response_model=BookCopyResponse)
+def update_book_copy_status(
+    book_id: int,
+    copy_id: int,
+    request_data: BookCopyStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_staff),
+):
+    book = db.query(Book).filter(Book.id == book_id).with_for_update().first()
+    copy = db.query(BookCopy).filter(
+        BookCopy.id == copy_id,
+        BookCopy.book_id == book_id,
+    ).with_for_update().first()
+    if not book or not copy or book.is_archived:
+        raise HTTPException(404, "Book copy not found")
+    if copy.status == request_data.status:
+        return copy
+    if request_data.status == "missing":
+        active_loan = db.query(BorrowRecord.id).filter(
+            BorrowRecord.copy_accession_no == copy.accession_no,
+            BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
+        ).first()
+        if active_loan:
+            raise HTTPException(409, "This copy is checked out. Check it in or resolve its loan before marking it missing.")
+    copy.status = request_data.status
+    active_loans = db.query(BorrowRecord.id).filter(
+        BorrowRecord.book_id == book.id,
+        BorrowRecord.status.in_([BorrowStatus.CHECKED_OUT, BorrowStatus.OVERDUE]),
+    ).count()
+    missing_copies = db.query(BookCopy.id).filter(
+        BookCopy.book_id == book.id,
+        BookCopy.status == "missing",
+    ).count()
+    book.available_copies = max(0, book.total_copies - active_loans - missing_copies)
+    db.add(AuditLog(
+        user_name=current_user.username,
+        event=f"Copy {copy.accession_no} marked {request_data.status}",
+        status="Authorized",
+    ))
+    db.commit()
+    db.refresh(copy)
+    return copy
 
 
 @router.post("/books/{book_id}/copies", response_model=BookResponse, status_code=201)
@@ -1067,14 +1114,40 @@ def restore_signup_option(
     return option
 
 
+def _next_librarian_staff_id(db: Session) -> str:
+    year = datetime.now(ZoneInfo("Asia/Manila")).year
+    pattern = re.compile(rf"^{year}-(\d{{4,}})$")
+    largest = -1
+    for staff_id, username in db.query(User.staff_id, User.username).all():
+        for value in (staff_id, username):
+            match = pattern.fullmatch(value or "")
+            if match:
+                largest = max(largest, int(match.group(1)))
+    candidate = largest + 1
+    while True:
+        staff_id = f"{year}-{candidate:04d}"
+        collision = db.query(User.id).filter(or_(User.staff_id == staff_id, User.username == staff_id)).first()
+        if not collision:
+            return staff_id
+        candidate += 1
+
+
+@router.get("/users/staff/next-id")
+def next_librarian_staff_id(db: Session = Depends(get_db), current_user: User = Depends(superadmin_only)):
+    return {"staff_id": _next_librarian_staff_id(db)}
+
+
 @router.get("/users", response_model=List[UserResponse])
 def list_all_users(
     skip: int = 0,
     limit: int = 100,
+    archived: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(admin_or_staff),
 ):
-    return crud.get_users(db, skip=skip, limit=limit)
+    if archived and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(403, "Only SuperAdmin can view archived accounts.")
+    return crud.get_users(db, skip=skip, limit=limit, archived=archived)
 
 
 @router.post("/users/patrons", response_model=UserResponse, status_code=201)
@@ -1115,12 +1188,66 @@ def provision_staff_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(superadmin_only),
 ):
-    if crud.get_user_by_username(db, staff_data.staff_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Staff ID {staff_data.staff_id} already provisioned",
-        )
-    return crud.create_staff_user(db, staff_data)
+    from sqlalchemy.exc import IntegrityError
+    email = staff_data.email.strip().lower()
+    username = staff_data.username.strip().lower()
+    staff_id = _next_librarian_staff_id(db)
+    if username == staff_id:
+        raise HTTPException(409, "Choose a username different from the generated Staff ID.")
+    if db.query(User.id).filter(or_(func.lower(User.username) == username.lower(), func.lower(User.email) == email,
+                                   User.staff_id == staff_id)).first():
+        raise HTTPException(409, "That username or email is already in use. The Staff ID is generated automatically.")
+    staff_data.email = email
+    staff_data.username = username
+    try:
+        return crud.create_staff_user(db, staff_data, staff_id)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "That username, email, or Staff ID was just claimed. Refresh and try again.")
+
+
+@router.patch("/users/{user_id}/archive", response_model=UserResponse)
+def archive_user_account(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(superadmin_only),
+):
+    user = db.query(User).filter(User.id == user_id).with_for_update().first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user.id == current_user.id or user.role == UserRole.SUPERADMIN:
+        raise HTTPException(403, "SuperAdmin accounts are protected and cannot be archived.")
+    if user.is_archived:
+        return user
+    user.is_archived = True
+    user.is_active = False
+    db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.revoked_at.is_(None),
+    ).update({UserSession.revoked_at: datetime.utcnow()}, synchronize_session=False)
+    db.add(AuditLog(user_name=current_user.username, event=f"Archived user account: {user.username}", status="Authorized"))
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.patch("/users/{user_id}/restore", response_model=UserResponse)
+def restore_user_account(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(superadmin_only),
+):
+    user = db.query(User).filter(User.id == user_id).with_for_update().first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not user.is_archived:
+        raise HTTPException(409, "This account is not archived.")
+    user.is_archived = False
+    user.is_active = False  # Require an explicit reactivation after restoration.
+    db.add(AuditLog(user_name=current_user.username, event=f"Restored user account: {user.username}", status="Authorized"))
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @router.put("/users/{user_id}/status", response_model=UserResponse)
@@ -1129,12 +1256,16 @@ def toggle_user_account_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(superadmin_only),
 ):
-    user = crud.toggle_user_active(db, user_id)
+    user = crud.get_user(db, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    return user
+    if user.is_archived:
+        raise HTTPException(409, "Restore this account before changing its status.")
+    if user.role == UserRole.SUPERADMIN:
+        raise HTTPException(403, "SuperAdmin accounts are protected.")
+    return crud.toggle_user_active(db, user_id)
 
 
 # Audit & Email Logs

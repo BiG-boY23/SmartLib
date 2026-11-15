@@ -9,6 +9,7 @@
   let pullStart = null;
   let pulling = false;
   let pullRefreshing = false;
+  let passwordResetToken = '';
   root.addEventListener('touchstart', event => {
     if (!state.token || window.scrollY > 0 || event.touches.length !== 1 || event.target.closest('input,textarea,select,button')) return;
     pullStart = {x:event.touches[0].clientX,y:event.touches[0].clientY};
@@ -64,6 +65,67 @@
   }
   function authError(message) { const node = document.getElementById('auth-error'); if (node) { node.textContent = message; node.hidden = false; } }
 
+  function passwordResetMarkup() {
+    return `<div class="recovery-overlay" id="password-reset-modal" hidden><section class="recovery-dialog" role="dialog" aria-modal="true" aria-labelledby="password-reset-title"><button class="recovery-close" type="button" data-action="password-reset-close" aria-label="Close">×</button><h2 id="password-reset-title">Reset your password</h2><p class="recovery-intro" id="password-reset-intro">We’ll send a verification code to the email address on your SmartLib account.</p><div class="recovery-message" id="password-reset-message" role="status" aria-live="polite"></div><form id="password-reset-request"><label class="recovery-field">EVSU email<input id="password-reset-email" type="email" autocomplete="email" required></label><button class="primary wide" type="submit">Send email code</button></form><form id="password-reset-verify" hidden><label class="recovery-field">Six-digit email code<input id="password-reset-otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="primary wide" type="submit">Verify code</button><button class="text-button" type="button" data-action="password-reset-change-email">Change email</button></form><form id="password-reset-save" hidden><label class="recovery-field">New password<input id="password-reset-new-password" type="password" autocomplete="new-password" minlength="8" maxlength="64" required></label><label class="recovery-field">Confirm new password<input id="password-reset-confirm-password" type="password" autocomplete="new-password" minlength="8" maxlength="64" required></label><p class="helper">Use 8–64 characters with an uppercase letter, lowercase letter, number, and symbol.</p><button class="primary wide" type="submit">Save new password</button></form><div id="password-reset-done" hidden><p class="helper">Your password has been changed. Sign in with the new password.</p><button class="primary wide" type="button" data-action="password-reset-close">Return to sign in</button></div></section></div>`;
+  }
+
+  function setPasswordResetStep(step, message = '', isError = false) {
+    const modal = document.getElementById('password-reset-modal');
+    if (!modal) return;
+    for (const [id, visible] of [['password-reset-request', step === 'email'], ['password-reset-verify', step === 'otp'], ['password-reset-save', step === 'password'], ['password-reset-done', step === 'done']]) {
+      document.getElementById(id).hidden = !visible;
+    }
+    const intro = document.getElementById('password-reset-intro');
+    intro.textContent = ({email:'We’ll send a verification code to the email address on your SmartLib account.', otp:'If an active account uses this email, a six-digit code has been sent. Check your inbox and spam folder.', password:'Choose a new password for your SmartLib account.', done:'Your password has been updated.'})[step];
+    const messageBox = document.getElementById('password-reset-message');
+    messageBox.textContent = message;
+    messageBox.className = `recovery-message${message ? ` show${isError ? ' error' : ''}` : ''}`;
+    messageBox.setAttribute('role', isError ? 'alert' : 'status');
+  }
+
+  function openPasswordReset() {
+    const modal = document.getElementById('password-reset-modal');
+    if (!modal) return;
+    const username = document.getElementById('username')?.value.trim() || '';
+    document.getElementById('password-reset-request').reset();
+    document.getElementById('password-reset-verify').reset();
+    document.getElementById('password-reset-save').reset();
+    document.getElementById('password-reset-email').value = username.includes('@') ? username : '';
+    passwordResetToken = '';
+    setPasswordResetStep('email');
+    modal.hidden = false;
+    document.getElementById('password-reset-email').focus();
+  }
+
+  function closePasswordReset() {
+    const modal = document.getElementById('password-reset-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    passwordResetToken = '';
+    document.getElementById('password-reset-request').reset();
+    document.getElementById('password-reset-verify').reset();
+    document.getElementById('password-reset-save').reset();
+    document.getElementById('username')?.focus();
+  }
+
+  async function submitPasswordReset(form, endpoint, payload, busyLabel, onSuccess) {
+    const button = form.querySelector('button[type="submit"]');
+    const original = button.textContent.trim();
+    button.disabled = true;
+    button.textContent = busyLabel;
+    setPasswordResetStep(document.getElementById('password-reset-save').hidden ? (document.getElementById('password-reset-verify').hidden ? 'email' : 'otp') : 'password');
+    try {
+      const result = await api(endpoint, { method: 'POST', body: JSON.stringify(payload) });
+      await onSuccess(result);
+    } catch (error) {
+      const step = form.id === 'password-reset-request' ? 'email' : form.id === 'password-reset-verify' ? 'otp' : 'password';
+      setPasswordResetStep(step, error.message || 'Could not complete the password reset. Please try again.', true);
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
   function renderAuth() {
     const register = state.authMode === 'register';
     const verify = state.authMode === 'register-otp';
@@ -72,7 +134,7 @@
     const nameFields = `<div class="field"><label for="first-name">First name</label><input id="first-name" name="first_name" autocomplete="given-name" required maxlength="80"></div><div class="field"><label for="middle-name">Middle name (optional)</label><input id="middle-name" name="middle_name" autocomplete="additional-name" maxlength="80"></div><div class="field"><label for="last-name">Last name</label><input id="last-name" name="last_name" autocomplete="family-name" required maxlength="80"></div>`;
     const registrationFields = `${nameFields}<div class="field"><label for="reg-username">Student or staff ID</label><input id="reg-username" name="username" autocomplete="username" required></div><div class="field"><label for="email">EVSU email</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="account-type">Account type</label><select id="account-type" name="account_type"><option value="student">Student</option><option value="faculty">Faculty</option></select></div><div class="field"><label for="department">Department</label><select id="department" name="department_id" required><option value="">Choose a department</option>${departments.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('')}</select></div><div class="field" id="course-field"><label for="course">Course</label><select id="course" name="course_id" required disabled><option value="">Select a department first</option></select></div><div class="field"><label for="reg-password">Password</label><div class="password-input-wrap"><input id="reg-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="64" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="reg-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><div class="field"><label for="confirm-password">Confirm password</label><div class="password-input-wrap"><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" maxlength="64" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="confirm-password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div>`;
     const loginFields = `<div class="field"><label for="username">Institutional ID or email</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">Password</label><div class="password-input-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required><button class="password-toggle" type="button" data-action="toggle-password" data-password-target="password" aria-label="Show password"><b>Aa</b><span>Show</span></button></div></div><label class="remember-option"><input type="checkbox" name="remember_me"> Remember me</label><button class="text-button" type="button" data-action="forgot-password">Forgot password?</button>`;
-    root.innerHTML = `<section class="auth-page fade-in"><div class="auth-art"><div class="brand"><img class="brand-mark-img small" src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"><span>EVSU-OC SmartLib</span></div><div><h1>Your campus library, wherever you are.</h1><p>Find your next read, request a copy, and keep your library card close at hand.</p></div><div class="art-bottom">Eastern Visayas State University &middot; Ormoc Campus</div></div><form class="auth-card" id="auth-form"><button class="back-link" type="button" data-action="public-home">&larr; SmartLib home</button><h2>${verify ? 'Verify your email' : register ? 'Create your account' : 'Welcome back'}</h2><p class="subheading">${verify ? `Enter the 6-digit code sent to ${escapeHtml(state.pendingRegistration?.email || 'your email')}.` : register ? 'Join your EVSU library community.' : 'Sign in with your institutional account.'}</p><div id="auth-error" class="auth-error" hidden></div>${verify ? '<div class="field"><label for="otp">Email code</label><input id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>' : register ? registrationFields : loginFields}<button class="primary wide" type="submit">${verify ? 'Verify and create account' : register ? 'Send email code' : 'Sign in'}</button><p class="switch-auth"><button type="button" data-action="toggle-auth">${verify || register ? 'Back to sign in' : 'Create account'}</button></p></form></section>`;
+    root.innerHTML = `<section class="auth-page fade-in"><div class="auth-art"><div class="brand"><img class="brand-mark-img small" src="/mobile-assets/evsu-smartlib-logo.jpg" alt="EVSU-OC SmartLib logo"><span>EVSU-OC SmartLib</span></div><div><h1>Your campus library, wherever you are.</h1><p>Find your next read, request a copy, and keep your library card close at hand.</p></div><div class="art-bottom">Eastern Visayas State University &middot; Ormoc Campus</div></div><form class="auth-card" id="auth-form"><button class="back-link" type="button" data-action="public-home">&larr; SmartLib home</button><h2>${verify ? 'Verify your email' : register ? 'Create your account' : 'Welcome back'}</h2><p class="subheading">${verify ? `Enter the 6-digit code sent to ${escapeHtml(state.pendingRegistration?.email || 'your email')}.` : register ? 'Join your EVSU library community.' : 'Sign in with your institutional account.'}</p><div id="auth-error" class="auth-error" hidden></div>${verify ? '<div class="field"><label for="otp">Email code</label><input id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required></div>' : register ? registrationFields : loginFields}<button class="primary wide" type="submit">${verify ? 'Verify and create account' : register ? 'Send email code' : 'Sign in'}</button><p class="switch-auth"><button type="button" data-action="toggle-auth">${verify || register ? 'Back to sign in' : 'Create account'}</button></p></form></section>${passwordResetMarkup()}`;
   }
 
   function shell(content, active = state.tab) {
@@ -202,6 +264,10 @@
       return;
     }
     const action = event.target.closest('[data-action]')?.dataset.action;
+    if (action === 'forgot-password') { openPasswordReset(); return; }
+    if (action === 'password-reset-close') { closePasswordReset(); return; }
+    if (action === 'password-reset-change-email') { setPasswordResetStep('email'); document.getElementById('password-reset-email').focus(); return; }
+    if (event.target.id === 'password-reset-modal') { closePasswordReset(); return; }
     if (action === 'toggle-auth') {
       state.authMode = state.authMode === 'login' ? 'register' : 'login';
       if (state.authMode === 'register') {
@@ -220,13 +286,6 @@
         const visible = input.type === 'text';
         toggle.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
         toggle.querySelector('span').textContent = visible ? 'Hide' : 'Show';
-      }
-    }
-    if (action === 'forgot-password') {
-      const email = prompt('Enter the email address on your SmartLib account:');
-      if (email?.trim()) {
-        try { const result = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: email.trim() }) }); notify(result.message); }
-        catch (error) { notify(error.message); }
       }
     }
     if (action === 'public-home') { window.location.assign('/'); }
@@ -263,6 +322,36 @@
         }
       } catch (error) { authError(error.message); button.disabled = false; }
     }
+    if (form.id === 'password-reset-request') {
+      const email = document.getElementById('password-reset-email').value.trim();
+      await submitPasswordReset(form, '/auth/forgot-password/request-otp', { email }, 'Sending code…', async (result) => {
+        setPasswordResetStep('otp', 'Enter the six-digit code from your email. It expires in 10 minutes.');
+        document.getElementById('password-reset-otp').focus();
+      });
+    }
+    if (form.id === 'password-reset-verify') {
+      const email = document.getElementById('password-reset-email').value.trim();
+      const otp = document.getElementById('password-reset-otp').value.trim();
+      await submitPasswordReset(form, '/auth/forgot-password/verify-otp', { email, otp }, 'Checking code…', async (result) => {
+        passwordResetToken = result.reset_token || '';
+        if (!passwordResetToken) throw new Error('Email verification could not be completed. Request another code.');
+        setPasswordResetStep('password', 'Email verified. Create your new password below.');
+        document.getElementById('password-reset-new-password').focus();
+      });
+    }
+    if (form.id === 'password-reset-save') {
+      const newPassword = document.getElementById('password-reset-new-password').value;
+      const confirmPassword = document.getElementById('password-reset-confirm-password').value;
+      if (newPassword !== confirmPassword) {
+        setPasswordResetStep('password', 'The passwords do not match.', true);
+        document.getElementById('password-reset-confirm-password').focus();
+        return;
+      }
+      await submitPasswordReset(form, '/auth/forgot-password/complete', { token: passwordResetToken, new_password: newPassword, confirm_new_password: confirmPassword }, 'Saving password…', async (result) => {
+        passwordResetToken = '';
+        setPasswordResetStep('done', result.message || 'Your password has been changed.');
+      });
+    }
     if (form.id === 'profile-form') {
       const button = form.querySelector('button[type="submit"]'); button.disabled = true;
       const values = new FormData(form);
@@ -283,6 +372,10 @@
       catch (error) { notify(error.message); }
       finally { button.disabled = false; }
     }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.getElementById('password-reset-modal') && !document.getElementById('password-reset-modal').hidden) closePasswordReset();
   });
 
   let searchTimer;

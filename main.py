@@ -93,6 +93,14 @@ async def lifespan(app: FastAPI):
             connection.exec_driver_sql("ALTER TABLE support_threads ADD COLUMN recipient_role VARCHAR(20) NOT NULL DEFAULT 'librarian'")
     # Preserve existing accounts as verified when upgrading older SQLite files.
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+    if "staff_id" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN staff_id VARCHAR(16)")
+    if "is_archived" not in user_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE users ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT FALSE")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_staff_id ON users (staff_id)")
     if "email_verified" not in user_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql(
@@ -148,6 +156,10 @@ async def lifespan(app: FastAPI):
     if "copy_accession_no" not in borrow_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql("ALTER TABLE borrow_records ADD COLUMN copy_accession_no VARCHAR")
+    copy_columns = {column["name"] for column in inspect(engine).get_columns("book_copies")}
+    if "status" not in copy_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("ALTER TABLE book_copies ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'available'")
     pending_columns = {column["name"] for column in inspect(engine).get_columns("pending_registrations")}
     if "course" not in pending_columns:
         with engine.begin() as connection:

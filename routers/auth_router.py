@@ -258,6 +258,8 @@ async def login(request: Request, response: Response, db: Session = Depends(get_
 
     user = crud.get_user_by_username(db, username=username)
     if not user:
+        user = db.query(User).filter(User.staff_id == username).first()
+    if not user:
         user = crud.get_user_by_email(db, email=username.casefold())
     if not user or not verify_password(password, user.hashed_password):
         audited_name = user.username if user else f"unknown:{hashlib.sha256(username.casefold().encode('utf-8')).hexdigest()[:16]}"

@@ -124,8 +124,8 @@ def get_user_by_email(db: Session, email: str):
     return db.query(User).filter(User.email == email).first()
 
 
-def get_users(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(User).offset(skip).limit(limit).all()
+def get_users(db: Session, skip: int = 0, limit: int = 100, archived: bool = False):
+    return db.query(User).filter(User.is_archived.is_(archived)).order_by(User.id.asc()).offset(skip).limit(limit).all()
 
 
 def create_user(db: Session, user_data: UserCreate):
@@ -146,13 +146,18 @@ def create_user(db: Session, user_data: UserCreate):
     return db_user
 
 
-def create_staff_user(db: Session, staff_data: UserStaffCreate):
+def create_staff_user(db: Session, staff_data: UserStaffCreate, staff_id: str):
     hashed_pwd = get_password_hash(staff_data.password)
+    full_name = " ".join(filter(None, [staff_data.first_name, staff_data.middle_name, staff_data.last_name]))
     db_user = User(
-        username=staff_data.staff_id,
+        username=staff_data.username,
+        staff_id=staff_id,
         email=staff_data.email,
         hashed_password=hashed_pwd,
-        full_name=staff_data.full_name,
+        full_name=full_name,
+        first_name=staff_data.first_name,
+        middle_name=staff_data.middle_name,
+        last_name=staff_data.last_name,
         role=UserRole.LIBRARIAN,
         department=staff_data.department,
     )
@@ -160,13 +165,13 @@ def create_staff_user(db: Session, staff_data: UserStaffCreate):
     db.commit()
     db.refresh(db_user)
     log_audit(
-        db, "Super Admin", f"Provisioned Staff {staff_data.staff_id}", "Authorized"
+        db, "Super Admin", f"Provisioned Staff {staff_id} ({staff_data.username})", "Authorized"
     )
     log_smtp(
         db,
         staff_data.email,
         "Account Credentials Issued",
-        f"Welcome to EVSU Library Staff — ID: {staff_data.staff_id}",
+        f"Welcome to EVSU Library Staff — Staff ID: {staff_id}; Username: {staff_data.username}",
     )
     return db_user
 
@@ -243,6 +248,8 @@ def _allocate_available_copy(db: Session, book: Book):
     used = {row.copy_accession_no.upper() for row in active}
     for copy_number in range(1, book.total_copies + 1):
         copy = db.query(BookCopy).filter_by(book_id=book.id, copy_number=copy_number).first()
+        if copy and copy.status == "missing":
+            continue
         tag = copy.accession_no if copy else f"{book.accession_no}-C{copy_number:02d}"
         if tag.upper() not in used:
             return tag, None
@@ -812,6 +819,11 @@ def execute_circulation(
 
         active_copies = _active_copy_records(db, book)
         if is_copy_tag:
+            registered_copy = db.query(BookCopy).filter(
+                func.upper(BookCopy.accession_no) == requested_copy_tag.upper()
+            ).first()
+            if registered_copy and registered_copy.status == "missing":
+                return {"status": "unavail", "message": f"Copy {requested_copy_tag} is marked missing and cannot be checked out."}
             if any(not row.copy_accession_no for row in active_copies):
                 return {"status": "unavail", "message": "An older checkout has no copy QR recorded. Resolve that loan before issuing a specific copy."}
             if any((row.copy_accession_no or "").upper() == requested_copy_tag.upper() for row in active_copies):

@@ -149,11 +149,28 @@ class UserCreate(UserBase):
 
 
 class UserStaffCreate(BaseModel):
-    staff_id: str
-    full_name: str
-    email: str
-    department: str
-    password: str
+    model_config = ConfigDict(extra="forbid")
+    username: str = Field(min_length=3, max_length=80)
+    first_name: str = Field(min_length=1, max_length=80)
+    middle_name: Optional[str] = Field(default=None, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    email: EmailStr
+    department: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("username", "first_name", "middle_name", "last_name", "email", "department")
+    @classmethod
+    def clean_staff_fields(cls, value):
+        if value is None:
+            return None
+        clean = " ".join(value.split())
+        return clean or None
+
+    @model_validator(mode="after")
+    def required_staff_fields(self):
+        if not self.first_name or not self.last_name or not self.username or not self.email or not self.department:
+            raise ValueError("Username, first name, last name, email, and assigned section are required")
+        return self
 
     @field_validator("password")
     @classmethod
@@ -201,7 +218,9 @@ class SelfProfileUpdate(BaseModel):
 
 class UserResponse(UserBase):
     id: int
+    staff_id: Optional[str] = None
     is_active: bool
+    is_archived: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -298,6 +317,7 @@ class BookCopyResponse(BaseModel):
     book_id: int
     copy_number: int
     accession_no: str
+    status: str = "available"
     created_at: datetime
     qr_printed_at: Optional[datetime] = None
 
@@ -310,6 +330,10 @@ class BookCopiesAddRequest(BaseModel):
 
 class BookCopiesPrintedRequest(BaseModel):
     copy_ids: List[int] = Field(min_length=1, max_length=500)
+
+
+class BookCopyStatusUpdate(BaseModel):
+    status: Literal["available", "missing"]
 
 
 # Borrow Record Schemas

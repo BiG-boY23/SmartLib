@@ -277,6 +277,8 @@
       margin-top: 4px;
       border: 1px solid #cbd5e1;
     }
+    .qr-copy-card[data-status="missing"] { opacity: .68; border-color: #c0392b; }
+    .qr-copy-card[data-status="missing"] .qr-canvas-holder { filter: grayscale(1); }
 
     @media print {
       body * {
@@ -311,6 +313,7 @@
         background: #ffffff !important;
         color: #000000 !important;
       }
+      .qr-copy-card[data-status="missing"] { display: none !important; }
       .modal-overlay {
         background: transparent !important;
         position: static !important;
@@ -1663,9 +1666,10 @@
       const counter = document.getElementById('lblPrintCount');
       const note = document.getElementById('qrLifecycleNote');
       const toggle = document.getElementById('btnQrReprintAll');
+      const printableCopies = currentQrCopies.filter((copy) => copy.status !== 'missing');
       container.innerHTML = '';
-      counter.textContent = String(currentQrCopies.length);
-      printButton.disabled = currentQrCopies.length === 0;
+      counter.textContent = String(printableCopies.length);
+      printButton.disabled = printableCopies.length === 0;
       toggle.style.display = 'inline-flex';
 
       if (!currentQrCopies.length) {
@@ -1674,9 +1678,11 @@
           : 'All assigned labels have been printed. Existing copy IDs remain saved and will not be replaced.';
         container.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:42px 20px;"><i class="fa-solid fa-circle-check" style="font-size:30px; color:var(--evsu-gold); margin-bottom:12px;"></i><div>${showingAllQrCopies ? 'No copy labels found.' : 'All copy labels have already been printed.'}</div></div>`;
       } else {
+        const missingCount = currentQrCopies.filter((copy) => copy.status === 'missing').length;
         note.textContent = showingAllQrCopies
           ? `Viewing all ${currentQrCopies.length} saved labels. Printing these will reprint the same identifiers.`
           : `${currentQrCopies.length} new copy label(s) are ready. Their identifiers are permanently assigned.`;
+        if (missingCount) note.textContent += ` ${missingCount} missing ${missingCount === 1 ? 'copy is' : 'copies are'} excluded from printing.`;
         toggle.innerHTML = showingAllQrCopies
           ? '<i class="fa-solid fa-list"></i> Show unprinted labels'
           : '<i class="fa-solid fa-rotate"></i> View all labels for reprinting';
@@ -1686,6 +1692,7 @@
           const cardId = `qrCopyCanvas_${copy.id}`;
           const card = document.createElement('div');
           card.className = 'qr-copy-card';
+          card.dataset.status = copy.status || 'available';
           card.innerHTML = `
             <div class="qr-copy-header"><i class="fa-solid fa-university"></i> EVSU-OC SMARTLIB</div>
             <div class="qr-copy-title" title="${escapeHtml(currentQrBook.title)}">${escapeHtml(currentQrBook.title)}</div>
@@ -1693,7 +1700,8 @@
             <div class="qr-canvas-holder" id="${cardId}"></div>
             <div class="qr-copy-meta">Catalog accession: ${escapeHtml(currentQrBook.accession_no)}</div>
             <div class="qr-copy-code">Copy ID: ${escapeHtml(code)}</div>
-            <div class="qr-copy-badge">Copy ${String(copy.copy_number).padStart(2, '0')} of ${String(currentQrBook.total_copies || currentQrCopies.length).padStart(2, '0')}</div>
+            <div class="qr-copy-badge">Copy ${String(copy.copy_number).padStart(2, '0')} of ${String(currentQrBook.total_copies || currentQrCopies.length).padStart(2, '0')} · ${escapeHtml((copy.status || 'available').toUpperCase())}</div>
+            <div class="no-print" style="margin-top:8px"><button type="button" class="btn btn-sm ${copy.status === 'missing' ? 'btn-secondary' : 'btn-outline'}" onclick="setQrCopyStatus(${copy.id}, '${copy.status === 'missing' ? 'available' : 'missing'}')">${copy.status === 'missing' ? 'Mark available' : 'Mark missing'}</button></div>
           `;
           container.appendChild(card);
           setTimeout(() => {
@@ -1719,10 +1727,11 @@
     }
 
     function printQrBatchLabels() {
-      if (!currentQrCopies.length) return;
+      const printableCopies = currentQrCopies.filter((copy) => copy.status !== 'missing');
+      if (!printableCopies.length) return;
       const copyIdsToMark = showingAllQrCopies
         ? []
-        : currentQrCopies.filter((copy) => !copy.qr_printed_at).map((copy) => copy.id);
+        : printableCopies.filter((copy) => !copy.qr_printed_at).map((copy) => copy.id);
       if (copyIdsToMark.length) {
         const markAfterPrint = async () => {
           try {
@@ -1741,6 +1750,26 @@
         window.addEventListener('afterprint', markAfterPrint, { once: true });
       }
       window.print();
+    }
+
+    async function setQrCopyStatus(copyId, status) {
+      try {
+        const response = await fetch(`${API_BASE}/admin/books/${currentQrBook.id}/copies/${copyId}/status`, {
+          method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify({ status })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not update copy availability.');
+        toast(status === 'missing' ? 'Copy marked missing and removed from available stock.' : 'Copy restored to available stock.', 'success');
+        await loadQrCopies(showingAllQrCopies ? false : true);
+        const booksResponse = await fetch(`${API_BASE}/admin/books`, { headers: getAuthHeaders() });
+        if (booksResponse.ok) {
+          const books = await booksResponse.json();
+          cachedAdminBooks = books;
+          renderAdminBookTable(books);
+          currentQrBook = books.find((book) => book.id === currentQrBook.id) || currentQrBook;
+          document.getElementById('qrModalCopiesCount').innerText = `${currentQrBook.total_copies || 0} ${Number(currentQrBook.total_copies) === 1 ? 'Copy' : 'Copies'}`;
+        }
+      } catch (error) { toast(error.message || 'Could not update copy availability.', 'danger'); }
     }
     // ── CIRCULATION DESK (HANDS-FREE SCANNER WORKFLOW) ─────────────
     let currentCircMode = 'borrow';

@@ -42,6 +42,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
+    # Separate, system-generated identifier for provisioned library staff.
+    staff_id = Column(String(16), unique=True, index=True, nullable=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
@@ -54,6 +56,7 @@ class User(Base):
     course = Column(String, nullable=True)
     contact_no = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
     email_verified = Column(Boolean, default=True, nullable=False, server_default="1")
     mfa_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
     mfa_secret_enc = Column(Text, nullable=True)
@@ -195,6 +198,7 @@ class BookCopy(Base):
     book_id = Column(Integer, ForeignKey("books.id"), nullable=False, index=True)
     copy_number = Column(Integer, nullable=False)
     accession_no = Column(String, unique=True, index=True, nullable=False)
+    status = Column(String(20), default="available", nullable=False, server_default="available")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     qr_printed_at = Column(DateTime, nullable=True)
 
